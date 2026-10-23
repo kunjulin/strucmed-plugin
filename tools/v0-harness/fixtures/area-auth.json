@@ -1,0 +1,76 @@
+{
+ "name": "area-auth",
+ "description": "區塊權限回歸：A=空陣列+gettext false（v0.0 B-3 實際踩到的狀態，應被 lint 抓到）；B=省略權限欄位（驗證編輯器是否補預設值）",
+ "deptNo": "TEST0",
+ "dicsource": [],
+ "form": [
+  {
+   "itemtype": "form",
+   "itemid": "1",
+   "authread": [],
+   "authwrite": [],
+   "gettext": false,
+   "item": [
+    {
+     "datatype": "text",
+     "datavalue": "A 區："
+    },
+    {
+     "itemid": 2,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    }
+   ]
+  },
+  {
+   "itemtype": "form",
+   "itemid": "3",
+   "item": [
+    {
+     "datatype": "text",
+     "datavalue": "B 區："
+    },
+    {
+     "itemid": 4,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    }
+   ]
+  },
+  {
+   "itemtype": "javascript",
+   "content": ""
+  },
+  {
+   "itemtype": "iot",
+   "editorver": "1.6",
+   "sheetid": "",
+   "f_opdno": false,
+   "f_chtno": true,
+   "templateID": "",
+   "f_histext": "histextbyblock",
+   "f_hideprevicon": false,
+   "f_hideAssist": false,
+   "f_hidePreset": false,
+   "f_day": "30",
+   "d_url": "",
+   "modifiedUser": "v0-harness",
+   "modifiedDept": "",
+   "modifiedDate": 0
+  }
+ ]
+}

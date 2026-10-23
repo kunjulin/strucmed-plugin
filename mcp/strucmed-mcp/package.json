@@ -1,0 +1,14 @@
+{
+  "name": "strucmed-mcp",
+  "version": "1.8.0",
+  "description": "MCP server that builds StrucMed 2.0 form definitions (.htm/.json) for manual import. Offline by default; optional online tools call the strucmed V2 API on the detected site (internal LVAIW, or an external site the user configures) (credentials from the environment only).",
+  "type": "module",
+  "private": true,
+  "bin": { "strucmed-mcp": "src/server.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,195 @@
+{
+ "name": "edge-cases",
+ "description": "邊界：不存在的 dicid、只有名稱但查無字典、指定 tohis 但無 dicid、重複 itemid、further 數字型、兩個 form 區塊、區塊權限",
+ "deptNo": "TEST0",
+ "dicsource": [
+  {
+   "value": "V0_EXIST",
+   "id": "v0test-dic-010",
+   "dicType": "TEST0",
+   "dicComment": "v0",
+   "createUser": "V0TEST"
+  }
+ ],
+ "form": [
+  {
+   "itemtype": "form",
+   "itemid": "1",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "datatype": "text",
+     "datavalue": "假 dicid："
+    },
+    {
+     "itemid": 2,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "V0_FAKE",
+     "dicid": "v0test-dic-999",
+     "dicrole": "tohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "查無名稱："
+    },
+    {
+     "itemid": 3,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "V0_MISSING",
+     "dicid": "",
+     "dicrole": "tohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "重複 id A："
+    },
+    {
+     "itemid": 4,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    },
+    {
+     "datatype": "text",
+     "datavalue": " 重複 id B："
+    },
+    {
+     "itemid": 4,
+     "datatype": "numberbox",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false,
+     "minval": "",
+     "maxval": "",
+     "numpad": false
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "數字 further："
+    },
+    {
+     "itemid": 5,
+     "datatype": "radiobutton",
+     "datavalue": "是",
+     "dictionary": "V0_EXIST",
+     "dicid": "v0test-dic-010",
+     "dicrole": "puthis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false,
+     "row": 2,
+     "option": [
+      {
+       "value": "是",
+       "further": 6
+      },
+      {
+       "value": "否",
+       "further": ""
+      }
+     ],
+     "datagroup": ""
+    },
+    {
+     "itemid": 6,
+     "datatype": "textbox",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "required": false
+    }
+   ]
+  },
+  {
+   "itemtype": "form",
+   "itemid": "7",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "datatype": "text",
+     "datavalue": "第二區塊計算："
+    },
+    {
+     "itemid": 8,
+     "datatype": "label",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "formula": "IF(A5=\"是\",\"Y\",\"N\")",
+     "format": "formula",
+     "tocalc": true,
+     "toSAS": false
+    }
+   ]
+  },
+  {
+   "itemtype": "javascript",
+   "content": ""
+  },
+  {
+   "itemtype": "iot",
+   "editorver": "1.6",
+   "sheetid": "",
+   "f_opdno": false,
+   "f_chtno": true,
+   "templateID": "",
+   "f_histext": "histextbyblock",
+   "f_hideprevicon": false,
+   "f_hideAssist": false,
+   "f_hidePreset": false,
+   "f_day": "30",
+   "d_url": "",
+   "modifiedUser": "v0-harness",
+   "modifiedDept": "",
+   "modifiedDate": 0
+  }
+ ]
+}

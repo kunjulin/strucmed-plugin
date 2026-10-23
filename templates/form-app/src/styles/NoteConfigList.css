@@ -1,0 +1,334 @@
+.note-config-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  background-color: #f9fafb;
+  overflow: hidden;
+  width: 100%;
+}
+
+.note-config-header {
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: white;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-title h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  color: #111827;
+}
+
+.header-title {
+  width: 100%;
+}
+
+.user-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: #000000;
+}
+
+.user-location {
+  font-size: 0.85rem;
+  color: #6b7280;
+  margin-left: auto;
+  text-align: right;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.save-button, .close-button {
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  min-width: 120px;
+  flex: 1;
+  font-size: 1rem;
+}
+
+.save-button {
+  background-color: #4f46e5;
+  color: white;
+}
+
+.save-button:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.close-button {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+.search-bar {
+  padding: 0.75rem;
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 9;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background-color: #DFE4F2;
+  font-size: 0.95rem;
+  color: #000000;
+}
+
+.add-template-form {
+  padding: 1rem;
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.add-template-inputs {
+  flex: 1;
+  display: flex;
+  gap: 0.5rem;
+  flex-direction: column;
+}
+
+.add-template-inputs input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background-color: #DFE4F2;
+  font-size: 0.95rem;
+  color: #000000;
+}
+
+/* 在 > 750px 時改為水平排列 */
+@media (min-width: 750px) {
+  .add-template-inputs {
+    flex-direction: row;
+  }
+}
+
+.add-template-form button {
+  padding: 0.5rem 1rem;
+  background-color: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.note-templates-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  padding-bottom: 200px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.note-template-item {
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  background-color: white;
+  border-radius: 4px;
+  border-left: 3px solid #4f46e5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  padding-left: 20px;
+}
+
+.template-info {
+  flex: 1;
+  text-align: left;
+}
+
+.template-name {
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 0.25rem;
+}
+
+.template-id {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.delete-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+.delete-button img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.loading, .error, .no-templates {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.error {
+  color: #dc2626;
+}
+
+.note-config-footer {
+  padding: 1rem;
+  background-color: white;
+  border-top: 1px solid #e5e7eb;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.import-export-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-button, .export-button {
+  padding: 0.5rem 1rem;
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.save-button-footer {
+  padding: 0.5rem 1rem;
+  background-color: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.save-button-footer:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* 手機版樣式 */
+.note-config-container.mobile {
+  max-width: 100%;
+}
+
+.mobile .note-config-header {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.mobile .header-actions {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.mobile .header-actions button {
+  flex: 1;
+}
+
+.mobile .note-config-footer {
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.mobile .import-export-buttons,
+.mobile .save-button-footer {
+  width: 100%;
+}
+
+.mobile .import-export-buttons {
+  justify-content: space-between;
+}
+
+.mobile .import-button,
+.mobile .export-button {
+  flex: 1;
+}
+
+/* 平板版樣式 */
+.note-config-container.tablet {
+  max-width: 100%;
+  width: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background-color: #f9fafb;
+}
+
+.tablet .note-config-header {
+  padding: 1rem 2rem;
+}
+
+.tablet .search-bar {
+  padding: 0.75rem 2rem;
+}
+
+.tablet .add-template-form {
+  padding: 1rem 2rem;
+}
+
+.tablet .note-templates-list {
+  padding: 1rem 2rem;
+  padding-bottom: 180px;
+  margin-bottom: 90px;
+}
+
+.tablet .note-config-footer {
+  padding: 1rem 2rem;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .note-config-container {
+    height: auto;
+    max-height: calc(100vh - 80px);
+  }
+  
+  .note-templates-list {
+    padding-bottom: 150px;
+  }
+} 

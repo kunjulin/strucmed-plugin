@@ -1,0 +1,261 @@
+.barcode-scanner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.barcode-scanner-container {
+  width: 90%;
+  max-width: 500px;
+  background-color: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.barcode-scanner {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  max-height: 700px;
+}
+
+.scanner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+}
+
+.scanner-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.close-button {
+  background-color: transparent;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+.close-button:hover {
+  background-color: #e0e0e0;
+}
+
+.scanner-viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background-color: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.targeting-box {
+  position: absolute;
+  width: 70%;
+  height: 30%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(0, 255, 0, 0.7);
+  border-radius: 10px;
+  box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.scanning-line {
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background-color: #00ff00;
+  top: 50%;
+  left: 0;
+  z-index: 3;
+  animation: scan 2s linear infinite;
+}
+
+@keyframes scan {
+  0% {
+    top: 40%;
+    opacity: 0.8;
+  }
+  50% {
+    top: 60%;
+    opacity: 1;
+  }
+  100% {
+    top: 40%;
+    opacity: 0.8;
+  }
+}
+
+.scanner-error {
+  color: #fff;
+  text-align: center;
+  padding: 20px;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 5px;
+  margin: 20px;
+}
+
+.scanner-actions {
+  padding: 15px;
+  display: flex;
+  justify-content: center;
+  background-color: #f8f8f8;
+}
+
+.restart-button {
+  padding: 10px 20px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.restart-button:hover {
+  background-color: #3a7bc8;
+}
+
+/* 病歷號輸入欄位樣式 */
+.chtno-input-container {
+  display: flex;
+  align-items: center;
+}
+
+.barcode-scan-button {
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-left: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.barcode-scan-button:hover {
+  background-color: #e0e0e0;
+}
+
+/* 移動設備適配 */
+@media (max-width: 768px) {
+  .barcode-scanner-container {
+    width: 95%;
+    height: 90%;
+    max-width: none;
+  }
+  
+  .barcode-scanner {
+    height: 100%;
+  }
+}
+
+/* 掃描結果對話框樣式 */
+.scan-result-dialog {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+.scan-result-content {
+  width: 80%;
+  max-width: 400px;
+  background-color: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.scan-result-content h4 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+  text-align: center;
+}
+
+.scan-result-text {
+  padding: 15px;
+  background-color: #f8f8f8;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  font-size: 18px;
+  font-weight: bold;
+  word-break: break-all;
+  text-align: center;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.1);
+}
+
+.scan-result-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.confirm-button, .cancel-button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.confirm-button {
+  background-color: #4a90e2;
+  color: white;
+}
+
+.confirm-button:hover {
+  background-color: #3a7bc8;
+}
+
+.cancel-button {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.cancel-button:hover {
+  background-color: #e0e0e0;
+} 

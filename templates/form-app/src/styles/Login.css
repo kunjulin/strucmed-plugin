@@ -1,0 +1,128 @@
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background-color: #f5f5f5;
+}
+
+.login-logo {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.login-logo img {
+  max-width: 200px;
+  height: auto;
+}
+
+.login-form-container {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 380px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input,
+.form-group select {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  background-color: #f9f9f9;
+  color: #000000; /* 確保文字顏色為黑色 */
+}
+
+/* 特別強調輸入時的文字顏色 */
+.form-group input:focus,
+.form-group select:focus {
+  color: #000000;
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.login-button {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #f97316;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.login-button:hover {
+  background-color: #ea580c;
+}
+
+.login-button:disabled {
+  background-color: #ffa07a;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #dc2626;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.version-info {
+  margin-top: 2rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+/* 響應式設計 */
+@media (max-width: 480px) {
+  .login-form-container {
+    padding: 1.5rem;
+  }
+  
+  .login-logo img {
+    max-width: 150px;
+  }
+} 
+/* 修正iPhone樣式 */
+@media screen and (max-width: 480px) {
+  body, html, #root, .app {
+    background-color: white;
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+    overflow-x: hidden;
+  }
+  
+  .login-container {
+    background-color: white;
+    padding: 0;
+    width: 100%;
+  }
+}

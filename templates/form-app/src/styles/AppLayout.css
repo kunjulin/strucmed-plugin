@@ -1,0 +1,205 @@
+.app-layout {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 平板和桌面佈局 */
+.app-layout.tablet-desktop {
+  flex-direction: row;
+  height: 100vh;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.app-layout.tablet-desktop .sidebar {
+  width: 300px;
+  min-width: 280px;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 修改後的主內容區域樣式 */
+.app-layout.tablet-desktop .main-content {
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 行動裝置佈局 */
+.app-layout.mobile {
+  flex-direction: column;
+}
+
+.no-form-selected {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  font-size: 1.1rem;
+  color: #6b7280;
+  background-color: #f9fafb;
+}
+
+/* 媒體查詢以支持不同裝置大小 */
+@media (max-width: 640px) {
+  .app-layout.tablet-desktop .sidebar {
+    width: 300px;
+    min-width: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-layout.tablet-desktop {
+    flex-direction: column;
+  }
+  
+  .app-layout.tablet-desktop .sidebar {
+    width: 100%;
+    height: auto;
+    /* max-height: 50vh; */
+    /* display: none; */
+  }
+  
+  .app-layout.tablet-desktop .main-content {
+    flex: 1;
+    height: auto;
+  }
+}
+
+/* 表單列表包裝器，用於容納設定按鈕 */
+.form-list-wrapper {
+  position: relative;
+  height: 100%;
+}
+
+/* 設定按鈕樣式 */
+.config-button {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #4f46e5;
+  color: white;
+  font-size: 24px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  transition: transform 0.2s, background-color 0.2s;
+}
+
+.config-button:hover {
+  background-color: #4338ca;
+  transform: scale(1.05);
+}
+
+.config-button:active {
+  transform: scale(0.95);
+}
+
+/* 離開按鈕樣式 */
+.exit-button {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1000;
+  transition: transform 0.2s;
+}
+
+.exit-button:hover {
+  transform: scale(1.05);
+}
+
+.exit-button:active {
+  transform: scale(0.95);
+}
+
+.exit-button img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+/* 移動裝置上的按鈕佈局 */
+.mobile-buttons {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+  z-index: 1000;
+}
+
+.mobile-buttons .config-button {
+  width: 40px;
+  height: 40px;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+  top: 0px;
+  right: 60px;
+}
+
+.mobile-buttons .config-button:hover,
+.mobile-buttons .exit-button:hover {
+  transform: scale(1.05);
+}
+
+.mobile-buttons .config-button:active,
+.mobile-buttons .exit-button:active {
+  transform: scale(0.95);
+}
+
+.mobile-buttons .config-button img,
+.mobile-buttons .exit-button img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+/* 移動裝置上的退出按鈕 */
+.mobile-buttons .exit-button {
+  position: static;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .app-layout {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: auto;
+  }
+} 

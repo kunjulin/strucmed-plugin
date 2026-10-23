@@ -1,0 +1,11 @@
+{
+  "appName": "__APP_NAME__",
+  "shortName": "__APP_SHORT__",
+  "version": "__APP_VERSION__",
+  "hosting": "H0",
+  "siteBase": "/strucmed",
+  "templates": [],
+  "allowUserList": true,
+  "errorlog": { "enabled": true, "base": "/FM" },
+  "idleTimeoutMs": 1800000
+}

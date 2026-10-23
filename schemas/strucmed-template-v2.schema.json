@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kunjulin/strucmed-plugin/schemas/strucmed-template-v2.schema.json",
+  "title": "StrucMed 範本套件 v2（strucmed.template/v2）",
+  "description": "表單範本的匯入匯出格式，涵蓋所有選項。form 為編輯器 GetData() 陣列原樣；templateID 僅供追溯，匯入時永不沿用。",
+  "type": "object",
+  "required": ["format", "exportedAt", "generator", "template", "form", "presets", "dictionaries", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "strucmed.template/v2" },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "exportedBy": { "type": "string", "description": "匯出者代號（自報，僅供參考）；MCP 產生時為空字串" },
+    "generator": { "type": "string", "description": "例：editor 1.6 / strucmed-skill 0.2.0" },
+    "template": {
+      "type": "object",
+      "required": ["name", "shortcut", "groups", "description", "folder", "editorver"],
+      "additionalProperties": false,
+      "properties": {
+        "templateID": { "type": "string", "description": "匯出來源的 templateID（新產生者為空字串）；匯入時不沿用" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 36 },
+        "shortcut": { "type": "string", "description": "捷徑名稱（小寫）；空字串＝不上架" },
+        "groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["門", "住", "急", "手術", "檢查", "助手"] },
+          "description": "作業別；空陣列＝不上架。All 以全部 6 項表示"
+        },
+        "description": { "type": "string", "description": "表單 Info" },
+        "folder": {
+          "type": "object",
+          "required": ["type", "code"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["usr", "sub", "dpt", "sys", ""] },
+            "code": { "type": "string", "description": "shortcutsourceID；僅供參考，匯入時存到使用者目前開啟的資料夾" }
+          }
+        },
+        "rev": { "type": "integer", "minimum": 0, "description": "P2 起由組合 API 維護；P0 為 0" },
+        "derivedFrom": {
+          "type": "object",
+          "description": "v1 改版：來源表單（僅供追溯；匯入時不沿用其 ID）",
+          "required": ["templateID", "name", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "templateID": { "type": "string" },
+            "name": { "type": "string" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "來源 form 的 sha256(JSON.stringify(form))" }
+          }
+        },
+        "editorver": { "type": "string" }
+      }
+    },
+    "form": {
+      "type": "array",
+      "minItems": 2,
+      "description": "GetData() 陣列：區塊 …、{itemtype:'javascript'}、{itemtype:'iot'}",
+      "items": { "type": "object", "required": ["itemtype"] }
+    },
+    "presets": {
+      "type": "array",
+      "description": "表單預設（recType=templatePreset 的內容）；P0 匯入時只顯示、不寫入（寫入需 P2 組合 API）",
+      "items": {
+        "type": "object",
+        "required": ["name", "user"],
+        "properties": {
+          "name": { "type": "string" },
+          "user": { "type": "string", "description": "all＝公用，其餘為使用者代號" },
+          "xmlContent": {}
+        }
+      }
+    },
+    "dictionaries": {
+      "type": "array",
+      "description": "form 中參照到的字典；id 為空字串代表匯入時需新建（須用「匯入表單及字典」）",
+      "items": {
+        "type": "object",
+        "required": ["id", "dicName", "dicType"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "dicName": { "type": "string", "minLength": 1 },
+          "dicType": { "type": "string" },
+          "dicComment": { "type": "string" }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["alg", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": { "const": "sha256(JSON.stringify({form,presets}))" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

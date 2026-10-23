@@ -1,0 +1,764 @@
+{
+ "name": "generated-v1tables",
+ "description": "strucmed-mcp v1 產生的表格與頁籤區塊（formtable 兩列含字典與計算式、tab1、tab2、table1、table2）；預期 F→G1 只有環境欄位差異",
+ "deptNo": "TEST0",
+ "dicsource": [
+  {
+   "value": "V1_HEIGHT",
+   "id": "v1test-dic-001",
+   "dicType": "TEST0",
+   "dicComment": "v1 test",
+   "createUser": "V0TEST"
+  }
+ ],
+ "form": [
+  {
+   "itemtype": "formtable",
+   "itemid": "1",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "row",
+     "columns": "3,3",
+     "item": [
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "身高："
+        },
+        {
+         "itemid": 2,
+         "datatype": "numberbox",
+         "datavalue": "",
+         "dictionary": "V1_HEIGHT",
+         "dicid": "v1test-dic-001",
+         "dicrole": "puthis",
+         "tag": "",
+         "formula": "",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "numberbox",
+         "id": "ctrl_2",
+         "format": "",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項",
+         "reference": "",
+         "minval": "50",
+         "maxval": "250",
+         "numpad": false
+        }
+       ]
+      },
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "體重："
+        },
+        {
+         "itemid": 3,
+         "datatype": "numberbox",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "numberbox",
+         "id": "ctrl_3",
+         "format": "",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項",
+         "reference": "",
+         "minval": "1",
+         "maxval": "300",
+         "numpad": false
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "itemtype": "row",
+     "columns": "2,2,2",
+     "item": [
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "BMI："
+        },
+        {
+         "itemid": 4,
+         "datatype": "label",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "IF(AND(A2 > 0, A3 > 0), ROUND(A3 / POWER(A2 / 100, 2), 1), \"\")",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "label",
+         "id": "ctrl_4",
+         "format": "formula",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項",
+         "reference": ""
+        }
+       ]
+      },
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "吸菸："
+        },
+        {
+         "itemid": 5,
+         "datatype": "radiobutton",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "radiobutton",
+         "id": "ctrl_5",
+         "format": "",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [
+          {
+           "value": "有",
+           "further": ""
+          },
+          {
+           "value": "無",
+           "further": ""
+          }
+         ],
+         "text": "選項控制項",
+         "row": 2
+        },
+        {
+         "datatype": "newline"
+        },
+        {
+         "datatype": "text",
+         "datavalue": "備註："
+        },
+        {
+         "itemid": 6,
+         "datatype": "textbox",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "textbox",
+         "id": "ctrl_6",
+         "format": "",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項",
+         "reference": ""
+        }
+       ]
+      },
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "日期："
+        },
+        {
+         "itemid": 7,
+         "datatype": "calendar",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "",
+         "tocalc": true,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "calendar",
+         "id": "ctrl_7",
+         "format": "date",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "itemtype": "tab1",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "td",
+     "datatitle": "病史",
+     "item": [
+      {
+       "datatype": "text",
+       "datavalue": "主訴："
+      },
+      {
+       "itemid": 9,
+       "datatype": "textarea",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": true,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "textarea",
+       "id": "ctrl_9",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": "",
+       "fromTemplate": false,
+       "fromTemplateID": ""
+      },
+      {
+       "datatype": "newline"
+      },
+      {
+       "datatype": "text",
+       "datavalue": "天數："
+      },
+      {
+       "itemid": 10,
+       "datatype": "numberbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": true,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "numberbox",
+       "id": "ctrl_10",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": "",
+       "minval": "0",
+       "maxval": "365",
+       "numpad": false
+      }
+     ]
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "用藥",
+     "item": [
+      {
+       "itemid": 11,
+       "datatype": "checkbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": true,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "checkbox",
+       "id": "ctrl_11",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [
+        {
+         "value": "aspirin",
+         "further": ""
+        },
+        {
+         "value": "statin",
+         "further": ""
+        }
+       ],
+       "text": "選項控制項",
+       "row": 4
+      }
+     ]
+    }
+   ],
+   "itemid": "8"
+  },
+  {
+   "itemtype": "tab2",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "td",
+     "datatitle": "第一頁",
+     "item": [
+      {
+       "itemid": 13,
+       "datatype": "textbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": true,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "textbox",
+       "id": "ctrl_13",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": ""
+      }
+     ]
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "第二頁",
+     "item": [
+      {
+       "itemid": 14,
+       "datatype": "selection",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": true,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "selection",
+       "id": "ctrl_14",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [
+        {
+         "value": "甲",
+         "further": ""
+        },
+        {
+         "value": "乙",
+         "further": ""
+        }
+       ],
+       "text": "選項控制項"
+      }
+     ]
+    }
+   ],
+   "itemid": "12"
+  },
+  {
+   "itemtype": "table1",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "td",
+     "datatitle": "藥名",
+     "item": [
+      {
+       "itemid": 16,
+       "datatype": "textbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "textbox",
+       "id": "ctrl_16",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": ""
+      }
+     ]
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "劑量",
+     "item": [
+      {
+       "itemid": 17,
+       "datatype": "numberbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "numberbox",
+       "id": "ctrl_17",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": "",
+       "minval": "0",
+       "maxval": "1000",
+       "numpad": false
+      }
+     ]
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "頻次",
+     "item": [
+      {
+       "itemid": 18,
+       "datatype": "selection",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "selection",
+       "id": "ctrl_18",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [
+        {
+         "value": "QD",
+         "further": ""
+        },
+        {
+         "value": "BID",
+         "further": ""
+        },
+        {
+         "value": "TID",
+         "further": ""
+        }
+       ],
+       "text": "選項控制項"
+      }
+     ]
+    }
+   ],
+   "itemid": "15"
+  },
+  {
+   "itemtype": "table2",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "td",
+     "datatitle": "日期",
+     "item": [
+      {
+       "itemid": 20,
+       "datatype": "calendar",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "calendar",
+       "id": "ctrl_20",
+       "format": "date",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項"
+      }
+     ]
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "數值",
+     "item": [
+      {
+       "itemid": 21,
+       "datatype": "numberbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "numberbox",
+       "id": "ctrl_21",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "reference": "",
+       "minval": "0",
+       "maxval": "100",
+       "numpad": false
+      }
+     ]
+    }
+   ],
+   "itemid": "19"
+  },
+  {
+   "itemtype": "javascript",
+   "content": "// generated-by: strucmed-skill v1.2.0 harness-fixture"
+  },
+  {
+   "itemtype": "iot",
+   "editorver": "1.6",
+   "sheetid": "",
+   "f_opdno": false,
+   "f_chtno": true,
+   "templateID": "",
+   "f_histext": "histextbyblock",
+   "f_hideprevicon": false,
+   "f_hideAssist": false,
+   "f_hidePreset": false,
+   "f_day": "30",
+   "d_url": "",
+   "modifiedUser": "strucmed-skill",
+   "modifiedDept": "",
+   "modifiedDate": 0
+  }
+ ]
+}

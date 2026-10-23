@@ -1,0 +1,69 @@
+{
+  "name": "strucmed",
+  "version": "2.4.0",
+  "description": "長庚結構化病歷 2.0（StrucMed）表單製作 plugin：與使用者互動設計表單、離線驗證與 runtime 預覽、經 strucmed API v2 上架、LlmGateway 模型白名單、表單 APP 產生。站台自動判斷院內／院外；只需在 /plugin configure 輸入 HIS 帳號密碼（密碼與 token 存安全儲存區），不經對話。",
+  "author": {
+    "name": "Kunjulin"
+  },
+  "repository": "https://github.com/kunjulin/strucmed-plugin",
+  "keywords": [
+    "strucmed",
+    "cgmh",
+    "structured-medical-record",
+    "form-builder",
+    "mcp"
+  ],
+  "userConfig": {
+    "his_account": {
+      "type": "string",
+      "title": "院內 HIS 帳號",
+      "description": "online_login 用的院內帳號（與編輯器登入相同）。院內站台自動判斷；院外使用時另填「院外站台網址」。範本的建立者與稽核紀錄就是這個帳號；留空＝離線模式。"
+    },
+    "his_password": {
+      "type": "string",
+      "title": "院內 HIS 密碼",
+      "description": "只在登入時送到 api/v2/auth/token 一次；存在 Claude Code 的安全儲存區，不寫進設定檔或對話。HIS 密碼每三個月變更，變更後請回來更新並 /reload-plugins。",
+      "sensitive": true
+    },
+    "llmgw_token": {
+      "type": "string",
+      "title": "LlmGateway token（選用，伺服器型）",
+      "description": "在 LlmGateway「我的帳號」核發，標籤建議 strucmed-plugin；只在院內網路使用（GET /v1/models 取模型白名單）。留空或院外＝模型白名單用內建靜態表。",
+      "sensitive": true
+    },
+    "fmapi_key": {
+      "type": "string",
+      "title": "FMapi 檢視金鑰（選用）",
+      "description": "FMapi 檢視金鑰；只在院內網路使用。",
+      "sensitive": true
+    },
+    "external_url": {
+      "type": "string",
+      "title": "院外站台網址（選用）",
+      "description": "院外使用時才填，必須是 https，網址請向資訊室確認；留空＝只在院內網路連線。plugin 不內建院外網址，填了才會把 HIS 帳密送到這個站台登入。"
+    },
+    "runtime_web": {
+      "type": "directory",
+      "title": "平台前端 web/ 本機副本（選用）",
+      "description": "runtime 驗證（HTML 預覽）需要 StrucMed 平台原始碼的 web/ 目錄副本；留空時用工作目錄的 repo/strucmed/web。"
+    }
+  },
+  "mcpServers": {
+    "strucmed": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/strucmed-mcp/src/server.mjs"
+      ],
+      "env": {
+        "STRUCMED_FLAGS": "${CLAUDE_PLUGIN_ROOT}/feature-flags.json",
+        "STRUCMED_USER": "${user_config.his_account}",
+        "STRUCMED_PASS": "${user_config.his_password}",
+        "LLMGW_API_KEY": "${user_config.llmgw_token}",
+        "FMAPI_API_KEY": "${user_config.fmapi_key}",
+        "STRUCMED_RUNTIME_WEB": "${user_config.runtime_web}",
+        "STRUCMED_EXTERNAL_URL": "${user_config.external_url}"
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "//": "strucmed plugin 的功能開關。true／false，或 \"auto\"＝依環境變數：online＝STRUCMED_ONLINE_BASE_URL、llmgateway＝LLMGW_API_KEY、fmapi＝FMAPI_BASE_URL。關閉的 tool 不會列出，呼叫回 E_FEATURE_DISABLED。",
+  "online": "auto",
+  "llmgateway": "auto",
+  "fmapi": "auto",
+  "templateUpdate": true,
+  "dictionaryWrite": false,
+  "llmChatTest": false,
+  "appBuilderB2": true,
+  "playwrightVerify": false,
+  "unattended": false
+}

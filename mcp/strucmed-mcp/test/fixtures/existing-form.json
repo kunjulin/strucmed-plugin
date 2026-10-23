@@ -1,0 +1,41 @@
+[
+  {
+    "itemtype": "form", "authread": ["doctor"], "authwrite": ["doctor"], "gettext": false, "itemid": "1",
+    "item": [
+      { "datatype": "text", "datavalue": "體重：" },
+      { "itemid": 2, "datatype": "numberbox", "datavalue": "", "dictionary": "SYN_WEIGHT", "dicid": "syn-dic-001", "dicrole": "tohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "minval": "0", "maxval": "300", "numpad": false, "reference": "", "panelId": "quill-form-editor", "type": "numberbox", "id": "ctrl_2", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "furActionID": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "datatype": "newline" },
+      { "datatype": "text", "datavalue": "身高：" },
+      { "itemid": 3, "datatype": "numberbox", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "minval": "", "maxval": "", "numpad": false, "reference": "", "panelId": "quill-form-editor", "type": "numberbox", "id": "ctrl_3", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "furActionID": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "datatype": "newline" },
+      { "datatype": "text", "datavalue": "BMI：" },
+      { "itemid": 4, "datatype": "label", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "ROUND(A2/((A3/100)*(A3/100)),1)", "format": "formula", "hisquery": "", "hisQueryTitle": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "reference": "", "panelId": "quill-form-editor", "type": "label", "id": "ctrl_4", "textareaHeight": "", "required": false, "furActionID": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "datatype": "newline" },
+      { "datatype": "text", "datavalue": "過敏：" },
+      { "itemid": 5, "datatype": "radiobutton", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "row": 2, "option": [{ "value": "無", "further": "" }, { "value": "有", "further": "6" }], "datagroup": "", "panelId": "quill-form-editor", "type": "radiobutton", "id": "ctrl_5", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "furActionID": "", "multiple": false, "text": "選項控制項" },
+      { "itemid": 6, "datatype": "textbox", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "reference": "", "furActionID": "", "panelId": "quill-form-editor", "type": "textbox", "id": "ctrl_6", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "datatype": "newline" },
+      { "itemid": 7, "datatype": "action", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "actionName": "計算", "actionID": 8, "actionScript": "MACRO(8, CONCATENATE(\"BMI=\", A4))", "panelId": "quill-form-editor", "type": "action", "id": "ctrl_7", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "required": false, "furActionID": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "itemid": 8, "datatype": "textbox", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "reference": "", "furActionID": "", "panelId": "quill-form-editor", "type": "textbox", "id": "ctrl_8", "format": "", "hisquery": "", "hisQueryTitle": "", "textareaHeight": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" },
+      { "datatype": "newline" },
+      { "datatype": "text", "datavalue": "舊參照：" },
+      { "itemid": 9, "datatype": "label", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "A99+1", "format": "formula", "hisquery": "", "hisQueryTitle": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "reference": "", "panelId": "quill-form-editor", "type": "label", "id": "ctrl_9", "textareaHeight": "", "required": false, "furActionID": "", "multiple": false, "datagroup": "", "option": [], "text": "選項控制項" }
+    ]
+  },
+  {
+    "itemtype": "formtable", "itemid": "10", "authread": ["doctor"], "authwrite": ["doctor"], "gettext": true,
+    "item": [
+      { "itemtype": "row", "columns": "3,3", "item": [
+        { "item": [ { "datatype": "text", "datavalue": "日期：" },
+          { "itemid": 11, "datatype": "calendar", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "format": "date", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false } ] },
+        { "item": [ { "datatype": "text", "datavalue": "群組：" },
+          { "itemid": 12, "datatype": "subgroup", "datavalue": [
+              { "itemid": 13, "datatype": "checkbox", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "row": 4, "option": [{ "value": "甲", "further": "" }], "datagroup": "" },
+              { "itemid": 14, "datatype": "textbox", "datavalue": "", "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "", "required": false, "reference": "" }
+            ], "dictionary": "", "dicid": "", "dicrole": "nohis", "tag": "", "formula": "", "tocalc": true, "toSAS": false, "fromdict": false, "efontcolor": "", "efontsize": 14, "ebackcolor": "" } ] }
+      ] }
+    ]
+  },
+  { "itemtype": "javascript", "content": "function synHelper(){ return 1; }" },
+  { "itemtype": "iot", "editorver": "1.6", "sheetid": "syn-template-0001", "f_opdno": true, "f_chtno": false, "templateID": "syn-template-0001", "f_histext": "histextbyblock", "f_hideprevicon": false, "f_hideAssist": false, "f_hidePreset": false, "f_day": "7", "d_url": "https://example.invalid/structure/", "modifiedUser": "原作者", "modifiedDept": "", "modifiedDate": 1700000000000 }
+]

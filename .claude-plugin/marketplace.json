@@ -1,0 +1,14 @@
+{
+  "name": "strucmed-marketplace",
+  "owner": { "name": "Kunjulin" },
+  "description": "StrucMed plugin 市集（本 repo 同時是市集與 plugin，source 為 repo 本身）。同仁安裝：claude plugin marketplace add kunjulin/strucmed-plugin → claude plugin install strucmed@strucmed-marketplace → /plugin configure strucmed@strucmed-marketplace；開發者改用本機資料夾：claude plugin marketplace add <本 repo 路徑>。",
+  "plugins": [
+    {
+      "name": "strucmed",
+      "source": ".",
+      "description": "長庚結構化病歷 2.0 表單製作：互動設計、離線驗證、runtime 預覽、經 strucmed API v2 上架、LlmGateway 模型白名單、表單 APP 產生（H0 本機 Docker）",
+      "category": "healthcare",
+      "tags": ["strucmed", "mcp", "form-builder", "cgmh"]
+    }
+  ]
+}

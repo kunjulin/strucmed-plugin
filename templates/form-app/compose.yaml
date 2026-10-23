@@ -1,0 +1,12 @@
+# strucmed form-app（H0 本機 Docker）
+#   npm run build → check-app-dist.mjs dist → docker compose build && docker compose up -d → http://localhost:__PORT__/（映像裝入主機建好的 dist/）
+# UPSTREAM 是院內站台的 https 根網址（不含路徑），由 scaffold 自 config.siteUrl 代入；不要放任何 token。
+services:
+  __APP_SLUG__:
+    build: .
+    image: __APP_SLUG__:__APP_VERSION__
+    environment:
+      UPSTREAM: "__UPSTREAM__"
+    ports:
+      - "__PORT__:80"
+    restart: unless-stopped

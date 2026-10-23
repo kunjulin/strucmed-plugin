@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+# logs / captures
+*.log
+*.har
+.playwright*
+# local reference clones & scratch (never commit)
+repo/
+scratch/
+node_modules/
+
+# v0 harness local output
+tools/v0-harness/out/
+tools/v0-harness/partB/returned/
+tools/v0-harness/samples/
+
+# strucmed-mcp local workspace (drafts, dictionary index, generated forms)
+.strucmed/
+output/
+

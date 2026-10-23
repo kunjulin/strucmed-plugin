@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>calx parity</title>
+<script src="/__harness/guard.js"></script>
+<script>window.__alerts = []; window.alert = function (m) { window.__alerts.push(String(m).slice(0, 200)); };</script>
+<!-- 載入順序與 平台 web/TempHtml.html 相同（新版平台含 numeral.js、jStat） -->
+<script src="/assets/js/vendor/jquery/jquery-1.12.4.min.js"></script>
+<script src="/assets/js/vendor/moment/moment-2.30.1.min.js"></script>
+<script src="/assets/js/vendor/numeral/numeral-1.5.6.min.js"></script>
+<script src="/assets/js/vendor/jstat/jstat-1.9.6.min.js"></script>
+<script src="/assets/js/vendor/jquery-calx-2.2.8 min.js"></script>
+</head><body>
+<div id="sheet">
+  <span data-cell="A1">5</span><span data-cell="A2">7</span><span data-cell="A3">9</span>
+</div>
+<pre id="log">running…</pre>
+<script>
+(async function () {
+  var $s = $('#sheet');
+  $s.calx();
+  // TempHtml 註冊的擴充函數以空殼代替（只測語法與名稱解析）
+  ['CHECKREQUIRED','GETTEXT','GETVALUE','G_USERNM','G_USERID','S_USERID','G_CHTNO','G_DEPTNO','S_DEPTNO','G_OPDNO','NOW2','NOWTIME',
+   'CKAUTOUPLOAD','CKIOTOW','SETIOTHEADER','SAVEDOC','CKAUTOXML','LOADDOC','LOADXML','CKAUTODWLOOKUP','LOOKUPDEFAULTSETTING',
+   'SETLOOKUPDEFAULT','LOOKUPDW','DWLOOKUP','LOOKUPIOT','GETOPDNO','GETPACSNO','GETDEPTNO','GETUSER','GETCHTNO','SETVALUEBYID',
+   'HISQUERY','LLMQUERY','APPLYPRESETBYNAME','CUSTOMFUNC','OPENURL','SETDICTATIONBYID'].forEach(function (n) {
+    $s.calx('registerFunction', n, function () { return 'stub:' + n; });
+  });
+  function run(expr) {
+    try { var v = $s.calx('evaluate', expr); return { expr: expr, ok: true, value: (v instanceof Date) ? 'Date' : v }; }
+    catch (e) { return { expr: expr, ok: false, error: String(e && e.message || e).slice(0, 200) }; }
+  }
+  var cases = (await (await fetch('/__fixtures/calx-cases.json')).json()).cases;
+  var extra = [];
+  try { extra = await (await fetch('/__out/calx-parity/local-cases.json')).json(); } catch (e) {}
+  var report = {
+    ranAt: new Date().toISOString(),
+    cases: cases.map(run),
+    local: extra.map(run),
+    alerts: window.__alerts,
+    // 內建函數是否可用：看 runtime 環境有沒有 numeral／jStat（以空參數實際呼叫會讓部分函數進入無窮迴圈）
+    deps: { numeral: typeof numeral !== 'undefined', jStat: typeof jStat !== 'undefined', moment: typeof moment !== 'undefined' }
+  };
+  await fetch('/__result?set=calx-parity', { method: 'POST', body: JSON.stringify(report, null, 1) });
+  document.getElementById('log').textContent = 'done: ' + report.cases.length + ' cases, ' + report.local.length + ' local';
+})();
+</script>
+</body></html>
