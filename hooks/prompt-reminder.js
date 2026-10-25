@@ -11,7 +11,7 @@ process.stdin.on('end', () => {
   if (!prompt) return process.exit(0);
   const notes = [];
   if (/病歷號|病人|患者|身分證|chtno|records_query|records_save/i.test(prompt))
-    notes.push('病人資料：只在使用者明確要求查某位病人時用 online_records_query（必帶病歷號）；查詢結果只留在對話，不寫進檔案、計畫或範本預設值；存病人紀錄兩段式確認。');
+    notes.push('病人資料：plugin 沒有查詢或存檔病人紀錄的 tool（平台對 strucmed-mcp 的 token 一律回 403），請使用者在編輯器或 HIS 操作；對話中出現的病人資料不寫進檔案、計畫或範本預設值。');
   if (/密碼|帳密|帳號密碼|token|api[ _-]?key|金鑰|secret/i.test(prompt))
     notes.push('帳密與金鑰：由使用者在 /plugin configure strucmed@strucmed-marketplace 填寫（密碼與 token 存安全儲存區），MCP 只從環境變數讀；不要在對話中索取或複誦，不寫進任何檔案；填完後 /reload-plugins。');
   if (/倉儲|直連/i.test(prompt))

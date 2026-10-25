@@ -1,4 +1,4 @@
-// Online client for the strucmed V2 API (api/v2/auth/*, templates, folders, records).
+// Online client for the strucmed V2 API (api/v2/auth/*, templates, folders, dictionaries, me/notes).
 // The site (院內 LVAIW／院外站台) is detected by site.mjs; STRUCMED_ONLINE_BASE_URL overrides it.
 // Security posture :
 //   - credentials come only from the process environment (STRUCMED_USER / STRUCMED_PASS), never from tool

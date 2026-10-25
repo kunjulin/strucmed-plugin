@@ -230,7 +230,7 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 `plugin.json` 以 `${CLAUDE_PLUGIN_ROOT}/mcp/strucmed-mcp/src/server.mjs` 註冊 `strucmed`（stdio，Node 20，零相依），tool 名稱為 `mcp__plugin_strucmed_strucmed__<tool>`。
 
 - **離線（一律可用）**：`form_create`／`form_import`／`form_add_area`／`form_add_control`／`form_update_control`／`form_validate`／`form_preview`／`form_export`、`dictionary_*`、`formula_check` 等 16 個。
-- **線上（有帳密且判斷出站台才列出）**：`online_login`／`me`／`features`／`folder_list`／`template_get`／`template_create`／`template_update`／`template_versions`、`online_dictionary_*`、`online_records_*`、`online_me_notes_*`。
+- **線上（有帳密且判斷出站台才列出）**：`online_login`／`me`／`features`／`folder_list`／`template_get`／`template_create`／`template_update`／`template_versions`、`online_dictionary_*`、`online_me_notes_*`。沒有查詢或存檔病人紀錄的 tool。
 - **LlmGateway（只有院內）**：`llmgateway_models`（白名單快取 `.strucmed/llm-models.json`，巨集模型檢查以此為準）、`llmgateway_chat_test`（flag 預設關）。
 - **FMapi（只有院內）**：`fmapi_status`（唯讀）。
 
@@ -258,7 +258,7 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 }
 ```
 
-寫入線上的 tool（`online_template_create`／`update`、`online_dictionary_*`、`online_records_save`、`online_me_notes_set`）建議**不要**預先允許，讓閘門與提示都留著。
+寫入線上的 tool（`online_template_create`／`update`、`online_dictionary_*`、`online_me_notes_set`）建議**不要**預先允許，讓閘門與提示都留著。
 
 ## Repo 結構
 
@@ -316,7 +316,7 @@ cd mcp/strucmed-mcp && npm test
 ## 安全約定
 
 - 帳密與 token 只由 `/plugin configure` 收，存安全儲存區；不寫入任何檔案、log、對話或 git。
-- 線上寫入只有「上架」與明確要求的病人紀錄存檔，全部兩段式並經閘門；永不提供刪除範本、刪除字典、`sys` 資料夾。
+- 線上寫入只有「上架」、字典與 struNote 清單，全部兩段式並經閘門；不提供病人紀錄的查詢與存檔；永不提供刪除範本、刪除字典、`sys` 資料夾。
 - plugin 不直連倉儲；B2 app 的存檔經 `records/save` API。
 - `.gitignore` 排除 `.env*`、`*.log`、`*.har`、`repo/`、`scratch/`、`.strucmed/`、`output/`、`node_modules/`。
 

@@ -1,4 +1,4 @@
-# strucmed-mcp（v1.9.0）
+# strucmed-mcp（v1.10.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。預設完全離線；設定院內 HIS 帳密後，自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool（見下方〈線上 tool〉）。
 
@@ -62,7 +62,6 @@ claude
 | `online_logout` | — | 清除記憶體中的 token |
 | `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size` |
 | `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
-| `online_records_query` | `POST api/v2/records/query/data`、`/image` | 病人資料，唯讀；**必須帶 `query.chtno`**（本機先擋，不送出）；只轉送 12 個倉儲欄位，其他欄位略過並回警告；`max_items` 預設 50、上限 200 |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
 | `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
 | `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact&q=` | 唯讀；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此 |
@@ -71,7 +70,6 @@ claude
 | `online_template_versions` | `GET api/v2/templates/{id}/versions` | 唯讀；版本清單 |
 | `online_dictionary_create`／`online_dictionary_batch` | `POST api/v2/dictionaries`、`/batch` | **寫入字典**（flag `dictionaryWrite`）；同名沿用；已刪除同名回 `E_DELETED_EXISTS` 不自動 force；成功後綁回 draft 與本機索引 |
 | `online_me_notes_get`／`online_me_notes_set` | `GET/PUT api/v2/me/notes` | struNote 表單清單；set 整份取代（`add`／`remove` 增量），兩段式 plan 顯示新增／移除／改名 |
-| `online_records_save` | `POST api/v2/records/save` | 寫入病人紀錄；**兩段式確認**（與 `form_export` 相同的 HMAC `confirm_token`，綁定站台、登入者與完整本文）。`iot.user` 一律是登入者、科部預設登入科部；覆寫（`xml_fill_id`）由伺服器確認同病人、同表單、同建立者才生效，否則另存並回 `W_OVERWRITE_DENIED` |
 
 token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）換新並重試一次；refresh 也失敗時清除 session，回 `E_AUTH` 要求重新 `online_login`。錯誤碼：`E_ONLINE_DISABLED`（未設定帳密、兩個站台都連不到或網址不合規定）、`E_AUTH`（未登入、帳密錯誤〔`details.reconfigure`〕、token 失效）、`E_UPSTREAM`（伺服器或倉儲錯誤、連不到、轉址；`details.status` 為 HTTP 狀態）。
 
@@ -79,8 +77,8 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 - **帳密不經過 LLM**：`online_login` 沒有帳號密碼參數；密碼只在登入時送到 `api/v2/auth/token` 一次。
 - **不留痕跡**：密碼與 access／refresh token 只存在本次 MCP 行程的記憶體（重新啟動即失效），**不回傳、不寫檔、不寫 log**；錯誤訊息不含請求本文。測試以假伺服器檢查整個 stdout、stderr 與工作目錄都不含密碼或 token。
 - **只連判斷出的站台**：站台探測只 GET `api/health`、不帶憑證；只接受 https（本機例外）；**不跟隨轉址**（避免 bearer token 被帶到其他主機）；逾時 30 秒、不自動重試（401 換 token 的那一次除外）。
-- **身分由 token 決定**：伺服器以 token 的使用者覆蓋 records 的 `user`、`deptNo`，並記錄每次查詢與存檔（含病歷號）；伺服器的開關與白名單（`V2:RuntimeSave`、`V2:RuntimeQuery`）照常適用。
-- **病人資料**：查詢結果會進入對話內容；只在使用者明確要求查某位病人時使用，存檔前必須把 plan 給使用者確認。
+- **身分與權限由 token 決定**：伺服器以 token 的使用者決定可寫的資料夾與 struNote 清單，並記錄每次寫入；`clientId: "strucmed-mcp"` 的 token 只能呼叫範本、字典與 `me/notes`。
+- **不碰病人資料**：沒有查詢或存檔病人紀錄的 tool；平台對 `strucmed-mcp` 的 token 呼叫病人紀錄、匯出與管理 API 一律回 403。使用者要查或存病人紀錄，請其在編輯器或 HIS 操作。
 
 ## LlmGateway tool（院內＋`LLMGW_API_KEY`）
 | tool | API | 說明 |

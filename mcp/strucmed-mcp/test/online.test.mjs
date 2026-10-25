@@ -101,13 +101,6 @@ function handler(req, res) {
         : { row: i + 1, ok: true, action: 'create', id: 'D-' + (++dictSeq), dicName: row.dicName });
       return json(res, 200, { ok: true, total: results.length, succeeded: results.filter(x => x.ok).length, results });
     }
-    if (req.method === 'POST' && (m = p.match(/^api\/v2\/records\/query\/(data|image)$/)))
-      return json(res, 200, [{ fillID: 'F1', chtno: body.query.chtno, kind: m[1] }, { fillID: 'F2', chtno: body.query.chtno, kind: m[1] }]);
-    if (req.method === 'POST' && p === 'api/v2/records/save') {
-      if (body.iot.user !== USER_ID) return err(res, 400, 'E_INVALID_INPUT', 'iot.user 與傳入的使用者不同');
-      return json(res, 200, { ok: true, overwrite: false, overwriteDenied: !!body.xmlfillID,
-        kv: { success: 'Y', msg: '', fillID: 'KV1' }, xml: { success: 'Y', msg: '', fillID: 'XML1' } });
-    }
     if (req.method === 'GET' && p === 'api/v2/me/notes') return json(res, 200, { ok: true, fillID: 'N1', items: notes });
     if (req.method === 'PUT' && p === 'api/v2/me/notes') { notes = (body.items || []).map(x => ({ dictID: x.dictID, dictVal: x.dictVal })); return json(res, 200, { ok: true, fillID: 'N1', count: notes.length }); }
     if (req.method === 'GET' && p === 'api/v2/me')
@@ -182,7 +175,7 @@ test('offline by default: online tools hidden and disabled, no network', async (
   try {
     const list = await off.rpc('tools/list', {});
     assert.ok(!list.result.tools.some(t => t.name.startsWith('online_')), 'online tools not listed when unconfigured');
-    for (const name of ['online_login', 'online_template_get', 'online_records_save']) {
+    for (const name of ['online_login', 'online_template_get', 'online_me_notes_set']) {
       const r = await off.call(name, { template_id: 'T-1' });
       assert.equal(r.error.code, 'E_ONLINE_DISABLED', name);
     }
@@ -208,8 +201,10 @@ test('online tools need a login first', async () => {
   try {
     const list = await m.rpc('tools/list', {});
     const names = list.result.tools.map(t => t.name);
-    for (const n of ['online_login', 'online_logout', 'online_folder_list', 'online_template_get', 'online_records_query', 'online_records_save', 'form_create'])
+    for (const n of ['online_login', 'online_logout', 'online_folder_list', 'online_template_get', 'online_me_notes_get', 'form_create'])
       assert.ok(names.includes(n), n);
+    for (const n of ['online_records_query', 'online_records_save'])
+      assert.ok(!names.includes(n), `${n} was removed (platform returns 403 for strucmed-mcp tokens)`);
     const login = list.result.tools.find(t => t.name === 'online_login');
     assert.deepEqual(Object.keys(login.inputSchema.properties).sort(), ['dept_no', 'hospital'], 'no credential parameters');
     assert.equal((await m.call('online_template_get', { template_id: 'T-1' })).error.code, 'E_AUTH');
@@ -308,64 +303,6 @@ test('upstream errors and redirects are reported, redirects are not followed', a
   assert.equal(r.error.code, 'E_UPSTREAM');
   assert.match(r.error.message, /轉址/);
   assert.equal(reqs.length, 1, 'redirect target was not requested');
-});
-
-test('records query requires a chart number and forwards only the 12 warehouse fields', async () => {
-  await mcp.call('online_login', {});
-  reqs = [];
-  assert.equal((await mcp.call('online_records_query', { kind: 'data', query: { sheetid: 'T-1' } })).error.code, 'E_INVALID_INPUT');
-  assert.equal((await mcp.call('online_records_query', { kind: 'image', query: { chtno: 'Shortcut' } })).error.code, 'E_INVALID_INPUT');
-  assert.equal(reqs.length, 0, 'rejected locally');
-
-  const r = await mcp.call('online_records_query', { kind: 'image', query: { chtno: 'P000', sheetid: 'T-1', status: 'XMLdoc', assetNo: 'X', foo: 1 }, max_items: 1 });
-  assert.equal(r.ok, true);
-  assert.equal(reqs[0].path, '/strucmed/api/v2/records/query/image');
-  assert.deepEqual(reqs[0].body, { patient: 'P000', source: 'strucmed-mcp', query: { chtno: 'P000', sheetid: 'T-1', status: 'XMLdoc' } });
-  assert.equal(r.data.count, 2);
-  assert.equal(r.data.items.length, 1);
-  assert.equal(r.data.truncated, true);
-  assert.ok(r.warnings.some(w => w.includes('assetNo') && w.includes('foo')));
-});
-
-test('records save is two-step: plan + confirm_token, then POST with iot.user from the token', async () => {
-  await mcp.call('online_login', { dept_no: 'APP' });
-  reqs = [];
-  const args = { template_id: 'T-1', chtno: 'P000', opdno: 'O1', xml_content: '<doc>ok</doc>', detail: [{ dictID: 'd1', dictValue: '1' }] };
-  const plan = await mcp.call('online_records_save', args);
-  assert.equal(plan.ok, true);
-  assert.equal(reqs.length, 0, 'first call does not write');
-  assert.equal(plan.data.plan.chtno, 'P000');
-  assert.equal(plan.data.plan.user_id, USER_ID);
-  assert.equal(plan.data.plan.action, '新增病人紀錄');
-  assert.ok(plan.data.confirm_token);
-
-  const changed = await mcp.call('online_records_save', { ...args, xml_content: '<doc>changed</doc>', confirm_token: plan.data.confirm_token });
-  assert.equal(changed.error.code, 'E_CONFIRM_MISMATCH');
-  const forged = await mcp.call('online_records_save', { ...args, confirm_token: '9999999999999.deadbeef' });
-  assert.equal(forged.error.code, 'E_CONFIRM_MISMATCH');
-  assert.equal(reqs.length, 0);
-
-  const done = await mcp.call('online_records_save', { ...args, confirm_token: plan.data.confirm_token });
-  assert.equal(done.ok, true);
-  assert.equal(done.data.result.xml.fillID, 'XML1');
-  assert.equal(reqs.length, 1);
-  assert.equal(reqs[0].path, '/strucmed/api/v2/records/save');
-  const b = reqs[0].body;
-  assert.equal(b.iot.user, USER_ID);
-  assert.equal(b.iot.deptNo, 'APP');
-  assert.equal(b.iot.chtno, 'P000');
-  assert.equal(b.iot.sheetid, 'T-1');
-  assert.equal(b.templateID, 'T-1');
-  assert.equal(b.xmlContent, '<doc>ok</doc>');
-  assert.ok(!('assetNo' in b.iot) && !('user' in b), 'no assetNo, identity left to the token');
-  assert.deepEqual(b.iot.detail, args.detail);
-
-  // 覆寫被拒（伺服器判斷）→ 警告
-  const ow = { ...args, xml_fill_id: 'XML0' };
-  const p2 = await mcp.call('online_records_save', ow);
-  assert.match(p2.data.plan.action, /覆寫/);
-  const d2 = await mcp.call('online_records_save', { ...ow, confirm_token: p2.data.confirm_token });
-  assert.ok(d2.warnings.some(w => w.startsWith('W_OVERWRITE_DENIED')));
 });
 
 test('logout clears the in-memory tokens', async () => {

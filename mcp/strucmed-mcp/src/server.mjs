@@ -31,8 +31,7 @@ const INSTRUCTIONS =
 const ONLINE_INSTRUCTIONS =
   ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（帳密取自環境變數，絕不在對話中索取密碼；' +
   '回 E_AUTH 且 details.reconfigure 時，請使用者執行 /plugin configure strucmed@strucmed-marketplace 更新 HIS 密碼，不要重試）→ online_me／online_features／online_dictionary_search／online_folder_list／online_template_get（唯讀）、' +
-  'online_records_query（必須帶病歷號，只在使用者明確要求時查詢）、online_records_save（兩段式確認，plan 必須先給使用者看）；' +
-  'online_template_create／online_template_update（上架，兩段式，plan 是閘門 G3，核准前不得呼叫第二次）、online_dictionary_create／batch（flag dictionaryWrite）、online_template_versions、online_me_notes_get／set（struNote 清單，set 兩段式）。';
+  'online_template_create／online_template_update（上架，兩段式，plan 是閘門 G3，核准前不得呼叫第二次）、online_dictionary_create／batch（flag dictionaryWrite）、online_template_versions、online_me_notes_get／set（struNote 清單，set 兩段式）。沒有查詢或存檔病人紀錄的 tool（平台對 strucmed-mcp 的 token 一律回 403），請使用者在編輯器或 HIS 操作。';
 const LLMGW_INSTRUCTIONS =
   ' LlmGateway 已設定（LLMGW_BASE_URL／LLMGW_API_KEY）：llmgateway_models 取得模型白名單快取（之後 form_validate／formula_check 以此檢查巨集模型）；llmgateway_chat_test（flag llmChatTest）只用白名單模型試跑去識別化的 prompt。';
 const onlineNames = new Set(ONLINE_TOOLS.map(t => t.name));
