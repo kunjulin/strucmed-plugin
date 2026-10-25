@@ -10,7 +10,7 @@ allowed-tools: Read, Bash(node *)
 # connect-strucmed
 
 目的：讓後續流程知道「現在能用什麼」。全部只讀；strucmed 以瀏覽器登入（HIS 密碼只在站台登入頁輸入），選用的 token 由使用者自己以 `/plugin configure` 或環境變數提供，本 skill 只檢查有沒有，不設定、不索取。
-站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 使用者在 `/plugin configure` 填的「院外站台網址」（沒有 LlmGateway 與 FMapi；未填就是離線）；兩邊都連不到 → 離線。
+站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 內建的院外站台 `https://cgmh.ddns.net`（沒有 LlmGateway 與 FMapi；`/plugin configure` 的「院外站台網址」只在資訊室公告新網址時才需要填，填 `none` 則不探測院外）；兩邊都連不到 → 離線。
 
 ## 步驟
 
@@ -25,7 +25,7 @@ allowed-tools: Read, Bash(node *)
    - 回 `E_AUTH`「拒絕」：使用者在登入頁按了拒絕，問是否要重新登入。
    - 登入頁顯示「帳號或密碼錯誤」或「嘗試次數過多」是在瀏覽器裡處理的事（HIS 密碼每三個月變更；同一帳號連續 5 次錯誤鎖 15 分鐘），不要在對話中索取密碼。
    - 回應的 `site.label` 告訴使用者目前是院內或院外站台。token 只存在 MCP 記憶體，30 分鐘自動更新，同一次登入最長 8 小時；開新工作階段或 `/reload-plugins` 後需重新登入。
-3. 選填設定（院外使用、LlmGateway）：院外站台網址或 LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `STRUCMED_EXTERNAL_URL`、`LLMGW_API_KEY` 提供）。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
+3. 選填設定（LlmGateway）：LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `LLMGW_API_KEY` 提供）。院外站台網址不需要設定（內建 `https://cgmh.ddns.net`），只有資訊室公告新網址時才以「院外站台網址」或 `STRUCMED_EXTERNAL_URL` 覆寫。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
 4. 登入後：
    - `online_me`：記下 `user_id`、`dept_no`、`folders`（usr／sub／dpt 代碼）；之後建表的預設 `dept_no` 就用它。
    - `online_features`：回報三項狀態；`W_SITE_EXTERNAL`（院外站台）時告知：上架、`If-Match` 更新、字典與範本讀取都和院內相同，但沒有 LlmGateway、LLM 與語音，AI 巨集回院內再實測。`llm_gateway.enabled: false` 時告知「表單內的 LLM 按鈕仍走院內舊端點，不經閘道」；`runtime.save/query: false` 表示登入者不在 HIS 端存檔／查詢白名單（只影響 B1，不影響設計表單）。

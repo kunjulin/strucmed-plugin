@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.0.0）
+# strucmed-mcp（v2.1.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -22,7 +22,7 @@ node mcp/strucmed-mcp/src/server.mjs
 呼叫 strucmed 的 token 保護 API。
 
 ### 設定
-**不需要設定 HIS 帳密**（v2.0.0 起）。`/plugin configure strucmed@strucmed-marketplace` 只有選填項目：院外站台網址、LlmGateway token、FMapi 金鑰、平台 `web/` 副本；token 存安全儲存區，plugin.json 的 `mcpServers.env` 以 `${user_config.*}` 注入環境變數。填完 `/reload-plugins`。未填的選項展開為空字串，MCP 視為未設定。
+**不需要設定 HIS 帳密**（v2.0.0 起），**院外站台也不需要設定**（v2.1.0 起內建 `https://cgmh.ddns.net`）。`/plugin configure strucmed@strucmed-marketplace` 只有選填項目：LlmGateway token、FMapi 金鑰、院外站台網址（覆寫用）、平台 `web/` 副本；token 存安全儲存區，plugin.json 的 `mcpServers.env` 以 `${user_config.*}` 注入環境變數。填完 `/reload-plugins`。未填的選項展開為空字串，MCP 視為未設定。
 
 ### 站台自動判斷（`src/site.mjs`）
 MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/health`（只 GET、不帶憑證、逾時 3 秒；`STRUCMED_SITE` 不是 `auto` 或指定了 `STRUCMED_ONLINE_BASE_URL` 時不探測）：
@@ -30,7 +30,7 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 | 結果 | 站台 | LlmGateway／FMapi |
 |---|---|---|
 | 院內可連（不論院外） | 院內 `https://lvaiw.cgmf.org.tw/strucmed` | 院內預設 `/llmgw`、`/FM` |
-| 只有院外可連 | 院外站台（`/plugin configure` 的「院外站台網址」） | 不提供（院外連不到）；模型白名單用內建靜態表 |
+| 只有院外可連 | 院外站台 `https://cgmh.ddns.net`（內建；`STRUCMED_EXTERNAL_URL` 可覆寫，`none` 停用） | 不提供（院外連不到）；模型白名單用內建靜態表 |
 | 都連不到 | 離線（線上 tool 不列出；30 秒後再探測，例如接上 VPN） | — |
 
 `online_template_get`、`online_dictionary_search`、上架與 `If-Match` 更新在兩邊行為相同（ETag 是倉儲 head 的 sha256，rev 取倉儲最大值＋1）。`online_login`／`online_features` 回應的 `site` 標明目前站台；院外時 `online_features` 回 `W_SITE_EXTERNAL`。
@@ -49,7 +49,7 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 
 | 變數 | 說明 |
 |---|---|
-| `STRUCMED_EXTERNAL_URL` | 院外站台網址（等同 `/plugin configure` 的「院外站台網址」；Copilot CLI、Codex 用環境變數提供） |
+| `STRUCMED_EXTERNAL_URL` | 覆寫院外站台網址（等同 `/plugin configure` 的「院外站台網址」）。留空＝內建 `https://cgmh.ddns.net`；`none`／`off`＝不探測院外；只接受 https |
 | `STRUCMED_SITE` | `auto`（預設）／`internal`／`external`／`offline`：強制院內、院外或離線，不探測 |
 | `STRUCMED_ONLINE_BASE_URL` | 直接指定站台根網址（不探測），例如本機測試站。只接受 `https`；`http` 只限 `localhost`／`127.0.0.1`／`[::1]`；不可含帳密、查詢字串或 `#`；院外站台不可加 `/strucmed`（會 301，MCP 不跟隨轉址） |
 | `LLMGW_BASE_URL`、`FMAPI_BASE_URL` | 覆寫 LlmGateway／FMapi 網址（預設只有院內才有） |

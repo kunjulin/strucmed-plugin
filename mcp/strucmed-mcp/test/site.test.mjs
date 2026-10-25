@@ -109,14 +109,29 @@ test('internal unreachable → external; LlmGateway and FMapi are not offered', 
   } finally { m.stop(); }
 });
 
-test('no external URL configured → never contacts an external site; internal down means offline', async () => {
+test('STRUCMED_EXTERNAL_URL=none disables the external site; internal down means offline', async () => {
   reset();
-  const m = startMcp({ STRUCMED_INTERNAL_URL: closedUrl, STRUCMED_EXTERNAL_URL: '' });
+  const m = startMcp({ STRUCMED_INTERNAL_URL: closedUrl, STRUCMED_EXTERNAL_URL: 'none' });
   try {
     const names = await m.names();
-    assert.ok(!names.includes('online_login'), 'offline without an internal site and without a configured external site');
-    assert.equal(external.reqs.length, 0, 'the external site is never probed unless the user configures it');
+    assert.ok(!names.includes('online_login'), 'offline without an internal site and with the external site disabled');
+    assert.equal(external.reqs.length, 0, 'the external site is never probed when disabled');
   } finally { m.stop(); }
+});
+
+test('empty STRUCMED_EXTERNAL_URL falls back to the built-in external site (cgmh.ddns.net)', async () => {
+  const site = await import('../src/site.mjs');
+  const saved = process.env.STRUCMED_EXTERNAL_URL;
+  try {
+    process.env.STRUCMED_EXTERNAL_URL = '';
+    assert.equal(site.sites().external.strucmed, site.DEFAULT_EXTERNAL_URL);
+    assert.equal(site.DEFAULT_EXTERNAL_URL, 'https://cgmh.ddns.net');
+    assert.match(site.sites().external.label, /cgmh\.ddns\.net/);
+    process.env.STRUCMED_EXTERNAL_URL = 'none';
+    assert.equal(site.sites().external, null);
+    process.env.STRUCMED_EXTERNAL_URL = 'https://example.org';
+    assert.equal(site.sites().external.strucmed, 'https://example.org');
+  } finally { if (saved === undefined) delete process.env.STRUCMED_EXTERNAL_URL; else process.env.STRUCMED_EXTERNAL_URL = saved; }
 });
 
 test('external URL must be https (http only for localhost)', async () => {

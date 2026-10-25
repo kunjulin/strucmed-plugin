@@ -38,7 +38,7 @@ ChatGPT 若要支援，需把 MCP 改成對外 HTTPS 服務並加 OAuth，等於
 - Claude Code **2.1.285** 以上（桌面 app 或 CLI）。
 - Node.js **20** 以上（MCP 零相依，不需要 `npm install`）。
 - 無法連 GitHub 的電腦見下方「本機資料夾市集」。
-- 網路：院內網路（整合站台 `/strucmed`、LlmGateway `/llmgw`），或院外連到資訊室提供的院外站台（需在 `/plugin configure` 填「院外站台網址」，見下方「院內與院外」）；都連不到時只能離線作業。
+- 網路：院內網路（整合站台 `/strucmed`、LlmGateway `/llmgw`），或院外連到內建的院外站台 `https://cgmh.ddns.net`（3.1.0 起不需設定；見下方「院內與院外」）；都連不到時只能離線作業。
 
 ### 步驟 1：從 GitHub 安裝（終端機，只做一次）
 
@@ -54,7 +54,7 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 
 ### 步驟 2：選填設定（在 Claude Code 內）
 
-**不需要填 HIS 帳號密碼**（3.0.0 起）：線上功能改用瀏覽器登入，見步驟 3。只有院外使用或要用 LlmGateway 時才需要：
+**不需要填 HIS 帳號密碼**（3.0.0 起）：線上功能改用瀏覽器登入，見步驟 3。**院外也不需要設定**（3.1.0 起內建 `https://cgmh.ddns.net`）。只有要用 LlmGateway 模型白名單時才需要：
 
 ```
 /plugin configure strucmed@strucmed-marketplace
@@ -62,11 +62,11 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 
 | 欄位 | 填什麼 |
 |---|---|
-| 院外站台網址 | 院外使用才填，必須是 https，網址請向資訊室確認 |
 | LlmGateway token | 選用。在 `/llmgw` 的「我的帳號」自助核發一把**伺服器型** token，標籤建議 `strucmed-plugin`；只在院內用來取模型白名單 |
+| 院外站台網址 | 通常留空（預設 `https://cgmh.ddns.net`）。只有資訊室公告新網址時才填（必須是 https）；填 `none` 則不探測院外 |
 | FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
 
-站台**不用填**：MCP 啟動時自動判斷，院內網路用院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`），院外要在 `/plugin configure` 填「院外站台網址」（plugin 不內建院外網址），兩邊都連不到就是離線模式。token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。
+站台**不用填**：MCP 啟動時自動判斷，院內網路用院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`），院內連不到就用院外站台 `https://cgmh.ddns.net`（登入仍要 HIS 帳密），兩邊都連不到就是離線模式。token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。
 
 從 2.x 升級：`/plugin configure` 裡舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理；平台需部署到支援瀏覽器登入的版本（strucmed 2026-10-25 之後的 main，含 `api/v2/auth/authorize`）。
 
@@ -126,7 +126,7 @@ copilot plugin install strucmed@strucmed-marketplace
 
 和 Claude Code 的差異：
 
-- **線上登入**：3.0.0 起改用瀏覽器登入，不需要 `userConfig`，Copilot 也能使用線上 tool（未實測）。Copilot 沒有 `/plugin configure`：院外使用時在啟動 `copilot` 的 shell 設 `STRUCMED_EXTERNAL_URL`，LlmGateway 的 token 也一樣以環境變數提供；不要把 token 寫進 `~/.copilot/mcp-config.json`。
+- **線上登入**：3.0.0 起改用瀏覽器登入，不需要 `userConfig`，Copilot 也能使用線上 tool（未實測）。Copilot 沒有 `/plugin configure`：院外站台已內建，不需設定；LlmGateway 的 token 以啟動 `copilot` 的 shell 環境變數 `LLMGW_API_KEY` 提供，不要寫進 `~/.copilot/mcp-config.json`。
 - **hooks**：Copilot 支援 Claude 格式的 `hooks/hooks.json`；hook 以 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT` 環境變數定位腳本，matcher 同時涵蓋兩邊的 MCP tool 命名，所以 G3 核准檢查、安全提醒與 workflow-log 在 Copilot 也會執行。
 - **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，草稿會落到 plugin 安裝目錄，建議在 WSL 或 Git Bash 使用。
 - **subagent**：`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，form-planner 等可能不會載入，skill 會由主 agent 依序執行。
@@ -178,7 +178,7 @@ Codex 讀得懂 `SKILL.md` 與 stdio MCP（3.0.0 起含瀏覽器登入），但*
 
 ## 院內與院外
 
-| | 院內（LVAIW） | 院外（自行設定的院外站台） |
+| | 院內（LVAIW） | 院外（內建 `https://cgmh.ddns.net`，可用「院外站台網址」覆寫） |
 |---|---|---|
 | 設計、改版、驗證、runtime 預覽、輸出 `.htm` | ✅ | ✅ |
 | `online_template_get`、`online_dictionary_search` | ✅ | ✅ |

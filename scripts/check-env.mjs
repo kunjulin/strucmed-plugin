@@ -60,13 +60,13 @@ if (explicit) {
   check('site', true, '站台：STRUCMED_SITE=offline，只做離線流程', 'ok');
 } else if (siteMode !== 'auto') {
   profile = siteMode;
-  check('site', !!site.sites()[siteMode], site.sites()[siteMode] ? `站台：STRUCMED_SITE=${siteMode}（${site.sites()[siteMode].label}），不偵測` : '站台：STRUCMED_SITE=external 但未設定院外站台網址', site.sites()[siteMode] ? 'ok' : 'warning');
+  check('site', !!site.sites()[siteMode], site.sites()[siteMode] ? `站台：STRUCMED_SITE=${siteMode}（${site.sites()[siteMode].label}），不偵測` : '站台：STRUCMED_SITE=external 但院外站台已停用（STRUCMED_EXTERNAL_URL=none）或網址無效', site.sites()[siteMode] ? 'ok' : 'warning');
 } else {
   reach = await site.probeAll();
   profile = reach.internal ? 'internal' : reach.external ? 'external' : null;
   check('site', true, profile
-    ? `站台：自動判斷為${site.sites()[profile].label}（院內 ${reach.internal ? '可連' : '連不到'}、院外 ${site.sites().external ? (reach.external ? '可連' : '連不到') : '未設定'}）${profile === 'external' ? '；院外站台沒有 LlmGateway 與 FMapi，AI 巨集無法實測、模型白名單用內建靜態表' : ''}`
-    : (site.sites().external ? '站台：院內與院外都連不到，只能離線作業' : '站台：院內連不到，且未設定院外站台網址，只能離線作業'), 'warning');
+    ? `站台：自動判斷為${site.sites()[profile].label}（院內 ${reach.internal ? '可連' : '連不到'}、院外 ${site.sites().external ? (reach.external ? '可連' : '連不到') : '已停用'}）${profile === 'external' ? '；院外站台沒有 LlmGateway 與 FMapi，AI 巨集無法實測、模型白名單用內建靜態表' : ''}`
+    : (site.sites().external ? '站台：院內與院外都連不到，只能離線作業' : '站台：院內連不到，且院外站台已停用（STRUCMED_EXTERNAL_URL=none）或網址無效，只能離線作業'), 'warning');
 }
 const online = !!profile;
 if (online) check('login', true, '登入：online_login 會以瀏覽器開啟站台登入頁，HIS 帳密在頁面輸入（不需要事先設定）', 'ok');

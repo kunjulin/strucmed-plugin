@@ -14,9 +14,20 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.0.0（MCP 2.0.0）— 2026-10-25：瀏覽器登入（未發佈）
+## 3.1.0（MCP 2.1.0）— 2026-10-25：院外站台內建（未發佈）
 
-docs/13 第 2 期的 MCP 端。HIS 密碼改在 strucmed 站台的登入頁輸入，plugin 與 AI 工具都拿不到。**需先部署平台 kunjulin/strucmed#127（含 `api/v2/auth/authorize`）再發佈**，否則無法登入。
+- **院外站台不再需要設定**：`src/site.mjs` 內建 `DEFAULT_EXTERNAL_URL = https://cgmh.ddns.net`（已公開的院外入口；登入仍需 HIS 帳密）。院內連不到時自動改用院外站台，`/plugin configure` 的「院外站台網址」改為覆寫用：留空＝預設、填網址＝覆寫（必須 https）、`none`／`off`／`0`／`false`＝不探測院外。
+- **訊息**：`E_ONLINE_DISABLED` 的原因與 `check-env.mjs` 的站台檢查不再說「未設定院外站台網址」，改說「院外站台已停用或網址無效」。
+- **發佈掃描**：`tools/release/release.config.json` 移除 `ddns` 禁用字樣；公開版 README（`tools/release/overrides/README.md`）同步寫入預設網址。
+- **文件**：README、MCP README、docs/10 §十二、docs/11、connect-strucmed skill。
+- **測試**：`site.test.mjs` 改為以 `STRUCMED_EXTERNAL_URL=none` 驗證停用，新增預設值／覆寫／停用的單元測試。
+- 與 3.0.0 相同，需先部署含 `api/v2/auth/authorize` 的平台（院內與院外兩站）才能登入。
+
+## 3.0.0（MCP 2.0.0）— 2026-10-25：瀏覽器登入
+
+strucmed-skill#36；發佈：strucmed-plugin `0ebbf6d`（由 main `0b25c26` 產生）。發佈時：`release-plugin.mjs` ok、184 個檔案、掃描無發現；`npm test` 86 過、1 略過；`claude plugin validate --strict` 通過。平台 kunjulin/strucmed#127 已於同日部署 LVAIW 與院外站。
+
+docs/13 第 2 期的 MCP 端。HIS 密碼改在 strucmed 站台的登入頁輸入，plugin 與 AI 工具都拿不到。
 
 - **`online_login` 改走瀏覽器**：OAuth 2.0 授權碼 + PKCE（S256），在 `127.0.0.1` 隨機 port 等待回呼，以系統瀏覽器開啟站台登入頁（不經 shell）。
   - 最多等約 2 分鐘。還沒完成時回 `pending` 與 `authorize_url`，再呼叫一次會接著等同一個登入。

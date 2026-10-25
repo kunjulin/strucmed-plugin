@@ -1,5 +1,5 @@
 // 站台自動判斷：院內（LVAIW）或院外；院外站台沒有 LlmGateway 與 FMapi。
-// 院外站台不內建網址：只有使用者在 /plugin configure 填了「院外站台網址」（STRUCMED_EXTERNAL_URL）才會探測與登入。
+// 院外站台預設 https://cgmh.ddns.net（已公開的院外入口，登入仍需 HIS 帳密）；STRUCMED_EXTERNAL_URL 可覆寫，設為 none 則不探測院外。
 // 登入改走瀏覽器（online.mjs），不需要事先設定帳密；STRUCMED_SITE=offline 可完全不連線。
 //   - STRUCMED_ONLINE_BASE_URL（進階，啟動環境設定）：直接指定站台，不偵測
 //   - STRUCMED_SITE=auto（預設）／internal／external／offline：強制院內、院外或離線
@@ -11,10 +11,13 @@ const env = name => unset(process.env[name]) ? '' : String(process.env[name]).tr
 const PROBE_TIMEOUT_MS = 3_000;
 const RETRY_MS = 30_000;
 
-// STRUCMED_INTERNAL_URL 只供測試替換；STRUCMED_EXTERNAL_URL 由使用者設定
+export const DEFAULT_EXTERNAL_URL = 'https://cgmh.ddns.net';
+// STRUCMED_INTERNAL_URL 只供測試替換；STRUCMED_EXTERNAL_URL 覆寫院外站台（空＝預設；none／off／0／false＝停用院外）
 // 只接受 https（http 只限本機測試）；不可含帳密、查詢字串或 #
+export const externalDisabled = () => /^(none|off|0|false)$/i.test(env('STRUCMED_EXTERNAL_URL'));
 const externalBase = () => {
-  const u = env('STRUCMED_EXTERNAL_URL');
+  if (externalDisabled()) return '';
+  const u = env('STRUCMED_EXTERNAL_URL') || DEFAULT_EXTERNAL_URL;
   try {
     const x = new URL(u);
     const ok = x.protocol === 'https:' || (x.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(x.hostname));
@@ -101,7 +104,7 @@ export function describe() {
 // 站台不可用的原因（給 E_ONLINE_DISABLED 的訊息）
 export function unavailableReason() {
   if (mode() === 'offline') return '已設定 STRUCMED_SITE=offline（離線模式）';
-  if (!sites().external) return '院內站台連不到（未設定院外站台網址），目前只能離線作業（30 秒後會重新偵測，例如接上 VPN 後）；院外使用請在 /plugin configure 填「院外站台網址」';
+  if (!sites().external) return '院內站台連不到（院外站台已停用或網址無效），目前只能離線作業（30 秒後會重新偵測，例如接上 VPN 後）；院外使用請確認 STRUCMED_EXTERNAL_URL（留空＝預設院外站台）';
   return '院內與院外站台都連不到，目前只能離線作業（30 秒後會重新偵測，例如接上 VPN 後）';
 }
 
