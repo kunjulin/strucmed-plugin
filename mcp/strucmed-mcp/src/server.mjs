@@ -3,8 +3,8 @@
 // Protocol: JSON-RPC 2.0, one message per line on stdin/stdout (MCP stdio transport).
 // Security posture :
 //   - offline by default: no network access, no credentials. Online tools (online-tools.mjs) exist only when a
-//     strucmed site is available (site.mjs: 院內／院外自動判斷, or STRUCMED_ONLINE_BASE_URL); credentials come from
-//     the process environment, never from tool args
+//     strucmed site is available (site.mjs: 院內／院外自動判斷, or STRUCMED_ONLINE_BASE_URL); login goes through the
+//     system browser (the HIS password never reaches this process), never through tool args
 //   - writes only under <workspace>/.strucmed and <workspace>/output
 //   - stdout carries protocol messages only; diagnostics go to stderr
 import readline from 'node:readline';
@@ -29,8 +29,8 @@ const INSTRUCTIONS =
   '流程：dictionary_load（選用）→ form_create → form_add_area → form_add_control… → form_validate → form_preview → ' +
   'form_export（兩段式確認，plan 必須先給使用者看）。產出的 .htm 由使用者本人在編輯器匯入並保存。';
 const ONLINE_INSTRUCTIONS =
-  ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（帳密取自環境變數，絕不在對話中索取密碼；' +
-  '回 E_AUTH 且 details.reconfigure 時，請使用者執行 /plugin configure strucmed@strucmed-marketplace 更新 HIS 密碼，不要重試）→ online_me／online_features／online_dictionary_search／online_folder_list／online_template_get（唯讀）、' +
+  ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（開啟瀏覽器登入頁，使用者在頁面輸入 HIS 帳密，絕不在對話中索取密碼；' +
+  '回 pending 時請使用者在瀏覽器完成登入後再呼叫一次）→ online_me／online_features／online_dictionary_search／online_folder_list／online_template_get（唯讀）、' +
   'online_template_create／online_template_update（上架，兩段式，plan 是閘門 G3，核准前不得呼叫第二次）、online_dictionary_create／batch（flag dictionaryWrite）、online_template_versions、online_me_notes_get／set（struNote 清單，set 兩段式）。沒有查詢或存檔病人紀錄的 tool（平台對 strucmed-mcp 的 token 一律回 403），請使用者在編輯器或 HIS 操作。';
 const LLMGW_INSTRUCTIONS =
   ' LlmGateway 已設定（LLMGW_BASE_URL／LLMGW_API_KEY）：llmgateway_models 取得模型白名單快取（之後 form_validate／formula_check 以此檢查巨集模型）；llmgateway_chat_test（flag llmChatTest）只用白名單模型試跑去識別化的 prompt。';
@@ -121,5 +121,5 @@ rl.on('line', line => {
   }
   (Array.isArray(msg) ? msg : [msg]).forEach(handle);
 });
-rl.on('close', () => Promise.allSettled([...inflight]).then(() => process.exit(0)));
+rl.on('close', () => Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0)));   // 結束前作廢 refresh token
 site.ready().then(() => log(`v${VERSION} ready (workspace: ${workspaceRoot()}; site: ${site.describe().label}; online: ${online.configured() ? 'on' : 'off'}; llmgateway: ${llmgw.configured() ? 'on' : 'off'}; fmapi: ${fmapi.configured() ? 'on' : 'off'})`));

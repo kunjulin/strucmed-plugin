@@ -1,11 +1,11 @@
-# strucmed-mcp（v1.10.0）
+# strucmed-mcp（v2.0.0）
 
-MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。預設完全離線；設定院內 HIS 帳密後，自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool（見下方〈線上 tool〉）。
+MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
 ## 安全特性
 - **零相依**：只用 Node.js 內建模組，不安裝任何 npm 套件（無供應鏈風險）。
-- **預設不連線**：沒有 HIS 帳密（也沒有 LlmGateway token、`STRUCMED_ONLINE_BASE_URL`）時，不探測站台、`tools/list` 不列出線上 tool，呼叫一律回 `E_ONLINE_DISABLED`，不發出任何網路請求；離線 tool 的行為與先前相同。
-- **離線 tool 不處理帳密**；只有 `online_login` 會讀 `STRUCMED_USER` / `STRUCMED_PASS`（見〈線上 tool〉）。
+- **不經手 HIS 密碼**：`online_login` 以系統瀏覽器開啟站台登入頁（OAuth 2.0 授權碼 + PKCE，回呼到本機 127.0.0.1），密碼只在站台頁面輸入；MCP 只拿到一次性授權碼與只限範本、字典、自己 struNote 清單的短效 token。
+- **站台偵測只看 `api/health`**：啟動時探測站台（只 GET、不帶憑證）；`STRUCMED_SITE=offline` 時完全不連線，`tools/list` 不列出線上 tool，呼叫一律回 `E_ONLINE_DISABLED`。
 - 只寫入 `<workspace>/.strucmed/`（draft、字典索引）與 `<workspace>/output/`（產出），兩者皆 gitignore。
 - 輸出與刪除 draft 採**兩段式確認**（`confirm_token`：HMAC、綁定內容雜湊、10 分鐘有效、金鑰只存在本次行程）。
 - stdout 只輸出 JSON-RPC；診斷訊息寫 stderr。
@@ -22,10 +22,10 @@ node mcp/strucmed-mcp/src/server.mjs
 呼叫 strucmed 的 token 保護 API。
 
 ### 設定
-**建議**：在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace`，只需填院內 HIS 帳號／密碼（LlmGateway token、FMapi 金鑰選用）；密碼與 token 存安全儲存區，plugin.json 的 `mcpServers.env` 以 `${user_config.*}` 注入 `STRUCMED_USER`／`STRUCMED_PASS` 等環境變數。填完 `/reload-plugins`。未填的選項展開為空字串，MCP 視為未設定。
+**不需要設定 HIS 帳密**（v2.0.0 起）。`/plugin configure strucmed@strucmed-marketplace` 只有選填項目：院外站台網址、LlmGateway token、FMapi 金鑰、平台 `web/` 副本；token 存安全儲存區，plugin.json 的 `mcpServers.env` 以 `${user_config.*}` 注入環境變數。填完 `/reload-plugins`。未填的選項展開為空字串，MCP 視為未設定。
 
 ### 站台自動判斷（`src/site.mjs`）
-有 HIS 帳密（或 LlmGateway token）時，MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/health`（只 GET、不帶憑證、逾時 3 秒）：
+MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/health`（只 GET、不帶憑證、逾時 3 秒；`STRUCMED_SITE` 不是 `auto` 或指定了 `STRUCMED_ONLINE_BASE_URL` 時不探測）：
 
 | 結果 | 站台 | LlmGateway／FMapi |
 |---|---|---|
@@ -35,31 +35,34 @@ node mcp/strucmed-mcp/src/server.mjs
 
 `online_template_get`、`online_dictionary_search`、上架與 `If-Match` 更新在兩邊行為相同（ETag 是倉儲 head 的 sha256，rev 取倉儲最大值＋1）。`online_login`／`online_features` 回應的 `site` 標明目前站台；院外時 `online_features` 回 `W_SITE_EXTERNAL`。
 
-**密碼錯誤**：伺服器回「帳號或密碼錯誤」時，`online_login` 回 `E_AUTH`、`details.reconfigure: true`、`details.action`（`/plugin configure …`），訊息提醒 HIS 密碼每三個月變更；同一組帳密在本行程不會再送出（避免帳號鎖定），更新設定並 `/reload-plugins` 後才會重新登入。plugin 的 PostToolUse hook（`hooks/auth-reminder.js`）同時向使用者顯示重新設定的提示。「登入服務暫時無回應」不算密碼錯誤，可以重試。
+### 瀏覽器登入（`online_login`）
+平台契約見 `kunjulin/strucmed` 的 `docs/API-V2.md`「瀏覽器登入」（docs/13 第 2 期）。
+
+1. 產生 `code_verifier`（32 bytes 隨機）與 `state`，在 `127.0.0.1` 隨機 port 等待 `/callback`。
+2. 以系統瀏覽器開啟 `<站台>/api/v2/auth/authorize?client_id=strucmed-mcp&redirect_uri=http://127.0.0.1:<port>/callback&code_challenge=<S256>&state=…`（Windows `rundll32 url.dll,FileProtocolHandler`、macOS `open`、Linux `xdg-open`，不經 shell）；`STRUCMED_NO_BROWSER=1` 不開啟，回應中的 `authorize_url` 由使用者自行開啟。
+3. 使用者在站台登入頁輸入 HIS 帳密（帳號連續 5 次錯誤，站台鎖 15 分鐘），按「登入並同意」，瀏覽器導回本機回呼；`state` 不符的請求一律 400 並繼續等待。
+4. 以 `POST api/v2/auth/token`（`grantType: authorization_code`、`code`、`codeVerifier`、`redirectUri`）換 token。
+
+`online_login` 最多等 `STRUCMED_LOGIN_WAIT_MS`（預設 120000，上限 300000）；還沒完成時回 `pending: true` 與 `authorize_url`，再呼叫一次會接著等同一個登入（10 分鐘內）。已登入時直接回目前狀態（`already: true`）。access token 30 分鐘，過期時自動以 refresh token 換新（站台每次輪替 refresh token）；同一次登入最長 8 小時。`online_logout` 與 MCP 結束（stdin 關閉）時呼叫 `POST api/v2/auth/revoke` 作廢登入。使用者在登入頁按「拒絕」時回 `E_AUTH`。
 
 **進階**：在啟動 Claude Code（或 MCP）的環境直接設定下列變數；MCP 子行程會繼承：
 
 | 變數 | 說明 |
 |---|---|
-| `STRUCMED_USER` | 院內帳號 |
-| `STRUCMED_PASS` | 密碼 |
+| `STRUCMED_EXTERNAL_URL` | 院外站台網址（等同 `/plugin configure` 的「院外站台網址」；Copilot CLI、Codex 用環境變數提供） |
 | `STRUCMED_SITE` | `auto`（預設）／`internal`／`external`／`offline`：強制院內、院外或離線，不探測 |
 | `STRUCMED_ONLINE_BASE_URL` | 直接指定站台根網址（不探測），例如本機測試站。只接受 `https`；`http` 只限 `localhost`／`127.0.0.1`／`[::1]`；不可含帳密、查詢字串或 `#`；院外站台不可加 `/strucmed`（會 301，MCP 不跟隨轉址） |
 | `LLMGW_BASE_URL`、`FMAPI_BASE_URL` | 覆寫 LlmGateway／FMapi 網址（預設只有院內才有） |
+| `STRUCMED_NO_BROWSER` | `1`＝不自動開啟瀏覽器（遠端主機、測試） |
+| `STRUCMED_LOGIN_WAIT_MS` | `online_login` 每次最多等待的毫秒數（預設 120000） |
 
-PowerShell 範例（只在目前的視窗有效；密碼以 `Read-Host -AsSecureString` 輸入，不留在指令紀錄）：
-```powershell
-$env:STRUCMED_USER = '<帳號>'
-$env:STRUCMED_PASS = [Net.NetworkCredential]::new('', (Read-Host -AsSecureString '密碼')).Password
-claude
-```
-**不要**把帳密寫進 `.mcp.json`、`.env`、腳本或任何檔案，也不要在對話中貼出密碼。
+**不要**把 token 寫進 `.mcp.json`、`.env`、腳本或任何檔案，也不要在對話中貼出密碼。
 
 ### Tools
 | tool | API | 說明 |
 |---|---|---|
-| `online_login` | `POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH）；帳密取自環境變數；一律帶 `clientId: "strucmed-mcp"`，平台據此只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。回傳 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；密碼錯誤回 `details.reconfigure` |
-| `online_logout` | — | 清除記憶體中的 token |
+| `online_login` | `GET api/v2/auth/authorize`（瀏覽器）、`POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH），沒有帳密；見上方「瀏覽器登入」。`client_id` 固定 `strucmed-mcp`，平台只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。完成時回 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；未完成回 `pending`、`authorize_url` |
+| `online_logout` | `POST api/v2/auth/revoke` | 作廢登入並清除記憶體中的 token |
 | `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size` |
 | `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
@@ -71,7 +74,7 @@ claude
 | `online_dictionary_create`／`online_dictionary_batch` | `POST api/v2/dictionaries`、`/batch` | **寫入字典**（flag `dictionaryWrite`）；同名沿用；已刪除同名回 `E_DELETED_EXISTS` 不自動 force；成功後綁回 draft 與本機索引 |
 | `online_me_notes_get`／`online_me_notes_set` | `GET/PUT api/v2/me/notes` | struNote 表單清單；set 整份取代（`add`／`remove` 增量），兩段式 plan 顯示新增／移除／改名 |
 
-token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）換新並重試一次；refresh 也失敗時清除 session，回 `E_AUTH` 要求重新 `online_login`。錯誤碼：`E_ONLINE_DISABLED`（未設定帳密、兩個站台都連不到或網址不合規定）、`E_AUTH`（未登入、帳密錯誤〔`details.reconfigure`〕、token 失效）、`E_UPSTREAM`（伺服器或倉儲錯誤、連不到、轉址；`details.status` 為 HTTP 狀態）。
+token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）換新並重試一次；refresh 也失敗時清除 session，回 `E_AUTH` 要求重新 `online_login`。錯誤碼：`E_ONLINE_DISABLED`（`STRUCMED_SITE=offline`、兩個站台都連不到或網址不合規定）、`E_AUTH`（未登入、登入頁按了拒絕、token 失效或登入超過 8 小時）、`E_UPSTREAM`（伺服器或倉儲錯誤、連不到、轉址；`details.status` 為 HTTP 狀態）。
 
 ### 資安限制
 - **帳密不經過 LLM**：`online_login` 沒有帳號密碼參數；密碼只在登入時送到 `api/v2/auth/token` 一次。

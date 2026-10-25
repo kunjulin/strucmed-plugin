@@ -1,8 +1,9 @@
 // 站台自動判斷：院內（LVAIW）或院外；院外站台沒有 LlmGateway 與 FMapi。
 // 院外站台不內建網址：只有使用者在 /plugin configure 填了「院外站台網址」（STRUCMED_EXTERNAL_URL）才會探測與登入。
+// 登入改走瀏覽器（online.mjs），不需要事先設定帳密；STRUCMED_SITE=offline 可完全不連線。
 //   - STRUCMED_ONLINE_BASE_URL（進階，啟動環境設定）：直接指定站台，不偵測
 //   - STRUCMED_SITE=auto（預設）／internal／external／offline：強制院內、院外或離線
-//   - auto：有 HIS 帳密或 LlmGateway token 時，並行探測兩個站台的 api/health（不帶任何憑證），兩邊都通時用院內
+//   - auto：並行探測兩個站台的 api/health（不帶任何憑證），兩邊都通時用院內
 // 偵測結果只存在本行程記憶體；兩邊都連不到時 30 秒後再探測（例如接上 VPN）。
 const unset = v => { const s = String(v || '').trim(); return !s || s.startsWith('${'); };
 const env = name => unset(process.env[name]) ? '' : String(process.env[name]).trim();
@@ -35,8 +36,6 @@ export function mode() {
   return ['internal', 'external', 'offline'].includes(m) ? m : 'auto';
 }
 export const explicitUrl = () => env('STRUCMED_ONLINE_BASE_URL');
-export const hasCredentials = () => !!env('STRUCMED_USER') && !!env('STRUCMED_PASS');
-const wantsSite = () => hasCredentials() || !!env('LLMGW_API_KEY');
 
 async function probe(base) {
   try {
@@ -55,7 +54,7 @@ export async function probeAll() {
 
 // 需要時探測一次；呼叫端（tools/list、tools/call）先 await 這個再讀 profile()
 export function ready() {
-  if (explicitUrl() || mode() !== 'auto' || !wantsSite()) return Promise.resolve();
+  if (explicitUrl() || mode() !== 'auto') return Promise.resolve();
   if (detected && (detected.profile || Date.now() - detected.at < RETRY_MS)) return Promise.resolve();
   if (!pending) {
     pending = (async () => {
@@ -87,7 +86,6 @@ const current = () => { const p = profile(); return p === 'internal' || p === 'e
 
 export function strucmedUrl() {
   if (explicitUrl()) return explicitUrl();
-  if (!hasCredentials()) return '';
   return current() ? current().strucmed : '';
 }
 // LlmGateway 與 FMapi：環境變數優先；否則只有院內站台有預設網址
@@ -103,7 +101,6 @@ export function describe() {
 // 站台不可用的原因（給 E_ONLINE_DISABLED 的訊息）
 export function unavailableReason() {
   if (mode() === 'offline') return '已設定 STRUCMED_SITE=offline（離線模式）';
-  if (!hasCredentials()) return '尚未設定院內 HIS 帳號／密碼：請使用者執行 /plugin configure strucmed@strucmed-marketplace 填寫後 /reload-plugins';
   if (!sites().external) return '院內站台連不到（未設定院外站台網址），目前只能離線作業（30 秒後會重新偵測，例如接上 VPN 後）；院外使用請在 /plugin configure 填「院外站台網址」';
   return '院內與院外站台都連不到，目前只能離線作業（30 秒後會重新偵測，例如接上 VPN 後）';
 }

@@ -1,5 +1,5 @@
 // Online tools (mode: online) — call the strucmed V2 API. Listed only when STRUCMED_ONLINE_BASE_URL is set;
-// otherwise every call returns E_ONLINE_DISABLED . Credentials and tokens: see online.mjs.
+// otherwise every call returns E_ONLINE_DISABLED. Browser login and tokens: see online.mjs.
 import fs from 'node:fs';
 import path from 'node:path';
 import { E, fail } from './errors.mjs';
@@ -25,10 +25,11 @@ function checkCode(v, field, required) {
 export const ONLINE_TOOLS = [
   {
     name: 'online_login',
-    description: '（online）以院內帳號登入 strucmed V2 API（POST api/v2/auth/token）。站台自動判斷院內（LVAIW）或院外（使用者設定的網址），回應的 site 標明。' +
-      '帳密只從啟動 MCP 的環境變數 STRUCMED_USER／STRUCMED_PASS 讀取（/plugin configure 注入）；伺服器回「帳號或密碼錯誤」時回 E_AUTH 且 details.reconfigure，' +
-      '請使用者以 /plugin configure 更新密碼，不要重試（同一組帳密本行程不會再送出）。' +
-      '**沒有**帳密參數，請勿要求使用者在對話中提供密碼。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；過期時其他線上 tool 會自動以 refresh token 換新。',
+    description: '（online）以瀏覽器登入 strucmed 站台（OAuth 2.0 授權碼 + PKCE，回呼到本機 127.0.0.1）。站台自動判斷院內（LVAIW）或院外（使用者設定的網址），回應的 site 標明。' +
+      '會以系統瀏覽器開啟站台登入頁，**HIS 帳密由使用者在登入頁輸入，不經過 AI 工具**；本 tool 沒有帳密參數，絕不在對話中索取密碼。' +
+      '最多等約 2 分鐘；還沒完成時回 pending:true 與 authorize_url（瀏覽器沒開時請使用者自行開啟），使用者完成後再呼叫一次即可，不會重開新的登入。' +
+      '已登入時直接回目前狀態（already:true）。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；access token 30 分鐘，其他線上 tool 會自動以 refresh token 換新，' +
+      '同一次登入最長 8 小時，之後或 MCP 重啟（新對話、/reload-plugins）需重新登入。token 只能使用範本、字典與自己的 struNote 清單。',
     inputSchema: { type: 'object', properties: {
       dept_no: str('登入科部（token 的科部，選填）'), hospital: str('院區代碼（選填，預設 CGMH）') } },
     async handler({ dept_no, hospital }) {
@@ -39,7 +40,7 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_logout',
-    description: '（online）清除本行程記憶體中的 token（不呼叫伺服器）。',
+    description: '（online）登出：呼叫站台 auth/revoke 作廢這次登入的 refresh token，並清除本行程記憶體中的 token。',
     inputSchema: { type: 'object', properties: {} },
     handler() { online.baseUrl(); return online.logout(); }
   },

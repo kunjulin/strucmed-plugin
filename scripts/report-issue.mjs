@@ -34,7 +34,7 @@ const mcp = tryJson(path.join(ROOT, 'mcp', 'strucmed-mcp', 'package.json')) || {
 const flags = tryJson(process.env.STRUCMED_FLAGS || path.join(ROOT, 'feature-flags.json')) || {};
 let gitRev = '';
 try { gitRev = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* 非 git */ }
-const envPresent = Object.fromEntries(['STRUCMED_ONLINE_BASE_URL', 'STRUCMED_SITE', 'STRUCMED_USER', 'STRUCMED_PASS', 'LLMGW_BASE_URL', 'LLMGW_API_KEY', 'FMAPI_BASE_URL', 'FMAPI_API_KEY', 'STRUCMED_RUNTIME_WEB', 'STRUCMED_FLAGS'].map(k => [k, !!String(process.env[k] || '').trim()]));
+const envPresent = Object.fromEntries(['STRUCMED_ONLINE_BASE_URL', 'STRUCMED_SITE', 'STRUCMED_EXTERNAL_URL', 'LLMGW_BASE_URL', 'LLMGW_API_KEY', 'FMAPI_BASE_URL', 'FMAPI_API_KEY', 'STRUCMED_RUNTIME_WEB', 'STRUCMED_FLAGS'].map(k => [k, !!String(process.env[k] || '').trim()]));
 const log = tryRead(path.join(ws, '.strucmed', 'workflow-log.md')).trim().split(/\r?\n/).filter(Boolean).slice(-40).map(redact).join('\n');
 const plans = fs.existsSync(path.join(ws, '.strucmed', 'plans')) ? fs.readdirSync(path.join(ws, '.strucmed', 'plans')) : [];
 const drafts = fs.existsSync(path.join(ws, '.strucmed', 'drafts')) ? fs.readdirSync(path.join(ws, '.strucmed', 'drafts')).filter(f => f.endsWith('.json')).length : 0;

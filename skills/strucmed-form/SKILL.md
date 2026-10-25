@@ -43,7 +43,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/check-env.mjs"
 
 ## 3. 所有流程共同遵守
 
-- **安全不變量**：`references/SecurityInvariants.md`。重點：帳密只在環境變數；寫入一律兩段式；不碰病人資料除非使用者明確要求；不直連倉儲；禁用函數清單。
+- **安全不變量**：`references/SecurityInvariants.md`。重點：HIS 帳密只在站台登入頁（瀏覽器登入），金鑰只在環境變數；寫入一律兩段式；不碰病人資料除非使用者明確要求；不直連倉儲；禁用函數清單。
 - **閘門**：`references/Gates.md`。閘門只由本 skill（或它載入的流程 skill）在對話中呈現；子代理（`form-planner`、`form-builder`、`form-reviewer`）是 headless 的，不能問使用者。核准後才可以建置或輸出。
 - **MCP tool 名稱**：以 plugin 安裝時是 `mcp__plugin_strucmed_strucmed__<tool>`；在本 repo 內直接使用時是 `mcp__strucmed__<tool>`。文件一律只寫 `<tool>` 名稱（例如 `form_create`）。
 - **交付格式**：流程結束時依 `create-form` §交付格式回報；有 AI 巨集時必列 `W_AI_DATAFLOW`，匯入後不要按「重新編號」。

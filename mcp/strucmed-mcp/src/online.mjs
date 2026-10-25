@@ -1,28 +1,29 @@
 // Online client for the strucmed V2 API (api/v2/auth/*, templates, folders, dictionaries, me/notes).
 // The site (院內 LVAIW／院外站台) is detected by site.mjs; STRUCMED_ONLINE_BASE_URL overrides it.
-// Security posture :
-//   - credentials come only from the process environment (STRUCMED_USER / STRUCMED_PASS), never from tool
-//     arguments, and are sent once to api/v2/auth/token; they are never returned, logged or written to disk
-//   - access/refresh tokens live only in this process's memory (lost on restart) and are never returned
+// Security posture (strucmed docs/MCP-LOGIN-MFA-DESIGN.md 第 2 期):
+//   - browser login: OAuth 2.0 authorization code + PKCE (S256) with a loopback redirect on 127.0.0.1 (RFC 8252).
+//     The HIS password is typed only into the site's login page; this process never sees it
+//   - access/refresh tokens live only in this process's memory (lost on restart) and are never returned;
+//     the refresh token rotates on every use and is revoked on logout and on exit
 //   - https only (plain http is accepted for loopback hosts, for local tests); redirects are not followed,
 //     so the bearer token cannot leak to another host
 //   - this module writes nothing to stdout/stderr; error messages never include request bodies
-//   - after the server says the password is wrong, the same credentials are not sent again in this process
-//     (HIS passwords change every three months; repeated failures could lock the account)
 import crypto from 'node:crypto';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
 import { E, fail } from './errors.mjs';
 import * as site from './site.mjs';
 
 const TIMEOUT_MS = 30_000;
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
+const CLIENT_ID = 'strucmed-mcp';
+const FLOW_TTL_MS = 10 * 60_000;                 // 開啟登入頁後最多等 10 分鐘
+const waitMs = () => { const n = Number(process.env.STRUCMED_LOGIN_WAIT_MS); return Number.isFinite(n) && n >= 0 ? Math.min(n, 300_000) : 120_000; };
+
 let session = null;   // { base, access, refresh, expiresAt, user: { userId, name, deptNo, loc } }
 let refreshing = null;
-let rejected = null;  // sha256(帳號＋密碼)：伺服器回「帳號或密碼錯誤」的那組，只在記憶體
-
-export const RECONFIGURE = '/plugin configure strucmed@strucmed-marketplace';
-const PASSWORD_HINT = `院內 HIS 帳號或密碼錯誤（HIS 密碼每三個月變更一次，可能已更換）：請使用者執行 ${RECONFIGURE} 更新「院內 HIS 密碼」，` +
-  '再執行 /reload-plugins（仍失敗時開新工作階段）。為避免帳號被鎖定，設定更新前不會再以相同帳密登入；不接受從對話提供密碼';
+let flow = null;      // 進行中的瀏覽器登入：{ base, url, server, done, result, expires, verifier, redirectUri }
 
 export const configured = () => !!site.strucmedUrl();
 
@@ -86,40 +87,108 @@ export function currentUser() {
   return session.user;
 }
 
+const b64url = buf => buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+const PAGE = (title, text) => `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${title}</title></head>` +
+  `<body style="font-family:system-ui,'Microsoft JhengHei',sans-serif;max-width:420px;margin:48px auto;padding:0 16px"><h1 style="font-size:20px">${title}</h1><p>${text}</p></body></html>`;
+
+function closeFlow() {
+  if (flow) { try { flow.server.close(); } catch { /* 已關閉 */ } }
+  flow = null;
+}
+
+// 在 127.0.0.1 隨機 port 等待登入頁導回；只接受 /callback 且 state 相符的那一次
+async function startFlow(base, { dept_no, hospital }) {
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  const state = b64url(crypto.randomBytes(16));
+  let resolve;
+  const done = new Promise(r => { resolve = r; });
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    if (req.method !== 'GET' || u.pathname !== '/callback' || u.searchParams.get('state') !== state) {
+      res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(PAGE('登入連結無效', '請回到 AI 工具重新執行登入。'));
+    }
+    const code = u.searchParams.get('code');
+    const error = u.searchParams.get('error');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(code ? PAGE('登入完成', '可以關閉此頁，回到 AI 工具。') : PAGE('已取消登入', '可以關閉此頁；需要時請在 AI 工具重新登入。'));
+    resolve(code ? { code } : { error: error || 'unknown' });
+    server.close();
+  });
+  await new Promise((ok, no) => { server.once('error', no); server.listen(0, '127.0.0.1', ok); });
+  const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+  const url = new URL(`${base}/api/v2/auth/authorize`);
+  for (const [k, v] of Object.entries({ response_type: 'code', client_id: CLIENT_ID, redirect_uri: redirectUri, code_challenge: challenge,
+    code_challenge_method: 'S256', state, dept_no: dept_no || '', hospital: hospital || '' })) if (v) url.searchParams.set(k, v);
+  const f = { base, url: url.toString(), server, done, result: null, expires: Date.now() + FLOW_TTL_MS, verifier, redirectUri };
+  done.then(r => { f.result = r; });
+  return f;
+}
+
+// 以系統瀏覽器開啟（不經 shell）；失敗時使用者可自行開啟回應中的網址。STRUCMED_NO_BROWSER=1 不開啟（測試、遠端主機）
+function openBrowser(url) {
+  if (String(process.env.STRUCMED_NO_BROWSER || '').trim() === '1') return false;
+  const [cmd, args] = process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
+    : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  try {
+    const p = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    p.on('error', () => {});
+    p.unref();
+    return true;
+  } catch { return false; }
+}
+
+// 瀏覽器登入：第一次呼叫開啟登入頁並等待（預設最多 2 分鐘）；還沒完成時回 pending 與網址，再呼叫一次會接著等同一個登入
 export async function login({ hospital, dept_no } = {}) {
   const base = baseUrl();
-  const account = String(process.env.STRUCMED_USER || '').trim();
-  const password = String(process.env.STRUCMED_PASS || '');
-  if (!account || !password)
-    fail(E.AUTH, '尚未設定院內帳號密碼：請使用者執行 /plugin configure strucmed@strucmed-marketplace 填「院內 HIS 帳號／密碼」後 /reload-plugins（或在啟動環境設定 STRUCMED_USER 與 STRUCMED_PASS）；不接受從對話或 tool 參數傳入帳密');
-  const fp = crypto.createHash('sha256').update(`${account}\0${password}`).digest('hex');
-  if (rejected === fp) fail(E.AUTH, PASSWORD_HINT, { reconfigure: true, action: RECONFIGURE, retried: false });
-  session = null;
-  // clientId：平台只讓 strucmed-mcp 的 token 呼叫範本與字典的 API（strucmed docs/MCP-LOGIN-MFA-DESIGN.md 第 1 期）；舊版平台會忽略這個欄位
-  const body = { hospital: hospital || 'CGMH', account, password, clientId: 'strucmed-mcp' };
-  if (dept_no) body.deptNo = String(dept_no);
-  const r = await send(base, 'POST', 'api/v2/auth/token', { body });
-  if (r.status === 401 && isBadPassword(r)) {
-    rejected = fp;
-    fail(E.AUTH, PASSWORD_HINT, { status: 401, reconfigure: true, action: RECONFIGURE });
+  if (session && session.base === base) return { ...status(), already: true };
+  let opened = null;
+  if (!flow || flow.base !== base || Date.now() > flow.expires) {
+    closeFlow();
+    flow = await startFlow(base, { dept_no, hospital });
+    opened = openBrowser(flow.url);
   }
-  if (r.status !== 200 || !r.json || !r.json.accessToken) upstreamError(r, '登入');
-  const u = r.json.userInfo || {};
-  setTokens(base, r.json, { userId: String(u.userId || ''), name: String(u.name || ''), deptNo: String(u.deptNo || dept_no || ''), loc: String(u.loc || '') });
+  const f = flow;
+  const r = f.result || await Promise.race([f.done, new Promise(ok => setTimeout(ok, waitMs()).unref())]);
+  if (!r) {
+    return { logged_in: false, pending: true, authorize_url: f.url, browser_opened: opened,
+      message: (opened === false ? '無法自動開啟瀏覽器，請使用者自行開啟 authorize_url。' : '已在瀏覽器開啟 strucmed 登入頁。') +
+        '請使用者在登入頁確認網址是 strucmed 站台後輸入 HIS 帳密並按「登入並同意」，完成後再呼叫一次 online_login；不要在對話中索取密碼。' };
+  }
+  closeFlow();
+  if (r.error) fail(E.AUTH, r.error === 'access_denied' ? '使用者在登入頁按了「拒絕」，未登入' : `登入頁回傳錯誤（${clip(r.error, 40)}），請重新 online_login`, { error: clip(r.error, 40) });
+  const t = await send(base, 'POST', 'api/v2/auth/token', { body: { grantType: 'authorization_code', clientId: CLIENT_ID, code: r.code, codeVerifier: f.verifier, redirectUri: f.redirectUri } });
+  if (t.status !== 200 || !t.json || !t.json.accessToken) upstreamError(t, '登入');
+  const u = t.json.userInfo || {};
+  setTokens(base, t.json, { userId: String(u.userId || ''), name: String(u.name || ''), deptNo: String(u.deptNo || dept_no || ''), loc: String(u.loc || '') });
   if (!session.user.userId) { session = null; fail(E.UPSTREAM, '登入回應缺少 userInfo.userId'); }
   return status();
 }
 
-// 伺服器（HisLogin）只有上游明確回「帳號或密碼錯誤」時才是密碼問題；「暫時無回應」可以重試
-function isBadPassword(r) {
-  const msg = String((r.json && r.json.error && r.json.error.message) || '');
-  return /帳號或密碼錯誤/.test(msg) && !/暫時無回應/.test(msg);
+// 盡力作廢 refresh token（auth/revoke），失敗也照樣清除本機 token
+async function revoke() {
+  const s = session;
+  session = null;
+  if (!s || !s.refresh) return false;
+  try {
+    const r = await send(s.base, 'POST', 'api/v2/auth/revoke', { body: { token: s.refresh } });
+    return r.status === 200;
+  } catch { return false; }
 }
 
-export function logout() {
+export async function logout() {
   const was = !!session;
-  session = null;
-  return { logged_out: was };
+  const revoked = await revoke();
+  closeFlow();
+  return { logged_out: was, revoked };
+}
+
+// MCP 結束前（stdin 關閉）：作廢 refresh token、關閉等待中的本機回呼
+export async function shutdown() {
+  closeFlow();
+  await Promise.race([revoke(), new Promise(ok => setTimeout(ok, 3000).unref())]);
 }
 
 async function refreshTokens(base) {

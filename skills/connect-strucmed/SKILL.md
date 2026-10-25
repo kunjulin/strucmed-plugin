@@ -9,7 +9,7 @@ allowed-tools: Read, Bash(node *)
 
 # connect-strucmed
 
-目的：讓後續流程知道「現在能用什麼」。全部只讀；需要的憑證由使用者自己放在**啟動 Claude Code 的環境**，本 skill 只檢查有沒有，不設定、不索取。
+目的：讓後續流程知道「現在能用什麼」。全部只讀；strucmed 以瀏覽器登入（HIS 密碼只在站台登入頁輸入），選用的 token 由使用者自己以 `/plugin configure` 或環境變數提供，本 skill 只檢查有沒有，不設定、不索取。
 站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 使用者在 `/plugin configure` 填的「院外站台網址」（沒有 LlmGateway 與 FMapi；未填就是離線）；兩邊都連不到 → 離線。
 
 ## 步驟
@@ -19,22 +19,20 @@ allowed-tools: Read, Bash(node *)
    node "${CLAUDE_PLUGIN_ROOT}/scripts/check-env.mjs"
    ```
    `site.profile: null`（兩邊都連不到）→ 告知只能離線作業（`.htm` 由使用者匯入），結束線上步驟；接上院內網路或 VPN 後重新執行本 skill。
-2. 缺帳號或密碼時（`online_login` 回 `E_AUTH`「尚未設定」，或線上 tool 未列出且 `site.profile` 不是 null），指引使用者在 Claude Code 內執行：
-   ```
-   /plugin configure strucmed@strucmed-marketplace
-   ```
-   對話框只需填「院內 HIS 帳號」「院內 HIS 密碼」（遮罩輸入、存安全儲存區）；「LlmGateway token」、FMapi 與 runtime 副本選用。填完後執行 `/reload-plugins`，MCP 子行程才會拿到新值；然後重新執行本 skill。
-   **不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。替代做法（進階）：在啟動 Claude Code 的 shell 設定 `STRUCMED_USER`、`STRUCMED_PASS`；`STRUCMED_SITE=internal|external|offline` 可強制站台。
-3. `mode: online`：
-   - `online_login`（參數只有 `dept_no`、`hospital`，都選填）。回應的 `site.label` 告訴使用者目前是院內或院外站台。
-   - **密碼錯誤**：回 `E_AUTH` 且 `error.details.reconfigure: true` → 明確告訴使用者「HIS 密碼錯誤（密碼每三個月變更一次，可能已更換）」，請其執行 `error.details.action`（`/plugin configure strucmed@strucmed-marketplace`）更新「院內 HIS 密碼」→ `/reload-plugins` → 重新執行本 skill。**不要**再呼叫 `online_login` 重試（同一組帳密本行程也不會再送出，避免帳號鎖定），不要請使用者在對話中提供密碼。
-   - 其他 `E_AUTH`：依訊息說明（缺帳密、登入服務閒置後回「暫時無回應」可重試一次）。
+2. `mode: online`：呼叫 `online_login`（參數只有 `dept_no`、`hospital`，都選填；**沒有帳密參數**）。
+   - MCP 會以系統瀏覽器開啟 strucmed 站台的登入頁。告訴使用者：確認網址是 strucmed 站台後，在頁面輸入 HIS 帳號密碼並按「登入並同意」，完成後回到這裡說一聲。
+   - 回 `pending: true`：把 `authorize_url` 給使用者（`browser_opened: false` 時請其自行開啟），等使用者說完成後**再呼叫一次** `online_login`（會接著等同一個登入，不會重開）。
+   - 回 `E_AUTH`「拒絕」：使用者在登入頁按了拒絕，問是否要重新登入。
+   - 登入頁顯示「帳號或密碼錯誤」或「嘗試次數過多」是在瀏覽器裡處理的事（HIS 密碼每三個月變更；同一帳號連續 5 次錯誤鎖 15 分鐘），不要在對話中索取密碼。
+   - 回應的 `site.label` 告訴使用者目前是院內或院外站台。token 只存在 MCP 記憶體，30 分鐘自動更新，同一次登入最長 8 小時；開新工作階段或 `/reload-plugins` 後需重新登入。
+3. 選填設定（院外使用、LlmGateway）：院外站台網址或 LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `STRUCMED_EXTERNAL_URL`、`LLMGW_API_KEY` 提供）。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
+4. 登入後：
    - `online_me`：記下 `user_id`、`dept_no`、`folders`（usr／sub／dpt 代碼）；之後建表的預設 `dept_no` 就用它。
    - `online_features`：回報三項狀態；`W_SITE_EXTERNAL`（院外站台）時告知：上架、`If-Match` 更新、字典與範本讀取都和院內相同，但沒有 LlmGateway、LLM 與語音，AI 巨集回院內再實測。`llm_gateway.enabled: false` 時告知「表單內的 LLM 按鈕仍走院內舊端點，不經閘道」；`runtime.save/query: false` 表示登入者不在 HIS 端存檔／查詢白名單（只影響 B1，不影響設計表單）。
    - 字典來源改用 `online_dictionary_search`（`update_index: true`、不帶 `q`）建立本機索引，取代請使用者匯出 CSV。
-4. LlmGateway（只有院內）：`llmgateway_models` 有列出時呼叫，回報模型數、別名對應與 deprecated 的模型（`references/ModelWhitelist.md`）；否則提醒「模型白名單使用內建靜態表，表單有 AI 巨集時會標 `W_LLM_WHITELIST_STALE`」，並指引：在 LlmGateway「我的帳號」核發伺服器型 token（標籤 strucmed-skill）→ `/plugin configure strucmed@strucmed-marketplace` 填「LlmGateway token」→ `/reload-plugins`。
-5. FMapi（只有院內）：`fmapi_status` 有列出時呼叫，回報錯誤紀錄狀態與相關站台可用率（`W_SITE_DOWN` 要特別點出）；未設定時略過（選用）。
-6. 回報一段「連線摘要」：模式與站台（院內／院外）、登入者與科部、可用資料夾、runtime 驗證是否可用、閘道是否啟用。不重複任何環境變數的值。
+5. LlmGateway（只有院內）：`llmgateway_models` 有列出時呼叫，回報模型數、別名對應與 deprecated 的模型（`references/ModelWhitelist.md`）；否則提醒「模型白名單使用內建靜態表，表單有 AI 巨集時會標 `W_LLM_WHITELIST_STALE`」，並指引：在 LlmGateway「我的帳號」核發伺服器型 token（標籤 strucmed-skill）→ `/plugin configure strucmed@strucmed-marketplace` 填「LlmGateway token」→ `/reload-plugins`。
+6. FMapi（只有院內）：`fmapi_status` 有列出時呼叫，回報錯誤紀錄狀態與相關站台可用率（`W_SITE_DOWN` 要特別點出）；未設定時略過（選用）。
+7. 回報一段「連線摘要」：模式與站台（院內／院外）、登入者與科部、可用資料夾、runtime 驗證是否可用、閘道是否啟用。不重複任何環境變數的值。
 
 ## 不做
 

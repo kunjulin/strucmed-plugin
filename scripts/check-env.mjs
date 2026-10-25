@@ -37,7 +37,7 @@ check('workspace', fs.existsSync(workspace), `工作目錄：${workspace}（draf
 
 // 環境變數：只回報 present
 const env = {};
-for (const name of ['STRUCMED_ONLINE_BASE_URL', 'STRUCMED_SITE', 'STRUCMED_USER', 'STRUCMED_PASS', 'LLMGW_BASE_URL', 'LLMGW_API_KEY', 'FMAPI_BASE_URL', 'FMAPI_API_KEY', 'STRUCMED_RUNTIME_WEB'])
+for (const name of ['STRUCMED_ONLINE_BASE_URL', 'STRUCMED_SITE', 'STRUCMED_EXTERNAL_URL', 'LLMGW_BASE_URL', 'LLMGW_API_KEY', 'FMAPI_BASE_URL', 'FMAPI_API_KEY', 'STRUCMED_RUNTIME_WEB'])
   env[name] = present(name);
 // 站台：自動判斷院內（LVAIW）／院外（使用者設定的網址），與 MCP 用同一份邏輯（mcp/strucmed-mcp/src/site.mjs）
 const site = await import(pathToFileURL(path.join(PLUGIN_ROOT, 'mcp', 'strucmed-mcp', 'src', 'site.mjs')).href);
@@ -69,9 +69,7 @@ if (explicit) {
     : (site.sites().external ? '站台：院內與院外都連不到，只能離線作業' : '站台：院內連不到，且未設定院外站台網址，只能離線作業'), 'warning');
 }
 const online = !!profile;
-if (online) check('credentials', env.STRUCMED_USER && env.STRUCMED_PASS, env.STRUCMED_USER && env.STRUCMED_PASS
-  ? '院內 HIS 帳密：已設定'
-  : '院內 HIS 帳密：本 shell 看不到（以 /plugin configure 設定的值只注入 MCP，這是正常的；online_login 會回報實際狀態）', 'ok');
+if (online) check('login', true, '登入：online_login 會以瀏覽器開啟站台登入頁，HIS 帳密在頁面輸入（不需要事先設定）', 'ok');
 check('llmgateway', true, profile === 'external' ? 'LlmGateway：院外站台不可用（模型白名單使用內建靜態表）' : env.LLMGW_API_KEY ? 'LlmGateway：已設定金鑰' : 'LlmGateway：本 shell 未見 token（選用；/plugin configure 填「LlmGateway token」，院內才用得到；未設定時模型白名單使用內建靜態表）', 'ok');
 check('fmapi', true, profile === 'internal' || env.FMAPI_BASE_URL ? 'FMapi：可用（院內）' : 'FMapi：只有院內提供（選用）', 'ok');
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// PostToolUse（online_login）：伺服器回「帳號或密碼錯誤」時（MCP 的 error.details.reconfigure），
-// 直接向使用者顯示重新設定的提示（systemMessage），並提醒 Claude 不要重試、不要在對話索取密碼。
-// 不讀、不記任何帳密；永遠 exit 0。
+// PostToolUse（online_login）：瀏覽器登入還沒完成時（MCP 回 data.pending），直接向使用者顯示登入頁的提示（systemMessage），
+// 並提醒 Claude 等使用者完成後再呼叫一次、不要在對話索取密碼。不讀、不記任何帳密或 token；永遠 exit 0。
 'use strict';
 
 let raw = '';
@@ -10,19 +9,21 @@ process.stdin.on('data', d => { raw += d; });
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
-    const texts = responseTexts(input);
-    let action = '';
-    for (const t of texts) {
+    let pending = null;
+    for (const t of responseTexts(input)) {
       try {
         const j = JSON.parse(t);
-        if (j && j.error && j.error.details && j.error.details.reconfigure) action = String(j.error.details.action || '/plugin configure strucmed@strucmed-marketplace');
+        if (j && j.ok && j.data && j.data.pending && typeof j.data.authorize_url === 'string') pending = j.data;
       } catch { /* 非 JSON */ }
     }
-    if (action) {
+    if (pending) {
+      let host = '';
+      try { host = new URL(pending.authorize_url).host; } catch { /* 格式不對就不顯示 */ }
+      const open = pending.browser_opened === false ? `瀏覽器沒有自動開啟，請開啟 ${pending.authorize_url} 。` : '已在瀏覽器開啟登入頁。';
       process.stdout.write(JSON.stringify({
-        systemMessage: `strucmed：院內 HIS 密碼錯誤（每三個月變更一次，可能已更換）。請執行 ${action} 更新「院內 HIS 密碼」，再執行 /reload-plugins。`,
+        systemMessage: `strucmed：${open}請確認網址是 strucmed 站台${host ? `（${host}）` : ''}後輸入 HIS 帳號密碼，按「登入並同意」，再回到這裡。`,
         hookSpecificOutput: { hookEventName: 'PostToolUse',
-          additionalContext: `HIS 帳密被拒：請使用者執行 ${action} 更新密碼後 /reload-plugins，再重新執行 connect-strucmed。不要再呼叫 online_login 重試（避免帳號鎖定），也不要請使用者在對話中提供密碼。` }
+          additionalContext: '瀏覽器登入進行中：等使用者說完成後再呼叫一次 online_login（會接著等同一個登入）。不要請使用者在對話中提供密碼。' }
       }));
     }
   } catch (e) {

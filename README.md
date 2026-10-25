@@ -19,13 +19,13 @@
 
 ### 支援的工具
 
-本 plugin 依 Claude Code plugin 規格打包（`userConfig` 安全儲存、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks，不需另備 manifest；其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
+本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks，不需另備 manifest；其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
 
 | 工具 | 支援程度 | 可用 | 缺少 |
 |---|---|---|---|
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
-| **GitHub Copilot CLI** | ⚠️ 實驗性，只能離線作業 | skills、MCP、hooks（同一個市集安裝） | `userConfig` 安全儲存（因此不能登入線上）、subagent；對話中的執行未經實測 |
-| **OpenAI Codex CLI** | ⚠️ 實驗性，只建議離線作業 | skills、MCP（stdio） | 安全儲存、hooks（G3 核准檢查、安全提醒、workflow-log）、subagent 與結構化提問；未經實測 |
+| **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
+| **OpenAI Codex CLI** | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（stdio，含瀏覽器登入） | hooks（G3 核准檢查、安全提醒、workflow-log）、subagent 與結構化提問；未經實測 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
@@ -52,7 +52,9 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 
 也可以在 Claude Code 工作階段內用 `/plugin marketplace add kunjulin/strucmed-plugin` 與 `/plugin install strucmed@strucmed-marketplace`。
 
-### 步驟 2：填憑證（在 Claude Code 內）
+### 步驟 2：選填設定（在 Claude Code 內）
+
+**不需要填 HIS 帳號密碼**（3.0.0 起）：線上功能改用瀏覽器登入，見步驟 3。只有院外使用或要用 LlmGateway 時才需要：
 
 ```
 /plugin configure strucmed@strucmed-marketplace
@@ -60,13 +62,13 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 
 | 欄位 | 填什麼 |
 |---|---|
-| 院內 HIS 帳號／密碼 | 與編輯器登入相同；上架的範本建立者與稽核紀錄就是這個帳號。**只有這兩項必填** |
+| 院外站台網址 | 院外使用才填，必須是 https，網址請向資訊室確認 |
 | LlmGateway token | 選用。在 `/llmgw` 的「我的帳號」自助核發一把**伺服器型** token，標籤建議 `strucmed-plugin`；只在院內用來取模型白名單 |
 | FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
 
-站台**不用填**：MCP 啟動時自動判斷，院內網路用院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`），院外要在 `/plugin configure` 填「院外站台網址」（plugin 不內建院外網址），兩邊都連不到就是離線模式。密碼與 token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。
+站台**不用填**：MCP 啟動時自動判斷，院內網路用院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`），院外要在 `/plugin configure` 填「院外站台網址」（plugin 不內建院外網址），兩邊都連不到就是離線模式。token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。
 
-**HIS 密碼每三個月變更**：變更後第一次登入會出現「HIS 密碼錯誤」的提示，照提示執行 `/plugin configure strucmed@strucmed-marketplace` 更新密碼、`/reload-plugins` 即可。plugin 不會用舊密碼重試（避免帳號被鎖）。
+從 2.x 升級：`/plugin configure` 裡舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理；平台需部署到支援瀏覽器登入的版本（strucmed 2026-10-25 之後的 main，含 `api/v2/auth/authorize`）。
 
 ### 步驟 3：開始用
 
@@ -74,7 +76,13 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 /strucmed:connect-strucmed
 ```
 
-登入、確認站台功能、取模型白名單。接著：
+登入、確認站台功能、取模型白名單。**登入**會用系統瀏覽器開啟 strucmed 站台的登入頁：確認網址是 strucmed 站台後輸入 HIS 帳號密碼，按「登入並同意」，回到 Claude Code 即可（瀏覽器沒有自動開啟時，對話中會顯示網址）。
+
+- 密碼只在站台的登入頁輸入，不經過 AI 工具與對話；HIS 密碼變更後直接在登入頁輸入新密碼即可。
+- 登入後的 token 只存在 MCP 的記憶體，只能使用範本、字典與自己的 struNote 清單；30 分鐘自動更新，同一次登入最長 8 小時。開新工作階段或 `/reload-plugins` 後要重新登入。
+- 同一帳號連續 5 次密碼錯誤，站台會鎖定 15 分鐘。
+
+接著：
 
 ```
 /strucmed:strucmed-form 幫我做一張 XX 評估單
@@ -102,7 +110,7 @@ claude plugin marketplace add <資料夾路徑>
 
 其餘步驟相同。開發者改 skill／references 後 `/reload-plugins` 即生效；MCP 程式與憑證的變更要開新工作階段。
 
-### GitHub Copilot CLI（實驗性，只能離線）
+### GitHub Copilot CLI（實驗性）
 
 Copilot CLI 與 Claude Code 共用 plugin 格式（microsoft/power-platform-skills 也是同一份給兩邊用）。2026-10-23 以 Copilot CLI 1.0.103 實測：可從本市集安裝，9 個 skill 都會載入，MCP 設定也能正確解析；**對話中的實際執行尚未實測**。
 
@@ -118,17 +126,17 @@ copilot plugin install strucmed@strucmed-marketplace
 
 和 Claude Code 的差異：
 
-- **只能離線**：Copilot 沒有 `userConfig`／`/plugin configure`，帳密欄位不會被填入，MCP 自動進入離線模式，線上 tool（含上架）不會列出。設計、驗證、預覽、輸出 `.htm` 都可用；上架、線上範本與模型白名單請回 Claude Code，或把 `.htm` 匯入編輯器。不要為了上線把密碼寫進 `~/.copilot/mcp-config.json`。
+- **線上登入**：3.0.0 起改用瀏覽器登入，不需要 `userConfig`，Copilot 也能使用線上 tool（未實測）。Copilot 沒有 `/plugin configure`：院外使用時在啟動 `copilot` 的 shell 設 `STRUCMED_EXTERNAL_URL`，LlmGateway 的 token 也一樣以環境變數提供；不要把 token 寫進 `~/.copilot/mcp-config.json`。
 - **hooks**：Copilot 支援 Claude 格式的 `hooks/hooks.json`；hook 以 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT` 環境變數定位腳本，matcher 同時涵蓋兩邊的 MCP tool 命名，所以 G3 核准檢查、安全提醒與 workflow-log 在 Copilot 也會執行。
 - **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，草稿會落到 plugin 安裝目錄，建議在 WSL 或 Git Bash 使用。
 - **subagent**：`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，form-planner 等可能不會載入，skill 會由主 agent 依序執行。
 
 ### OpenAI Codex CLI（實驗性）
 
-Codex 讀得懂 `SKILL.md` 與 stdio MCP，但**不會**載入本 plugin 的 `plugin.json`、`hooks/` 與 `userConfig`，所以：
+Codex 讀得懂 `SKILL.md` 與 stdio MCP（3.0.0 起含瀏覽器登入），但**不會**載入本 plugin 的 `plugin.json`、`hooks/` 與 `userConfig`，所以：
 
-- **G3 上架核准的 hook 不會執行**，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。建議在 Codex 只做離線設計、驗證與輸出 `.htm`，上架回到 Claude Code 或用編輯器匯入。
-- 沒有安全儲存區：帳密**不要**寫進 `config.toml`；只在需要線上功能的那個終端機工作階段以環境變數提供，或乾脆留空走離線模式。
+- **G3 上架核准的 hook 不會執行**，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。Codex 可以登入、讀取範本與字典；上架建議回到 Claude Code 或用編輯器匯入（G3 移進 MCP 之前）。
+- 沒有安全儲存區：LlmGateway 等 token **不要**寫進 `config.toml`，只以環境變數名稱轉傳（下方 `env_vars`）。
 - skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
 - tool 名稱在 Codex 是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`；skill 文字中的全名請自行對應。
 
@@ -155,8 +163,8 @@ Codex 讀得懂 `SKILL.md` 與 stdio MCP，但**不會**載入本 plugin 的 `pl
    command = "node"
    args = ["<repo>/mcp/strucmed-mcp/src/server.mjs"]
    startup_timeout_sec = 20
-   # 只轉傳名稱，值由啟動 codex 的 shell 提供；不要把密碼寫在這裡
-   env_vars = ["STRUCMED_USER", "STRUCMED_PASS", "LLMGW_API_KEY", "FMAPI_API_KEY", "STRUCMED_RUNTIME_WEB"]
+   # 只轉傳名稱，值由啟動 codex 的 shell 提供；不要把 token 寫在這裡（HIS 帳密不需要，線上改用瀏覽器登入）
+   env_vars = ["STRUCMED_EXTERNAL_URL", "LLMGW_API_KEY", "FMAPI_API_KEY", "STRUCMED_RUNTIME_WEB"]
 
    [mcp_servers.strucmed.env]
    STRUCMED_FLAGS = "<repo>/feature-flags.json"
@@ -166,7 +174,7 @@ Codex 讀得懂 `SKILL.md` 與 stdio MCP，但**不會**載入本 plugin 的 `pl
 
 ### 其他本機 MCP client（只用 MCP tool）
 
-任何支援 stdio MCP 的 client 都可註冊同一個伺服器，用法同上：`command = node`、`args = <repo>/mcp/strucmed-mcp/src/server.mjs`、`STRUCMED_FLAGS` 指向 `feature-flags.json`，憑證環境變數選填（留空即離線模式）。這種用法沒有任何 skill 流程與閘門，等於手動操作 tool；寫入線上的 tool 不建議在這類 client 使用。
+任何支援 stdio MCP 的 client 都可註冊同一個伺服器，用法同上：`command = node`、`args = <repo>/mcp/strucmed-mcp/src/server.mjs`、`STRUCMED_FLAGS` 指向 `feature-flags.json`；線上 tool 以瀏覽器登入，`STRUCMED_SITE=offline` 可完全不連線。這種用法沒有任何 skill 流程與閘門，等於手動操作 tool；寫入線上的 tool 不建議在這類 client 使用。
 
 ## 院內與院外
 
@@ -230,7 +238,7 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 `plugin.json` 以 `${CLAUDE_PLUGIN_ROOT}/mcp/strucmed-mcp/src/server.mjs` 註冊 `strucmed`（stdio，Node 20，零相依），tool 名稱為 `mcp__plugin_strucmed_strucmed__<tool>`。
 
 - **離線（一律可用）**：`form_create`／`form_import`／`form_add_area`／`form_add_control`／`form_update_control`／`form_validate`／`form_preview`／`form_export`、`dictionary_*`、`formula_check` 等 16 個。
-- **線上（有帳密且判斷出站台才列出）**：`online_login`／`me`／`features`／`folder_list`／`template_get`／`template_create`／`template_update`／`template_versions`、`online_dictionary_*`、`online_me_notes_*`。沒有查詢或存檔病人紀錄的 tool。
+- **線上（判斷出站台才列出；以瀏覽器登入）**：`online_login`／`me`／`features`／`folder_list`／`template_get`／`template_create`／`template_update`／`template_versions`、`online_dictionary_*`、`online_me_notes_*`。沒有查詢或存檔病人紀錄的 tool。
 - **LlmGateway（只有院內）**：`llmgateway_models`（白名單快取 `.strucmed/llm-models.json`，巨集模型檢查以此為準）、`llmgateway_chat_test`（flag 預設關）。
 - **FMapi（只有院內）**：`fmapi_status`（唯讀）。
 
@@ -315,7 +323,7 @@ cd mcp/strucmed-mcp && npm test
 
 ## 安全約定
 
-- 帳密與 token 只由 `/plugin configure` 收，存安全儲存區；不寫入任何檔案、log、對話或 git。
+- HIS 帳密只在 strucmed 站台的登入頁輸入（瀏覽器登入），plugin 與 AI 工具都拿不到；選用的 token 由 `/plugin configure` 收，存安全儲存區；都不寫入任何檔案、log、對話或 git。
 - 線上寫入只有「上架」、字典與 struNote 清單，全部兩段式並經閘門；不提供病人紀錄的查詢與存檔；永不提供刪除範本、刪除字典、`sys` 資料夾。
 - plugin 不直連倉儲；B2 app 的存檔經 `records/save` API。
 - `.gitignore` 排除 `.env*`、`*.log`、`*.har`、`repo/`、`scratch/`、`.strucmed/`、`output/`、`node_modules/`。

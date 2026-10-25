@@ -9,11 +9,10 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { buildPackage } from '../src/package.mjs';
+import { fakeAuthorize, browserLogin } from './fake-login.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(HERE, '../src/server.mjs');
-const ACCOUNT = 'TESTUSR';
-const PASSWORD = 'pw-Secret#9z';               // 不可出現在任何 tool 回應或 stdout/stderr
 const USER_ID = 'U123';
 const GW_TOKEN = 'cgllm-browser-Secret42';     // api/llm-config 回的瀏覽器型金鑰：tool 不可回傳
 const ONLINE_SHA = 'sha-online-1';
@@ -28,6 +27,8 @@ let notes = [{ dictID: 'T-1', dictVal: '跌倒評估' }];   // struNote 清單  
 let fake, port, reqs = [], tokenSeq = 0, validAccess = new Set(), validRefresh = new Set();
 const issued = [];                             // 發出過的 token：也不可出現在 tool 回應
 const behavior = {};
+const login = fakeAuthorize();
+let revoked = [];
 function issue(withUser) {
   const a = `acc-${++tokenSeq}-xyz`, r = `ref-${tokenSeq}-xyz`;
   validAccess.add(a); validRefresh.add(r); issued.push(a, r);
@@ -46,10 +47,12 @@ function handler(req, res) {
     const auth = req.headers.authorization || '';
     reqs.push({ method: req.method, path: url.pathname, search: url.search, auth, body });
     const p = url.pathname.replace(/^\/strucmed\//, '');
+    if (p === 'api/v2/auth/authorize' && req.method === 'GET') return login.authorize(url, res);
     if (p === 'api/v2/auth/token') {
-      if (body.account !== ACCOUNT || body.password !== PASSWORD) return err(res, 401, 'E_AUTH', '帳號或密碼錯誤');
+      if (body.grantType !== 'authorization_code' || !login.exchange(body)) return err(res, 400, 'E_INVALID_GRANT', '授權碼無效');
       return json(res, 200, issue(true));
     }
+    if (p === 'api/v2/auth/revoke') { revoked.push(body.token); validRefresh.delete(body.token); return json(res, 200, { ok: true }); }
     if (p === 'api/v2/auth/refresh') {
       if (behavior.refreshFails || !validRefresh.has(body.refreshToken)) return err(res, 401, 'E_AUTH', 'refresh token 無效或已過期，請重新登入');
       return json(res, 200, issue(false));
@@ -127,7 +130,7 @@ function handler(req, res) {
 // ── MCP 子行程 ──────────────────────────────────────────────
 function startMcp(env) {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-online-'));
-  const proc = spawn(process.execPath, [SERVER], { env: { ...process.env, STRUCMED_WORKSPACE: ws, STRUCMED_SITE: 'offline', STRUCMED_ONLINE_BASE_URL: '', STRUCMED_USER: '', STRUCMED_PASS: '', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const proc = spawn(process.execPath, [SERVER], { env: { ...process.env, STRUCMED_WORKSPACE: ws, STRUCMED_SITE: 'offline', STRUCMED_ONLINE_BASE_URL: '', STRUCMED_NO_BROWSER: '1', STRUCMED_LOGIN_WAIT_MS: '300', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let seq = 0;
   const m = { ws, proc, stdout: '', stderr: '' };
@@ -152,7 +155,7 @@ function startMcp(env) {
 
 let mcp;
 const BASE = () => `http://127.0.0.1:${port}/strucmed`;
-const ONLINE_ENV = () => ({ STRUCMED_ONLINE_BASE_URL: BASE() + '/', STRUCMED_USER: ACCOUNT, STRUCMED_PASS: PASSWORD });
+const ONLINE_ENV = () => ({ STRUCMED_ONLINE_BASE_URL: BASE() + '/' });
 
 before(async () => {
   fake = http.createServer(handler);
@@ -161,14 +164,14 @@ before(async () => {
   mcp = startMcp(ONLINE_ENV());
 });
 after(() => {
-  mcp.stop(); fake.close();
-  // 整個測試過程：密碼與 token 都不可出現在 MCP 的 stdout（tool 回應）或 stderr（log）
-  for (const secret of [PASSWORD, ...issued]) {
+  mcp.stop(); fake.closeAllConnections(); fake.close();   // fetch（測試端的瀏覽器）留下的 keep-alive 連線
+  // 整個測試過程：token 與授權碼都不可出現在 MCP 的 stdout（tool 回應）或 stderr（log）
+  for (const secret of [...issued, ...login.issuedCodes]) {
     assert.ok(!mcp.stdout.includes(secret), `stdout leaked ${secret.slice(0, 4)}…`);
     assert.ok(!mcp.stderr.includes(secret), `stderr leaked ${secret.slice(0, 4)}…`);
   }
 });
-beforeEach(() => { reqs = []; for (const k of Object.keys(behavior)) delete behavior[k]; });
+beforeEach(() => { reqs = []; revoked = []; login.deny = false; for (const k of Object.keys(behavior)) delete behavior[k]; });
 
 test('offline by default: online tools hidden and disabled, no network', async () => {
   const off = startMcp({});
@@ -187,11 +190,10 @@ test('offline by default: online tools hidden and disabled, no network', async (
 
 test('only https (or loopback http) base URLs are accepted', async () => {
   for (const bad of ['http://lvaiw.cgmf.org.tw/strucmed', 'https://u:p@lvaiw.cgmf.org.tw/strucmed', 'ftp://127.0.0.1/x', 'not a url']) {
-    const m = startMcp({ STRUCMED_ONLINE_BASE_URL: bad, STRUCMED_USER: ACCOUNT, STRUCMED_PASS: PASSWORD });
+    const m = startMcp({ STRUCMED_ONLINE_BASE_URL: bad });
     try {
       const r = await m.call('online_login', {});
       assert.equal(r.error.code, 'E_ONLINE_DISABLED', bad);
-      assert.ok(!JSON.stringify(r).includes(PASSWORD));
     } finally { m.stop(); }
   }
 });
@@ -212,40 +214,76 @@ test('online tools need a login first', async () => {
   assert.equal(reqs.length, 0);
 });
 
-test('missing credentials in the environment → E_AUTH without calling the server', async () => {
-  const m = startMcp({ STRUCMED_ONLINE_BASE_URL: BASE() });
+test('login opens the browser login page with PKCE and a loopback redirect, then exchanges the code', async () => {
+  const m = startMcp(ONLINE_ENV());
   try {
-    const r = await m.call('online_login', {});
-    assert.equal(r.error.code, 'E_AUTH');
-    assert.match(r.error.message, /STRUCMED_USER/);
+    const first = await m.call('online_login', { dept_no: 'APP' });
+    assert.equal(first.ok, true);
+    assert.equal(first.data.pending, true);
+    assert.equal(first.data.browser_opened, false, 'STRUCMED_NO_BROWSER=1');
+    const u = new URL(first.data.authorize_url);
+    assert.equal(u.origin + u.pathname, BASE() + '/api/v2/auth/authorize');
+    const q = Object.fromEntries(u.searchParams);
+    assert.equal(q.client_id, 'strucmed-mcp');
+    assert.equal(q.response_type, 'code');
+    assert.equal(q.code_challenge_method, 'S256');
+    assert.match(q.code_challenge, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(q.redirect_uri, /^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    assert.equal(q.dept_no, 'APP');
+    assert.ok(q.state.length >= 16);
+    assert.equal(reqs.length, 0, 'nothing is sent to the site before the browser opens the page');
+
+    // 再呼叫一次但瀏覽器還沒完成：沿用同一個登入（不換網址）
+    const again = await m.call('online_login', { dept_no: 'APP' });
+    assert.equal(again.data.authorize_url, first.data.authorize_url);
+
+    await (await fetch(first.data.authorize_url)).text();
+    const r = await m.call('online_login', { dept_no: 'APP' });
+    assert.equal(r.ok, true);
+    assert.equal(r.data.logged_in, true);
+    assert.equal(r.data.user_id, USER_ID);
+    assert.equal(r.data.dept_no, 'APP');
+    assert.equal(r.data.base_url, BASE(), 'trailing slash normalised');
+    const token = reqs.find(x => x.path === '/strucmed/api/v2/auth/token');
+    assert.deepEqual(Object.keys(token.body).sort(), ['clientId', 'code', 'codeVerifier', 'grantType', 'redirectUri']);
+    assert.equal(token.body.grantType, 'authorization_code');
+    assert.equal(token.body.redirectUri, q.redirect_uri);
+    assert.ok(!/accessToken|refreshToken|acc-|ref-/.test(JSON.stringify(r)), 'tokens never returned');
+
+    // 已登入：不再開登入頁
+    const status = await m.call('online_login', {});
+    assert.equal(status.data.already, true);
   } finally { m.stop(); }
-  assert.equal(reqs.length, 0);
 });
 
-test('wrong password → E_AUTH; message does not echo the password', async () => {
-  const m = startMcp({ ...ONLINE_ENV(), STRUCMED_PASS: 'wrong-pass-123' });
+test('the loopback callback ignores requests with a wrong state', async () => {
+  const m = startMcp(ONLINE_ENV());
   try {
-    const r = await m.call('online_login', {});
-    assert.equal(r.error.code, 'E_AUTH');
-    assert.equal(r.error.details.status, 401);
-    assert.ok(!m.stdout.includes('wrong-pass-123') && !m.stderr.includes('wrong-pass-123'));
+    const first = await m.call('online_login', {});
+    const redirect = new URL(first.data.authorize_url).searchParams.get('redirect_uri');
+    const bad = await fetch(redirect + '?code=ac_forged&state=wrong');
+    assert.equal(bad.status, 400);
+    await bad.text();
+    const still = await m.call('online_login', {});
+    assert.equal(still.data.pending, true, 'a forged callback does not complete the login');
+    assert.ok(!reqs.some(x => x.path.endsWith('/auth/token')));
   } finally { m.stop(); }
 });
 
-test('login posts {hospital, account, password, clientId, deptNo} and returns only identity', async () => {
-  const r = await mcp.call('online_login', { dept_no: 'APP' });
-  assert.equal(r.ok, true);
-  assert.deepEqual(reqs.map(q => q.path), ['/strucmed/api/v2/auth/token']);
-  assert.deepEqual(reqs[0].body, { hospital: 'CGMH', account: ACCOUNT, password: PASSWORD, clientId: 'strucmed-mcp', deptNo: 'APP' });
-  assert.equal(r.data.user_id, USER_ID);
-  assert.equal(r.data.dept_no, 'APP');
-  assert.equal(r.data.base_url, BASE(), 'trailing slash normalised');
-  const text = JSON.stringify(r);
-  assert.ok(!/accessToken|refreshToken|acc-|ref-/.test(text), 'tokens never returned');
+test('denied on the login page → E_AUTH, and a new login can start', async () => {
+  const m = startMcp(ONLINE_ENV());
+  try {
+    login.deny = true;
+    const r = await browserLogin(m);
+    assert.equal(r.error.code, 'E_AUTH');
+    assert.match(r.error.message, /拒絕/);
+    login.deny = false;
+    assert.equal((await browserLogin(m)).data.logged_in, true);
+  } finally { m.stop(); }
 });
 
 test('folder list and template get send the bearer token', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   reqs = [];
   const f = await mcp.call('online_folder_list', { type: 'dpt', q: '跌倒', page: 2, page_size: 20 });
   assert.equal(f.ok, true);
@@ -265,7 +303,7 @@ test('folder list and template get send the bearer token', async () => {
 });
 
 test('401 → refresh → retry with the new access token', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   validAccess.clear();                         // access token 過期
   reqs = [];
   const t = await mcp.call('online_template_get', { template_id: 'T-2' });
@@ -278,7 +316,7 @@ test('401 → refresh → retry with the new access token', async () => {
 });
 
 test('refresh fails → E_AUTH and the session is cleared', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   validAccess.clear();
   behavior.refreshFails = true;
   const t = await mcp.call('online_template_get', { template_id: 'T-3' });
@@ -290,7 +328,7 @@ test('refresh fails → E_AUTH and the session is cleared', async () => {
 });
 
 test('upstream errors and redirects are reported, redirects are not followed', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   behavior.upstream500 = true;
   const e = await mcp.call('online_template_get', { template_id: 'T-1' });
   assert.equal(e.error.code, 'E_UPSTREAM');
@@ -305,9 +343,13 @@ test('upstream errors and redirects are reported, redirects are not followed', a
   assert.equal(reqs.length, 1, 'redirect target was not requested');
 });
 
-test('logout clears the in-memory tokens', async () => {
-  await mcp.call('online_login', {});
-  assert.equal((await mcp.call('online_logout')).data.logged_out, true);
+test('logout revokes the refresh token and clears the in-memory tokens', async () => {
+  await browserLogin(mcp, {});
+  const out = await mcp.call('online_logout');
+  assert.equal(out.data.logged_out, true);
+  assert.equal(out.data.revoked, true);
+  assert.equal(revoked.length, 1);
+  assert.match(revoked[0], /^ref-/);
   reqs = [];
   assert.equal((await mcp.call('online_folder_list', { type: 'usr' })).error.code, 'E_AUTH');
   assert.equal(reqs.length, 0);
@@ -322,12 +364,12 @@ test('offline tools keep working when online is configured', async () => {
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
   for (const f of walk(mcp.ws)) {
     const c = fs.readFileSync(f, 'utf8');
-    for (const s of [PASSWORD, ...issued]) assert.ok(!c.includes(s), `${f} contains a secret`);
+    for (const s of [...issued, ...login.issuedCodes]) assert.ok(!c.includes(s), `${f} contains a secret`);
   }
 });
 
 test('online_me returns identity, folders and admin flag', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const r = await mcp.call('online_me', {});
   assert.equal(r.ok, true);
   assert.equal(r.data.user_id, USER_ID);
@@ -337,7 +379,7 @@ test('online_me returns identity, folders and admin flag', async () => {
 });
 
 test('online_features aggregates health, runtime features and llm-config without the gateway token', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const r = await mcp.call('online_features', {});
   assert.equal(r.ok, true);
   assert.equal(r.data.health.ok, true);
@@ -352,7 +394,7 @@ test('online_features aggregates health, runtime features and llm-config without
 });
 
 test('online_features reports unavailable endpoints as warnings instead of failing', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   behavior.upstream500 = true;
   const r = await mcp.call('online_features', {});
   assert.equal(r.ok, true);
@@ -363,7 +405,7 @@ test('online_features reports unavailable endpoints as warnings instead of faili
 });
 
 test('online_dictionary_search filters by q and can replace the local dictionary index', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const bad = await mcp.call('online_dictionary_search', { scope: 'all' });
   assert.equal(bad.error.code, 'E_INVALID_INPUT');
   const r = await mcp.call('online_dictionary_search', { q: '跌倒', scope: 'exact' });
@@ -393,7 +435,6 @@ test('feature flag online=false hides online tools and returns E_FEATURE_DISABLE
     assert.ok(list.result.tools.some(t => t.name === 'form_create'));
     const r = await m.call('online_login', {});
     assert.equal(r.error.code, 'E_FEATURE_DISABLED');
-    assert.ok(!JSON.stringify(r).includes(PASSWORD));
   } finally { m.stop(); fs.rmSync(flags, { force: true }); }
   assert.equal(reqs.length, 0, 'no request reached the server');
 });
@@ -412,7 +453,7 @@ async function makeDraft(m, { withPendingDict = false, name = '上架測試' } =
 }
 
 test('online_template_create: two-step plan → POST, published recorded, errors mapped', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const id = await makeDraft(mcp);
   const sys = await mcp.call('online_template_create', { draft_id: id, folder_type: 'sys' });
   assert.equal(sys.error.code, 'E_INVALID_INPUT');
@@ -450,7 +491,7 @@ test('online_template_create: two-step plan → POST, published recorded, errors
 });
 
 test('online_template_create refuses drafts with pending dictionaries (E_DICT_PENDING)', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const id = await makeDraft(mcp, { withPendingDict: true, name: '待字典' });
   const r = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
   assert.equal(r.error.code, 'E_DICT_PENDING');
@@ -458,7 +499,7 @@ test('online_template_create refuses drafts with pending dictionaries (E_DICT_PE
 });
 
 test('online_template_update: only derived drafts, If-Match from ETag, 409 → E_CONFLICT', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const fresh = await makeDraft(mcp, { name: '非改版' });
   const notDerived = await mcp.call('online_template_update', { draft_id: fresh, template_id: 'T-1' });
   assert.equal(notDerived.error.code, 'E_INVALID_INPUT');
@@ -497,7 +538,7 @@ test('feature flag templateUpdate=false hides online_template_update', async () 
     const names = list.result.tools.map(t => t.name);
     assert.ok(names.includes('online_template_create') && !names.includes('online_template_update'));
     assert.ok(!names.includes('online_dictionary_create'), 'dictionaryWrite defaults to false');
-    await m.call('online_login', {});
+    await browserLogin(m, {});
     assert.equal((await m.call('online_template_update', { draft_id: 'd-000000000000', template_id: 'T-1' })).error.code, 'E_FEATURE_DISABLED');
   } finally { m.stop(); fs.rmSync(flags, { force: true }); }
 });
@@ -507,7 +548,7 @@ test('online_dictionary_create (flag on): creates or reuses, binds dicid, refuse
   fs.writeFileSync(flags, JSON.stringify({ dictionaryWrite: true }));
   const m = startMcp({ ...ONLINE_ENV(), STRUCMED_FLAGS: flags });
   try {
-    await m.call('online_login', {});
+    await browserLogin(m, {});
     const id = await makeDraft(m, { withPendingDict: true, name: '字典上架' });
     const notPending = await m.call('online_dictionary_create', { draft_id: id, name: '不存在' });
     assert.equal(notPending.error.code, 'E_INVALID_INPUT');
@@ -546,7 +587,7 @@ test('online_dictionary_batch (flag on): binds successes, leaves failures pendin
   fs.writeFileSync(flags, JSON.stringify({ dictionaryWrite: true }));
   const m = startMcp({ ...ONLINE_ENV(), STRUCMED_FLAGS: flags });
   try {
-    await m.call('online_login', {});
+    await browserLogin(m, {});
     const c = await m.call('form_create', { name: '批次字典', dept_no: 'APP' });
     const a = await m.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
     for (const nm of ['批次甲', '已刪除字典'])
@@ -562,7 +603,7 @@ test('online_dictionary_batch (flag on): binds successes, leaves failures pendin
 });
 
 test('online_me_notes_get/set: incremental diff plan, two-step PUT, no-change short-circuit', async () => {
-  await mcp.call('online_login', {});
+  await browserLogin(mcp, {});
   const g = await mcp.call('online_me_notes_get', {});
   assert.equal(g.ok, true, JSON.stringify(g));
   assert.deepEqual(g.data.items, [{ template_id: 'T-1', name: '跌倒評估' }]);
