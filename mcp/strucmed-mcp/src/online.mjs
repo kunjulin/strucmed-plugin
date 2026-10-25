@@ -95,7 +95,8 @@ export async function login({ hospital, dept_no } = {}) {
   const fp = crypto.createHash('sha256').update(`${account}\0${password}`).digest('hex');
   if (rejected === fp) fail(E.AUTH, PASSWORD_HINT, { reconfigure: true, action: RECONFIGURE, retried: false });
   session = null;
-  const body = { hospital: hospital || 'CGMH', account, password };
+  // clientId：平台只讓 strucmed-mcp 的 token 呼叫範本與字典的 API（strucmed docs/MCP-LOGIN-MFA-DESIGN.md 第 1 期）；舊版平台會忽略這個欄位
+  const body = { hospital: hospital || 'CGMH', account, password, clientId: 'strucmed-mcp' };
   if (dept_no) body.deptNo = String(dept_no);
   const r = await send(base, 'POST', 'api/v2/auth/token', { body });
   if (r.status === 401 && isBadPassword(r)) {

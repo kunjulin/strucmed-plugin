@@ -1,13 +1,28 @@
 // Local workspace: <root>/.strucmed/{drafts/*.json, dictionaries.json}
 // <root> = STRUCMED_WORKSPACE or the server's cwd. Nothing leaves this machine.
+// Copilot CLI starts plugin MCP servers with cwd = plugin root; then <root> falls back to PWD (the directory the CLI was launched from).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { E, fail } from './errors.mjs';
 import { loadCache } from './policy.mjs';
 
+const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const unset = v => { const s = String(v || '').trim(); return !s || s.startsWith('${'); };
+const real = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
+export function workspaceRoot() {
+  if (!unset(process.env.STRUCMED_WORKSPACE)) return path.resolve(process.env.STRUCMED_WORKSPACE.trim());
+  const cwd = real(process.cwd());
+  const roots = [PLUGIN_ROOT, process.env.PLUGIN_ROOT, process.env.CLAUDE_PLUGIN_ROOT].filter(r => !unset(r)).map(real);
+  const pwd = unset(process.env.PWD) ? '' : real(process.env.PWD);
+  if (roots.includes(cwd) && pwd && pwd !== cwd && fs.existsSync(pwd)) return pwd;
+  return cwd;
+}
+
 export function workspace() {
-  const root = path.resolve(process.env.STRUCMED_WORKSPACE || process.cwd());
+  const root = workspaceRoot();
   const base = path.join(root, '.strucmed');
   const drafts = path.join(base, 'drafts');
   fs.mkdirSync(drafts, { recursive: true });

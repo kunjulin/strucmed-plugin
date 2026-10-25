@@ -237,11 +237,11 @@ test('wrong password → E_AUTH; message does not echo the password', async () =
   } finally { m.stop(); }
 });
 
-test('login posts {hospital, account, password, deptNo} and returns only identity', async () => {
+test('login posts {hospital, account, password, clientId, deptNo} and returns only identity', async () => {
   const r = await mcp.call('online_login', { dept_no: 'APP' });
   assert.equal(r.ok, true);
   assert.deepEqual(reqs.map(q => q.path), ['/strucmed/api/v2/auth/token']);
-  assert.deepEqual(reqs[0].body, { hospital: 'CGMH', account: ACCOUNT, password: PASSWORD, deptNo: 'APP' });
+  assert.deepEqual(reqs[0].body, { hospital: 'CGMH', account: ACCOUNT, password: PASSWORD, clientId: 'strucmed-mcp', deptNo: 'APP' });
   assert.equal(r.data.user_id, USER_ID);
   assert.equal(r.data.dept_no, 'APP');
   assert.equal(r.data.base_url, BASE(), 'trailing slash normalised');

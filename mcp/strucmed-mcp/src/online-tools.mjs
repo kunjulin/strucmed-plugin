@@ -78,8 +78,8 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_records_query',
-    description: '（online，病人資料，唯讀）查詢病人紀錄：kind=data → POST api/v2/records/query/data（key-value，Struct_IotDataQuery）；' +
-      'kind=image → api/v2/records/query/image（XML 文件與影像，Struct_IotImageQuery）。**必須帶病歷號 query.chtno**；伺服器會記錄每次查詢（含病歷號與查詢者）。' +
+    description: '（online，病人資料，唯讀）查詢病人紀錄：kind=data → POST api/v2/records/query/data（key-value）；' +
+      'kind=image → api/v2/records/query/image（XML 文件與影像）。**必須帶病歷號 query.chtno**；伺服器會記錄每次查詢（含病歷號與查詢者）。' +
       '只轉送 12 個欄位：' + QUERY_FIELDS.join('、') + '。只在使用者明確要求查某位病人時使用。',
     inputSchema: { type: 'object', required: ['kind', 'query'], properties: {
       kind: str('data 或 image', { enum: ['data', 'image'] }),
@@ -169,7 +169,7 @@ export const ONLINE_TOOLS = [
   {
     name: 'online_features',
     description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中）、' +
-      'api/llm-config（只回 enabled 與 base_url；瀏覽器型 token 一律丟棄、不回傳）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
+      'api/llm-config（只回 enabled 與 base_url；不回傳任何 token）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
     inputSchema: { type: 'object', properties: {} },
     async handler() {
       const user = online.currentUser();

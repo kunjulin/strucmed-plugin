@@ -21,6 +21,7 @@ import * as site from './site.mjs';
 import { ToolError, E } from './errors.mjs';
 import { loadFlags, enabled } from './flags.mjs';
 import { VERSION } from './export.mjs';
+import { workspaceRoot } from './store.mjs';
 
 const SERVER_INFO = { name: 'strucmed-mcp', version: VERSION };
 const INSTRUCTIONS =
@@ -122,4 +123,4 @@ rl.on('line', line => {
   (Array.isArray(msg) ? msg : [msg]).forEach(handle);
 });
 rl.on('close', () => Promise.allSettled([...inflight]).then(() => process.exit(0)));
-site.ready().then(() => log(`v${VERSION} ready (workspace: ${process.env.STRUCMED_WORKSPACE || process.cwd()}; site: ${site.describe().label}; online: ${online.configured() ? 'on' : 'off'}; llmgateway: ${llmgw.configured() ? 'on' : 'off'}; fmapi: ${fmapi.configured() ? 'on' : 'off'})`));
+site.ready().then(() => log(`v${VERSION} ready (workspace: ${workspaceRoot()}; site: ${site.describe().label}; online: ${online.configured() ? 'on' : 'off'}; llmgateway: ${llmgw.configured() ? 'on' : 'off'}; fmapi: ${fmapi.configured() ? 'on' : 'off'})`));

@@ -13,15 +13,11 @@ process.stdin.on('end', () => {
   try {
     if (process.env.STRUCMED_NO_LOG) return;
     const input = JSON.parse(raw || '{}');
-    const tool = String(input.tool_name || '').replace(/^mcp__[^_]+(_[^_]+)*?__/, '').replace(/^mcp__plugin_strucmed_strucmed__/, '');
+    const tool = String(input.tool_name || '').replace(/^mcp__[^_]+(_[^_]+)*?__/, '').replace(/^mcp__plugin_strucmed_strucmed__/, '').replace(/^strucmed[-_]/, '');
     const args = input.tool_input || {};
     const stage = args.confirm_token ? 'execute' : 'plan';
     let ok = null, code = '', rev = '', templateId = String(args.template_id || '');
-    const resp = input.tool_response;
-    const texts = [];
-    if (Array.isArray(resp)) for (const c of resp) if (c && typeof c.text === 'string') texts.push(c.text);
-    else if (resp && Array.isArray(resp.content)) for (const c of resp.content) if (c && typeof c.text === 'string') texts.push(c.text);
-    else if (typeof resp === 'string') texts.push(resp);
+    const texts = responseTexts(input);
     for (const t of texts) {
       try {
         const j = JSON.parse(t);
@@ -45,3 +41,15 @@ process.stdin.on('end', () => {
   }
   process.exit(0);
 });
+
+// tool 回應的文字：Claude Code 是 tool_response（content 陣列或 { content }），Copilot CLI 是 tool_result.text_result_for_llm
+function responseTexts(input) {
+  const out = [];
+  const resp = input.tool_response;
+  if (Array.isArray(resp)) { for (const c of resp) if (c && typeof c.text === 'string') out.push(c.text); }
+  else if (resp && Array.isArray(resp.content)) { for (const c of resp.content) if (c && typeof c.text === 'string') out.push(c.text); }
+  else if (typeof resp === 'string') out.push(resp);
+  const r = input.tool_result;
+  if (r && typeof r.text_result_for_llm === 'string') out.push(r.text_result_for_llm);
+  return out;
+}

@@ -10,11 +10,7 @@ process.stdin.on('data', d => { raw += d; });
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
-    const resp = input.tool_response;
-    const texts = [];
-    if (Array.isArray(resp)) { for (const c of resp) if (c && typeof c.text === 'string') texts.push(c.text); }
-    else if (resp && Array.isArray(resp.content)) { for (const c of resp.content) if (c && typeof c.text === 'string') texts.push(c.text); }
-    else if (typeof resp === 'string') texts.push(resp);
+    const texts = responseTexts(input);
     let action = '';
     for (const t of texts) {
       try {
@@ -34,3 +30,15 @@ process.stdin.on('end', () => {
   }
   process.exit(0);
 });
+
+// tool 回應的文字：Claude Code 是 tool_response（content 陣列或 { content }），Copilot CLI 是 tool_result.text_result_for_llm
+function responseTexts(input) {
+  const out = [];
+  const resp = input.tool_response;
+  if (Array.isArray(resp)) { for (const c of resp) if (c && typeof c.text === 'string') out.push(c.text); }
+  else if (resp && Array.isArray(resp.content)) { for (const c of resp.content) if (c && typeof c.text === 'string') out.push(c.text); }
+  else if (typeof resp === 'string') out.push(resp);
+  const r = input.tool_result;
+  if (r && typeof r.text_result_for_llm === 'string') out.push(r.text_result_for_llm);
+  return out;
+}

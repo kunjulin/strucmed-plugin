@@ -1,32 +1,48 @@
 {
-  "description": "strucmed：使用者訊息提到病人資料、帳密、直連倉儲、上架或刪除時注入安全提醒（不阻擋）；線上寫入第二段呼叫前檢查閘門 G3 的核准 sidecar；online_login 密碼錯誤時提示使用者以 /plugin configure 更新密碼；寫入後把結果追加到 <workspace>/.strucmed/workflow-log.md（本機、無外送，STRUCMED_NO_LOG=1 關閉）",
+  "description": "strucmed：使用者訊息提到病人資料、帳密、直連倉儲、上架或刪除時注入安全提醒（不阻擋）；線上寫入第二段呼叫前檢查閘門 G3 的核准 sidecar；online_login 密碼錯誤時提示使用者以 /plugin configure 更新密碼；寫入後把結果追加到 <workspace>/.strucmed/workflow-log.md（本機、無外送，STRUCMED_NO_LOG=1 關閉）。hook 以 PLUGIN_ROOT（Copilot CLI）或 CLAUDE_PLUGIN_ROOT（Claude Code）環境變數定位腳本；matcher 用 .*online_… 同時涵蓋兩邊的 MCP tool 命名",
   "hooks": {
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/prompt-reminder.js"], "timeout": 10 }
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');const r=process.env.PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;if(!r){console.error('strucmed hook: PLUGIN_ROOT/CLAUDE_PLUGIN_ROOT 未設定');process.exit(0)}require(p.resolve(r,'hooks','prompt-reminder.js'))\"",
+            "timeout": 10
+          }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_strucmed_strucmed__online_(template_create|template_update|dictionary_create|dictionary_batch)",
+        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch)",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/validate-gate.js"], "timeout": 20 }
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');const r=process.env.PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;if(!r){console.error('strucmed hook: PLUGIN_ROOT/CLAUDE_PLUGIN_ROOT 未設定');process.exit(2)}require(p.resolve(r,'hooks','validate-gate.js'))\"",
+            "timeout": 20
+          }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__plugin_strucmed_strucmed__online_login",
+        "matcher": ".*online_login",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/auth-reminder.js"], "timeout": 10 }
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');const r=process.env.PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;if(!r){console.error('strucmed hook: PLUGIN_ROOT/CLAUDE_PLUGIN_ROOT 未設定');process.exit(0)}require(p.resolve(r,'hooks','auth-reminder.js'))\"",
+            "timeout": 10
+          }
         ]
       },
       {
-        "matcher": "mcp__plugin_strucmed_strucmed__online_(template_create|template_update|dictionary_create|dictionary_batch|records_save)",
+        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch|records_save)",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/log-write.js"], "timeout": 20 }
+          {
+            "type": "command",
+            "command": "node -e \"const p=require('node:path');const r=process.env.PLUGIN_ROOT||process.env.CLAUDE_PLUGIN_ROOT;if(!r){console.error('strucmed hook: PLUGIN_ROOT/CLAUDE_PLUGIN_ROOT 未設定');process.exit(0)}require(p.resolve(r,'hooks','log-write.js'))\"",
+            "timeout": 20
+          }
         ]
       }
     ]

@@ -30,7 +30,7 @@ const AUTO = {
 
 export function flagsFile() {
   const p = String(process.env.STRUCMED_FLAGS || '').trim();
-  return p ? path.resolve(p) : path.resolve(HERE, '../../../feature-flags.json');
+  return p && !p.startsWith('${') ? path.resolve(p) : path.resolve(HERE, '../../../feature-flags.json');
 }
 
 export function loadFlags() {

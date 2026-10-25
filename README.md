@@ -17,6 +17,22 @@
 
 ## 安裝
 
+### 支援的工具
+
+本 plugin 依 Claude Code plugin 規格打包（`userConfig` 安全儲存、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks，不需另備 manifest；其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
+
+| 工具 | 支援程度 | 可用 | 缺少 |
+|---|---|---|---|
+| **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
+| **GitHub Copilot CLI** | ⚠️ 實驗性，只能離線作業 | skills、MCP、hooks（同一個市集安裝） | `userConfig` 安全儲存（因此不能登入線上）、subagent；對話中的執行未經實測 |
+| **OpenAI Codex CLI** | ⚠️ 實驗性，只建議離線作業 | skills、MCP（stdio） | 安全儲存、hooks（G3 核准檢查、安全提醒、workflow-log）、subagent 與結構化提問；未經實測 |
+| **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
+| **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
+
+ChatGPT 若要支援，需把 MCP 改成對外 HTTPS 服務並加 OAuth，等於把 HIS 帳號登入與上架能力暴露到院外的雲端連線；與本 repo 的安全約定衝突，目前不規劃。
+
+以下「步驟 1～3」是 Claude Code 的安裝方式；Copilot CLI、Codex 與其他 MCP client 見後面各節。
+
 ### 前提
 
 - Claude Code **2.1.285** 以上（桌面 app 或 CLI）。
@@ -85,6 +101,72 @@ claude plugin marketplace add <資料夾路徑>
 ```
 
 其餘步驟相同。開發者改 skill／references 後 `/reload-plugins` 即生效；MCP 程式與憑證的變更要開新工作階段。
+
+### GitHub Copilot CLI（實驗性，只能離線）
+
+Copilot CLI 與 Claude Code 共用 plugin 格式（microsoft/power-platform-skills 也是同一份給兩邊用）。2026-10-23 以 Copilot CLI 1.0.103 實測：可從本市集安裝，9 個 skill 都會載入，MCP 設定也能正確解析；**對話中的實際執行尚未實測**。
+
+```bash
+copilot plugin marketplace add kunjulin/strucmed-plugin
+```
+
+```bash
+copilot plugin install strucmed@strucmed-marketplace
+```
+
+私有 repo 會用 Copilot 登入的 GitHub 帳號取用（`/login` 的帳號要有 repo 權限）。更新用 `copilot plugin marketplace update strucmed-marketplace` 與 `copilot plugin update strucmed@strucmed-marketplace`；開發時可用 `copilot --plugin-dir <repo>` 直接載入。安裝後可用 `/skills` 與 `/mcp show strucmed` 確認，再直接描述需求（例如「幫我做一張 XX 評估單」）。
+
+和 Claude Code 的差異：
+
+- **只能離線**：Copilot 沒有 `userConfig`／`/plugin configure`，帳密欄位不會被填入，MCP 自動進入離線模式，線上 tool（含上架）不會列出。設計、驗證、預覽、輸出 `.htm` 都可用；上架、線上範本與模型白名單請回 Claude Code，或把 `.htm` 匯入編輯器。不要為了上線把密碼寫進 `~/.copilot/mcp-config.json`。
+- **hooks**：Copilot 支援 Claude 格式的 `hooks/hooks.json`；hook 以 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT` 環境變數定位腳本，matcher 同時涵蓋兩邊的 MCP tool 命名，所以 G3 核准檢查、安全提醒與 workflow-log 在 Copilot 也會執行。
+- **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，草稿會落到 plugin 安裝目錄，建議在 WSL 或 Git Bash 使用。
+- **subagent**：`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，form-planner 等可能不會載入，skill 會由主 agent 依序執行。
+
+### OpenAI Codex CLI（實驗性）
+
+Codex 讀得懂 `SKILL.md` 與 stdio MCP，但**不會**載入本 plugin 的 `plugin.json`、`hooks/` 與 `userConfig`，所以：
+
+- **G3 上架核准的 hook 不會執行**，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。建議在 Codex 只做離線設計、驗證與輸出 `.htm`，上架回到 Claude Code 或用編輯器匯入。
+- 沒有安全儲存區：帳密**不要**寫進 `config.toml`；只在需要線上功能的那個終端機工作階段以環境變數提供，或乾脆留空走離線模式。
+- skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
+- tool 名稱在 Codex 是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`；skill 文字中的全名請自行對應。
+
+步驟（以 Codex 2026 版的路徑為準，舊版若不同請以 `codex --help` 與官方文件確認）：
+
+1. 取得 repo（同下方「本機開發」的 `git clone`），以下以 `<repo>` 代表它的絕對路徑。
+2. 讓 skill 中的 `${CLAUDE_PLUGIN_ROOT}` 能解析：在 shell 設定檔加入
+
+   ```bash
+   export CLAUDE_PLUGIN_ROOT="<repo>"
+   ```
+
+3. 安裝 skills（使用者層級；目錄不存在就建立）：
+
+   ```bash
+   mkdir -p ~/.agents/skills && for d in <repo>/skills/*/; do ln -s "$d" ~/.agents/skills/strucmed-$(basename "$d"); done
+   ```
+
+   Windows 改用 `mklink /D` 或直接複製資料夾。
+4. 註冊 MCP 伺服器，在 `~/.codex/config.toml` 加入：
+
+   ```toml
+   [mcp_servers.strucmed]
+   command = "node"
+   args = ["<repo>/mcp/strucmed-mcp/src/server.mjs"]
+   startup_timeout_sec = 20
+   # 只轉傳名稱，值由啟動 codex 的 shell 提供；不要把密碼寫在這裡
+   env_vars = ["STRUCMED_USER", "STRUCMED_PASS", "LLMGW_API_KEY", "FMAPI_API_KEY", "STRUCMED_RUNTIME_WEB"]
+
+   [mcp_servers.strucmed.env]
+   STRUCMED_FLAGS = "<repo>/feature-flags.json"
+   ```
+
+5. 開 Codex，以 `$strucmed-strucmed-form 幫我做一張 XX 評估單` 或直接描述需求觸發 skill；`/mcp` 可確認 `strucmed` 已連上。
+
+### 其他本機 MCP client（只用 MCP tool）
+
+任何支援 stdio MCP 的 client 都可註冊同一個伺服器，用法同上：`command = node`、`args = <repo>/mcp/strucmed-mcp/src/server.mjs`、`STRUCMED_FLAGS` 指向 `feature-flags.json`，憑證環境變數選填（留空即離線模式）。這種用法沒有任何 skill 流程與閘門，等於手動操作 tool；寫入線上的 tool 不建議在這類 client 使用。
 
 ## 院內與院外
 

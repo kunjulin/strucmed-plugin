@@ -101,7 +101,7 @@ function checkText(t, field) {
 // 以 STRUCMED_RUNTIME_WEB 指定（plugin 安裝後工作目錄不在本 repo）；未設定時沿用 <workspace>/repo/strucmed/web。
 export function runtimeWeb(ws) {
   const env = String(process.env.STRUCMED_RUNTIME_WEB || '').trim();
-  return env ? path.resolve(env) : path.join(ws.root, 'repo', 'strucmed', 'web');
+  return env && !env.startsWith('${') ? path.resolve(env) : path.join(ws.root, 'repo', 'strucmed', 'web');
 }
 
 export const TOOLS = [

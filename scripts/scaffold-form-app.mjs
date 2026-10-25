@@ -85,4 +85,4 @@ out({ ok: left.length === 0, out: dest, slug, hosting, upstream: upstream || nul
   unresolved_placeholders: left,
   next: hosting === 'H0'
     ? [`cd "${dest}"`, 'npm ci', 'npm run build', `node "${path.join(HERE, 'check-app-dist.mjs')}" dist`, 'docker compose build && docker compose up -d', `開啟 http://localhost:${port}/`]
-    : [`cd "${dest}"`, 'npm ci', 'npm run build', `node "${path.join(HERE, 'check-app-dist.mjs')}" dist`, `把 dist/ 複製到站台 web/apps/${slug}/（需平台 P7 靜態路由）`] }, left.length ? 1 : 0);
+    : [`cd "${dest}"`, 'npm ci', 'npm run build', `node "${path.join(HERE, 'check-app-dist.mjs')}" dist`, `把 dist/ 複製到站台 web/apps/${slug}/（需平台管理者設定靜態路由）`] }, left.length ? 1 : 0);

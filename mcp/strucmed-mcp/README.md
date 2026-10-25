@@ -1,4 +1,4 @@
-# strucmed-mcp（v1.8.0）
+# strucmed-mcp（v1.9.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。預設完全離線；設定院內 HIS 帳密後，自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool（見下方〈線上 tool〉）。
 
@@ -16,7 +16,7 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 ```bash
 node mcp/strucmed-mcp/src/server.mjs
 ```
-環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄）；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
+環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
 
 ## 線上 tool（strucmed V2 API）
 呼叫 strucmed 的 token 保護 API。
@@ -58,13 +58,13 @@ claude
 ### Tools
 | tool | API | 說明 |
 |---|---|---|
-| `online_login` | `POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH）；帳密取自環境變數。回傳 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；密碼錯誤回 `details.reconfigure` |
+| `online_login` | `POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH）；帳密取自環境變數；一律帶 `clientId: "strucmed-mcp"`，平台據此只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。回傳 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；密碼錯誤回 `details.reconfigure` |
 | `online_logout` | — | 清除記憶體中的 token |
 | `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size` |
 | `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
 | `online_records_query` | `POST api/v2/records/query/data`、`/image` | 病人資料，唯讀；**必須帶 `query.chtno`**（本機先擋，不送出）；只轉送 12 個倉儲欄位，其他欄位略過並回警告；`max_items` 預設 50、上限 200 |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
-| `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**瀏覽器型 token 一律丟棄不回傳**）；任一端點失敗只回 warnings |
+| `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
 | `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact&q=` | 唯讀；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此 |
 | `online_template_create` | `POST api/v2/folders/{usr\|sub\|dpt}/templates` | **寫入範本**，兩段式（plan＝閘門 G3）；前置驗證無 error、無待新建字典；不寫 sys；寫入不重試 |
 | `online_template_update` | `PUT api/v2/templates/{id}`＋`If-Match` | **寫入範本**（flag `templateUpdate`）；只允許以該範本 import 改版的 draft；第一次呼叫取線上 ETag 與差異；409→`E_CONFLICT` |
