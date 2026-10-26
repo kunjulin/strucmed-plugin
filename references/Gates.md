@@ -57,7 +57,7 @@ Inputs: dept_no=03F0; groups=門,住; publish=false; dictionary_index=online 202
 | C12 | action LLMQUERY | prompt 摘要… | | | qwen332b | → C13 |
 
 - 每條 formula 都要有「白話」與至少一個「試算例」（數字用臨床上合理、容易心算的值；有 IF 時每個分支一例）。試算例由 planner 依臨床定義手算，**不能**用 `formula_check` 算出來再抄回來。
-- 試算例在建置後由 reviewer 以 `formula_check` 的 `samples` 實際計算（`C*` 依建置對照表換成 `A<itemid>`）；結果不符＝`E_FORMULA_SAMPLE_MISMATCH`，必須修。
+- 試算例在建置後由 reviewer 以 `formula_check` 的 `samples` 實際計算（`C*` 依建置對照表換成 `A<itemid>`）；結果不符＝`E_FORMULA_SAMPLE_MISMATCH`，必須修。試算與 HIS runtime（Calx 2.2.8）同一套算法，進位不補浮點誤差：剛好落在 5 的邊界時，runtime 顯示的值可能和手算差最後一位（例如 BMI 160 cm／80 kg 是 31.2，不是 31.3），錯誤訊息會註明「只差最後一位」；這時以試算值為準修正試算例並在 G2 告知使用者，不要改參照。`ROUND`／`ROUNDUP`／`ROUNDDOWN` 一定要寫位數（`ROUND(x, 0)`），少了位數 runtime 會算出 NaN。
 
 ### AI 資料流（W_AI_DATAFLOW）
 哪些欄位會送到 LLM／語音服務；沒有則寫「無」。

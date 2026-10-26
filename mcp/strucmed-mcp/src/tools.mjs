@@ -579,7 +579,13 @@ export const TOOLS = [
         const res = { values: sm && sm.values, ...(e.ok ? { value: e.value } : { reason: e.reason }), ...(sm && 'expect' in sm && { expect: sm.expect }) };
         if (e.ok && sm && 'expect' in sm && !sameValue(e.value, sm.expect)) {
           res.match = false;
-          r.findings.push({ level: 'error', code: 'E_FORMULA_SAMPLE_MISMATCH', message: `試算 ${JSON.stringify(sm.values)} 得到 ${JSON.stringify(e.value)}，預期 ${JSON.stringify(sm.expect)}：請確認參照的欄位（見 labeled）與運算` });
+          // 只差最後一位：多半是 runtime（Calx）進位不補浮點誤差，不是參照放錯
+          const x = Number(e.value), y = Number(sm.expect), dp = (String(sm.expect).split('.')[1] || '').length;
+          const lastDigit = typeof e.value === 'number' && Number.isFinite(y) && Math.abs(Math.abs(x - y) - Math.pow(10, -dp)) < 1e-9;
+          const hint = lastDigit
+            ? '只差最後一位：HIS runtime（Calx）的 ROUND 不補浮點誤差（例如 80/1.6^2＝31.249999…，ROUND 到 1 位顯示 31.2），表單實際會顯示試算值；請把試算例改成試算值，或改寫公式'
+            : '請確認參照的欄位（見 labeled）與運算';
+          r.findings.push({ level: 'error', code: 'E_FORMULA_SAMPLE_MISMATCH', message: `試算 ${JSON.stringify(sm.values)} 得到 ${JSON.stringify(e.value)}，預期 ${JSON.stringify(sm.expect)}：${hint}` });
         } else if (e.ok && sm && 'expect' in sm) res.match = true;
         return res;
       }) : null;

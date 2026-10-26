@@ -14,9 +14,21 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.3.2（MCP 2.2.1）— 2026-10-26：formula_check 試算與 HIS runtime 一致
+
+尚未發佈。
+
+Antigravity 2.0 app 實測 BMI 時發現：`formula_check` 試算身高 160、體重 80 得到 31.3（判定符合），HIS runtime 預覽實際顯示 31.2。原因是離線試算的進位先補了浮點誤差（`+1e-9`），Calx 沒有；80 ÷ 1.6² 在瀏覽器裡是 31.249999…。
+
+- **進位函數照 Calx 2.2.8**：`ROUND`＝`Math.round(x×10^n)/10^n`；`ROUNDUP`／`ROUNDDOWN`／`TRUNC` 以絕對值 ceil／floor 再乘回正負號；都不補浮點誤差。因此 `ROUND(-2.5, 0)` 是 -2（原本照 Excel 算 -3）、`ROUND(1.005, 2)` 是 1。
+- **`MOD` 照 Calx**：`|a % b|`，正負號跟除數（`MOD(-7, 3)` 是 1，原本照 Excel 算 2）。
+- **少了位數**：`ROUND`／`ROUNDUP`／`ROUNDDOWN` 沒寫第二個參數時，Calx 會算出 NaN；試算改回報「少了小數位數參數」，不再當成 0 位。`TRUNC` 仍預設 0 位（Calx 相同）。
+- **錯誤訊息**：`E_FORMULA_SAMPLE_MISMATCH` 只差最後一位時，說明是 runtime 的浮點進位、表單會顯示試算值，而不是叫人檢查參照。`Gates.md` 補上同樣的處理方式。
+- **驗證**：以 `jquery-calx-2.2.8 min.js` 的函數原文對照 17 組（含負數、.5 邊界、MOD 正負組合）全數相同；BMI 160／80 在 runtime 預覽實測顯示 31.2，與試算一致。`test/formula-explain.test.mjs` 新增 1 項並修正原本照 Excel 寫的 `ROUND(-2.5, 0)`。
+
 ## 3.3.1（MCP 2.2.0）— 2026-10-26：Antigravity 版閘門 G3
 
-尚未發佈。MCP 程式不變。
+strucmed-skill#48；發佈：strucmed-plugin `c57cdb3`（由 main `1a8fd0c` 產生）。發佈時：`release-plugin.mjs` ok、190 個檔案、掃描無發現；`npm test` 98 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。MCP 程式不變。
 
 - **Antigravity 版 G3 hook**：新增 `hooks/antigravity/validate-gate.js`（PreToolUse，matcher `call_mcp_tool`）。從 `toolCall.args.ToolName`／`Arguments` 判斷上架類 tool 的第二段呼叫，沒有核准過的上架計畫就在 stdout 回 `{"decision":"deny"}`；其餘回 `ask`，照 Antigravity 原本的核准流程，不替使用者核准。hook 的 cwd 是 `hooks.json` 所在目錄，工作目錄改從 `STRUCMED_WORKSPACE` 環境變數或 `mcp_config.json` 裡 strucmed 伺服器的 `STRUCMED_WORKSPACE` 取得，都找不到就阻擋。輸入無法解析或檢查出錯一律阻擋。
 - **共用檢查**：G3 的核准檢查抽到 `hooks/gate-check.js`，`hooks/validate-gate.js`（Claude Code、Copilot CLI、Codex）與 Antigravity 版共用；Claude 版的行為與輸出不變。

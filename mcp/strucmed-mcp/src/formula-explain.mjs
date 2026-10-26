@@ -50,22 +50,26 @@ const num = v => {
 };
 const truthy = v => typeof v === 'string' ? (/^true$/i.test(v) ? true : /^false$/i.test(v) ? false : num(v) !== 0) : !!num(v);
 const flat = args => args.flat();
-const roundTo = (x, n, mode) => {
-  const f = Math.pow(10, n), y = Math.abs(x) * f;
-  const r = mode === 'up' ? Math.ceil(y - 1e-9) : mode === 'down' ? Math.floor(y + 1e-9) : Math.round(y + 1e-9);
-  return Math.sign(x) * r / f;
+// 進位函數與 MOD 逐字照 Calx 2.2.8 的實作（不補浮點誤差）：試算要和 HIS runtime 顯示的值一樣，
+// 例如 ROUND(80/(1.6^2), 1) 在 runtime 是 31.2（1.6^2＝2.5600000000000005），不是數學上的 31.3。
+const pow10 = n => Math.pow(10, n);
+const sign = x => (0 < x ? 1 : -1);
+// Calx 的 ROUND／ROUNDUP／ROUNDDOWN 沒有預設位數，少了第二個參數會算出 NaN（只有 TRUNC 預設 0）
+const digits = (name, n) => {
+  if (n === undefined) throw new Unsupported(`${name} 少了小數位數參數，HIS runtime 會算出 NaN；請寫成 ${name}(x, 0)`);
+  return num(n);
 };
 
 const FUNCS = {
-  ROUND: ([x, n = 0]) => roundTo(num(x), num(n)),
-  ROUNDUP: ([x, n = 0]) => roundTo(num(x), num(n), 'up'),
-  ROUNDDOWN: ([x, n = 0]) => roundTo(num(x), num(n), 'down'),
-  TRUNC: ([x, n = 0]) => roundTo(num(x), num(n), 'down'),
+  ROUND: ([x, n]) => { const d = digits('ROUND', n); return Math.round(num(x) * pow10(d)) / pow10(d); },
+  ROUNDUP: ([x, n]) => { const a = num(x), d = digits('ROUNDUP', n); return sign(a) * Math.ceil(Math.abs(a) * pow10(d)) / pow10(d); },
+  ROUNDDOWN: ([x, n]) => { const a = num(x), d = digits('ROUNDDOWN', n); return sign(a) * Math.floor(Math.abs(a) * pow10(d)) / pow10(d); },
+  TRUNC: ([x, n = 0]) => { const a = num(x), d = num(n); return sign(a) * Math.floor(Math.abs(a) * pow10(d)) / pow10(d); },
   INT: ([x]) => Math.floor(num(x)),
   ABS: ([x]) => Math.abs(num(x)),
   SQRT: ([x]) => Math.sqrt(num(x)),
   POWER: ([x, y]) => Math.pow(num(x), num(y)),
-  MOD: ([x, y]) => { const a = num(x), b = num(y); return a - b * Math.floor(a / b); },
+  MOD: ([x, y]) => { const a = num(x), b = num(y), c = Math.abs(a % b); return 0 < b ? c : -c; },
   SUM: a => flat(a).reduce((s, v) => s + num(v), 0),
   AVERAGE: a => { const v = flat(a); return v.reduce((s, x) => s + num(x), 0) / v.length; },
   MIN: a => Math.min(...flat(a).map(num)),
