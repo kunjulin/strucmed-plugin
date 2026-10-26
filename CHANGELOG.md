@@ -14,7 +14,19 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.3.0（MCP 2.2.0）— 未發佈：計算式試算、閘門註解不再顯示
+## 3.3.1（MCP 2.2.0）— 2026-10-26：Antigravity 版閘門 G3
+
+尚未發佈。MCP 程式不變。
+
+- **Antigravity 版 G3 hook**：新增 `hooks/antigravity/validate-gate.js`（PreToolUse，matcher `call_mcp_tool`）。從 `toolCall.args.ToolName`／`Arguments` 判斷上架類 tool 的第二段呼叫，沒有核准過的上架計畫就在 stdout 回 `{"decision":"deny"}`；其餘回 `ask`，照 Antigravity 原本的核准流程，不替使用者核准。hook 的 cwd 是 `hooks.json` 所在目錄，工作目錄改從 `STRUCMED_WORKSPACE` 環境變數或 `mcp_config.json` 裡 strucmed 伺服器的 `STRUCMED_WORKSPACE` 取得，都找不到就阻擋。輸入無法解析或檢查出錯一律阻擋。
+- **共用檢查**：G3 的核准檢查抽到 `hooks/gate-check.js`，`hooks/validate-gate.js`（Claude Code、Copilot CLI、Codex）與 Antigravity 版共用；Claude 版的行為與輸出不變。
+- **實測**：Antigravity IDE 2.5.5，站台指向本機不存在的位址：沒有計畫的 draft 帶 `confirm_token` 呼叫 `online_template_create` 被擋下（「Tool call denied by pre-tool hook」）；已核准的計畫回 `ask`，Antigravity 照常跳出核准框。
+- **文件**：README 的 Antigravity 一節加上安裝 hook 的步驟 4；`Gates.md` 的雜湊說明改指 `gate-check.js`。發佈用的 `tools/release/overrides/README.md` 補上 Antigravity 的支援表列與整節（strucmed-skill#47 只改了開發用 README，發佈版沒有）。
+- **測試**：新增 `test/gate.test.mjs`（5 項，含與 Antigravity 實際送出內容同形的輸入）。
+
+## 3.3.0（MCP 2.2.0）— 2026-10-26：計算式試算、閘門註解不再顯示
+
+strucmed-skill#45；發佈：strucmed-plugin `27ada5d`（由 main `7302d92` 產生）。發佈時：`release-plugin.mjs` ok、187 個檔案、掃描無發現；`npm test` 93 過、1 略過；`claude plugin validate --strict` 通過。
 
 Codex app 實測（BMI 測試表單）的兩個問題：BMI 公式的身高、體重參照對調，`formula_check` 只檢查語法沒有抓到；閘門的 `<!-- gate: … -->` 在 Codex 顯示成文字。
 

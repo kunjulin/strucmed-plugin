@@ -87,7 +87,7 @@ Approved-By:
 - 核准：skill 把「## 核准」改為 `Approved`、填 `Approved-Revision`（＝目前 Revision）、`Approved-At`（ISO 時間）、`Approved-By`（`online_me.user_id` 或 `local`），然後執行
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <plan.md> --by <user>` 產生 sidecar `.approved-strucmed-form-plan.md`（sha256＋revision）。
 - 建置前 builder 執行 `verify-plan.mjs verify <plan.md>`；計畫在核准後有任何修改 → 核准失效，必須重新呈現 G1。
-  **例外**：`verify-plan.mjs` 與 `hooks/validate-gate.js` 計算雜湊時**排除「### 建置對照表」段**（從該標題到下一個 `##`／`###` 標題），所以 builder 建置後回填 itemid 不會讓核准失效；reviewer 比對時也忽略該段。其他段落（含 G2 後修改的計算式內容）一改就失效，要重新核准。
+  **例外**：`verify-plan.mjs` 與 `hooks/gate-check.js`（G3 hook 的共用檢查）計算雜湊時**排除「### 建置對照表」段**（從該標題到下一個 `##`／`###` 標題），所以 builder 建置後回填 itemid 不會讓核准失效；reviewer 比對時也忽略該段。其他段落（含 G2 後修改的計算式內容）一改就失效，要重新核准。
 
 ## 3. 無人值守
 

@@ -26,12 +26,13 @@
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
 | **OpenAI Codex**（CLI、app） | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需信任）；app 已實測安裝、瀏覽器登入、建表單與匯出 | `userConfig`（改用環境變數）、subagent 與結構化提問、runtime 預覽（需 `STRUCMED_RUNTIME_WEB`）；G3 阻擋未經實測 |
+| **Google Antigravity**（IDE；2.0 app 未測） | ⚠️ 實驗性，只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool（全域 `mcp_config.json`）；IDE 2.5.5 已實測離線呼叫 | skill 流程與其他 hooks（plugin 格式不同，尚未移植）；G3 要另外裝 Antigravity 版 hook（已實測阻擋）；線上登入未經實測；上架建議回 Claude Code |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
 ChatGPT 若要支援，需把 MCP 改成對外 HTTPS 服務並加 OAuth，等於把 HIS 帳號登入與上架能力暴露到院外的雲端連線；與本 repo 的安全約定衝突，目前不規劃。
 
-以下「步驟 1～3」是 Claude Code 的安裝方式；Copilot CLI、Codex 與其他 MCP client 見後面各節。
+以下「步驟 1～3」是 Claude Code 的安裝方式；Copilot CLI、Codex、Antigravity 與其他 MCP client 見後面各節。
 
 ### 前提
 
@@ -156,6 +157,53 @@ Codex app：可在對話中請 Codex 執行上面的 `codex plugin marketplace a
 - skill 以 `$strucmed:strucmed-form` 等觸發，或直接描述需求；`/mcp` 可確認 `strucmed` 已連上。tool 名稱是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`。
 - skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
 
+### Google Antigravity（實驗性，只用 MCP tool）
+
+Antigravity 有自己的 plugin、hooks 格式，也沒有 marketplace，目前只能把 MCP 伺服器註冊進全域設定；skill 流程不會載入，閘門 G3 要另外裝 Antigravity 版 hook（步驟 4）。2026-10-26 以 Antigravity IDE 2.5.5 實測：離線模式可載入 16 個 tool、呼叫 `form_create` 建立 draft；G3 hook 對沒有核准計畫的上架呼叫回 deny、對已核准的回 ask；Antigravity 2.0 app 與真正的線上登入未測。
+
+1. 把發佈 repo 複製到本機（例如 `git clone https://github.com/kunjulin/strucmed-plugin.git`），記下資料夾的絕對路徑。
+2. 編輯 `~/.gemini/config/mcp_config.json`（IDE 的 Agent 面板 → `…` → MCP Servers → Manage MCP Servers → View raw config 會開同一個檔）：
+
+   ```json
+   {
+     "mcpServers": {
+       "strucmed": {
+         "command": "/opt/homebrew/bin/node",
+         "args": ["<plugin 資料夾>/mcp/strucmed-mcp/src/server.mjs"],
+         "env": {
+           "STRUCMED_SITE": "offline",
+           "STRUCMED_FLAGS": "<plugin 資料夾>/feature-flags.json",
+           "STRUCMED_WORKSPACE": "<你的家目錄>/Documents/StrucMed"
+         }
+       }
+     }
+   }
+   ```
+
+3. 回到 Manage MCP Servers 按 **Refresh**；`strucmed` 顯示 Enabled、16 個 tool 即完成（改設定後都要再按一次）。
+4. **拿掉 `STRUCMED_SITE=offline`（啟用線上 tool）時必裝**：閘門 G3 的 Antigravity 版 hook。建立 `~/.gemini/config/hooks.json`（已有這個檔就把 `strucmed-gate` 加進去）：
+
+   ```json
+   {
+     "strucmed-gate": {
+       "PreToolUse": [
+         { "matcher": "call_mcp_tool", "hooks": [ { "type": "command", "command": "/opt/homebrew/bin/node \"<plugin 資料夾>/hooks/antigravity/validate-gate.js\"", "timeout": 20 } ] }
+       ]
+     }
+   }
+   ```
+
+   上架類 tool（`online_template_create`／`update`、`online_dictionary_create`／`batch`）帶 `confirm_token` 的第二段呼叫，只有在 `<STRUCMED_WORKSPACE>/.strucmed/plans/<draft_id>/` 有核准過的上架計畫時才會放行，其餘一律擋下；工作目錄從同一個 `mcp_config.json` 的 `STRUCMED_WORKSPACE` 讀取。放行時仍會跳 Antigravity 的核准框（hook 不替使用者核准）。
+
+注意：
+
+- **一律絕對路徑**：沒有 `${CLAUDE_PLUGIN_ROOT}`、沒有 `cwd` 欄位。`command` 寫 `node` 的完整路徑（`which node`）：從 Dock 開的 app 不一定吃得到 shell 的 PATH。`STRUCMED_WORKSPACE` 要明寫，`.strucmed/`、`output/` 放在這裡。
+- **只建議離線**：上例的 `STRUCMED_SITE=offline` 完全不連線，產出 `.htm` 由使用者在編輯器匯入。拿掉它可試線上唯讀 tool（`online_template_get`、`online_dictionary_search`；瀏覽器登入最長等 120 秒，Antigravity 的 tool 逾時未實測，可用 `STRUCMED_LOGIN_WAIT_MS` 縮短）。
+- **上架建議回 Claude Code**：Antigravity 沒有 publish-form skill，不會替你產生並核准上架計畫，所以裝了步驟 4 的 hook 後，線上寫入實際上都會被擋下。上架請回 Claude Code 或用編輯器匯入。`hooks/hooks.json`（Claude 格式）在 Antigravity 不能用：輸入格式不同，照搬會被當成第一段呼叫放行。
+- **金鑰不要寫進 `mcp_config.json`**：`env` 是明文存檔。GUI app 也拿不到 shell 的環境變數，所以 LlmGateway 白名單在 Antigravity 改用內建靜態表。
+- 第一次呼叫每個 tool，Antigravity 會跳出「Allow using this MCP tool?」核准框。
+- 給維護者：Antigravity 的 hook 裡 MCP tool 一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`；stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程，回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 還沒移植）。G3 的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。
+
 ### 其他本機 MCP client（只用 MCP tool）
 
 任何支援 stdio MCP 的 client 都可註冊同一個伺服器，用法同上：`command = node`、`args = <repo>/mcp/strucmed-mcp/src/server.mjs`、`STRUCMED_FLAGS` 指向 `feature-flags.json`；線上 tool 以瀏覽器登入，`STRUCMED_SITE=offline` 可完全不連線。這種用法沒有任何 skill 流程與閘門，等於手動操作 tool；寫入線上的 tool 不建議在這類 client 使用。
@@ -264,7 +312,7 @@ strucmed-plugin/
 ├── skills/                  # 9 個 skill（見上表）
 ├── agents/                  # form-planner、form-builder、form-reviewer、app-builder
 ├── references/              # 設計規則、計算式與巨集、提示詞樣板、巨集工作流配方、表格頁籤規則與版面樣板、閘門、上架與 APP 流程、模型白名單、安全不變量
-├── hooks/                   # UserPromptSubmit 安全提醒、PreToolUse 核准檢查、PostToolUse workflow-log
+├── hooks/                   # UserPromptSubmit 安全提醒、PreToolUse 核准檢查、PostToolUse workflow-log；antigravity/＝Antigravity 版 G3
 ├── scripts/                 # check-env、verify-plan、preview、scaffold-form-app、check-app-dist、report-issue
 ├── templates/form-app/      # B2 表單 APP 範本＋ H0 Docker
 ├── mcp/strucmed-mcp/        # MCP 伺服器（src/、test/、README）
