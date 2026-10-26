@@ -16,7 +16,7 @@ claude plugin update strucmed@strucmed-marketplace
 
 ## 3.5.0（MCP 2.3.0）— 2026-10-26：Antigravity plugin
 
-尚未發佈。MCP 程式不變。
+strucmed-skill#55；發佈：strucmed-plugin `ee5bed5`（由 main `19dc40f` 產生）。發佈時：`release-plugin.mjs` ok、196 個檔案、掃描無發現；`npm test` 104 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）；自 GitHub `git clone` 確認根目錄有 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`。MCP 程式不變。
 
 - **Antigravity plugin**：本 repo 根目錄新增 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）、`rules/AGENTS.md`，整個 repo 同時是 Antigravity plugin。安裝：`git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed`；更新：`git pull`。skills、MCP 與 G3 hook 一起載入。
 - **不需要另外安裝 Node.js**：MCP 以 Antigravity 內建的 `agy-node`（Node 24）執行，cwd 是 plugin 資料夾、路徑用相對路徑；hook 以 sh 依序找 `agy-node`、`~/Library/Application Support/Antigravity/bin/agy-node`、`node`，都找不到就阻擋（只支援 macOS／Linux）。

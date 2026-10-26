@@ -15,7 +15,7 @@
 
 ![安裝與設定](images/case-mmse-cdr/01_install.png)
 
-安裝步驟見 [README](../README.md#安裝)。密碼用 `/plugin configure` 填，不在對話中輸入；站台由 MCP 自動判斷院內或院外。
+安裝步驟見 [README](../README.md#安裝)。線上功能以瀏覽器登入，HIS 密碼只在站台的登入頁輸入，不在對話中輸入；站台由 MCP 自動判斷院內或院外。
 
 ![連線與第一個問題](images/case-mmse-cdr/02_connect.png)
 

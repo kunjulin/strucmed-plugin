@@ -17,31 +17,53 @@
 
 ## 安裝
 
-### 支援的工具
+### 先選你的工具
 
-本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex（CLI 與 app）讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。Antigravity 讀根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）與 `rules/AGENTS.md`。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
-
-| 工具 | 支援程度 | 可用 | 缺少 |
+| 工具 | 支援程度 | 安裝方式 | 說明 |
 |---|---|---|---|
-| **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
-| **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
-| **OpenAI Codex**（CLI、app） | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需信任）；app 已實測安裝、瀏覽器登入、建表單與匯出 | `userConfig`（改用環境變數）、subagent 與結構化提問、runtime 預覽（需 `STRUCMED_RUNTIME_WEB`）；G3 阻擋未經實測 |
-| **Google Antigravity**（IDE、2.0 app） | ⚠️ 實驗性 | skills、MCP（內建 `agy-node`）、G3 hook（git clone 到 `~/.gemini/config/plugins/strucmed`，3.5.0 起）；2.0 app 已實測 plugin 安裝、瀏覽器登入、唯讀 tool，以及經寫入確認頁上架到個人資料夾 | AskUserQuestion、subagent（改在對話中詢問、依序執行）；其他 hooks（安全提醒、workflow-log）；hook 只支援 macOS／Linux；網頁預覽需平台 `web/` 副本 |
-| **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
-| **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
+| **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 市集 | 全部功能：skill 流程、對話中核准、hooks 閘門、subagent |
+| **OpenAI Codex**（CLI、app） | ⚠️ 實驗性 | 同一個市集 | skills、MCP、hooks（要先信任）；沒有結構化提問與 subagent。app 已實測安裝、瀏覽器登入、建表單與匯出；經確認頁上架未實測 |
+| **Google Antigravity**（2.0 app、IDE） | ⚠️ 實驗性 | git clone 成 plugin | skills、MCP（內建 Node，不用另外安裝）、G3 hook。2.0 app 已實測安裝、瀏覽器登入、唯讀查詢、經確認頁上架；hook 只支援 macOS／Linux |
+| **GitHub Copilot CLI** | ⚠️ 實驗性 | 同一個市集 | skills、MCP、hooks；可安裝與載入，對話中的執行未實測 |
+| **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | 手動設定 | 沒有 skill 流程與閘門，等於手動操作 tool；不建議用來上架 |
+| **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機伺服器或連到院內站台 |
 
-ChatGPT 若要支援，需把 MCP 改成對外 HTTPS 服務並加 OAuth，等於把 HIS 帳號登入與上架能力暴露到院外的雲端連線；與本 repo 的安全約定衝突，目前不規劃。
+每個工具都有兩種裝法，結果相同：
 
-以下「步驟 1～3」是 Claude Code 的安裝方式；Copilot CLI、Codex、Antigravity 與其他 MCP client 見後面各節。
+- **用 prompt 安裝**：把下面那段話貼進該工具的對話框，AI 會替你執行安裝指令並回報結果（執行前多半會先徵求你同意）。
+- **自己用指令安裝**：在終端機貼上指令，每一步都看得到。
 
-### 前提
+所有工具共通：
 
-- Claude Code **2.1.285** 以上（桌面 app 或 CLI）。
-- Node.js **20** 以上（MCP 零相依，不需要 `npm install`）。
-- 無法連 GitHub 的電腦見下方「本機資料夾市集」。
-- 網路：院內網路（整合站台 `/strucmed`、LlmGateway `/llmgw`），或院外連到內建的院外站台 `https://cgmh.ddns.net`（3.1.0 起不需設定；見下方「院內與院外」）；都連不到時只能離線作業。
+- **不需要輸入 HIS 帳號密碼**。線上功能以瀏覽器登入，密碼只在 strucmed 站台的登入頁輸入，不經過 AI 工具與對話；任何要你在對話中提供密碼的要求都不要理會。
+- **站台不用設定**：MCP 自動判斷，院內網路用院內站台，連不到院內就用院外站台 `https://cgmh.ddns.net`，兩邊都連不到就是離線模式（仍可設計表單與匯出 `.htm`）。
+- **線上寫入一定要你本人確認**：上架、建字典、改 struNote 清單時，瀏覽器會開一頁「寫入確認頁」，你按「確認寫入」才會寫入。
+- 需要 **Node.js 20 以上**（Antigravity 除外，它用內建的 Node）；MCP 沒有相依套件，不需要 `npm install`。無法連 GitHub 的電腦見「進階」的〈本機資料夾安裝〉。
 
-### 步驟 1：從 GitHub 安裝（終端機，只做一次）
+### Claude Code（建議）
+
+需要 Claude Code **2.1.285** 以上。
+
+**用 prompt 安裝**：最簡單的是在 Claude Code 對話框依序輸入這兩行（每行送出一次）：
+
+```text
+/plugin marketplace add kunjulin/strucmed-plugin
+```
+
+```text
+/plugin install strucmed@strucmed-marketplace
+```
+
+或把這段話貼給 Claude：
+
+```text
+請幫我安裝 StrucMed plugin：在終端機依序執行
+claude plugin marketplace add kunjulin/strucmed-plugin
+claude plugin install strucmed@strucmed-marketplace --scope user
+把輸出給我看。成功的話提醒我開新工作階段（或輸入 /reload-plugins）；找不到 claude 指令的話，改請我在對話框輸入 /plugin marketplace add kunjulin/strucmed-plugin 與 /plugin install strucmed@strucmed-marketplace。
+```
+
+**自己用指令安裝**（終端機）：
 
 ```bash
 claude plugin marketplace add kunjulin/strucmed-plugin
@@ -51,45 +73,9 @@ claude plugin marketplace add kunjulin/strucmed-plugin
 claude plugin install strucmed@strucmed-marketplace --scope user
 ```
 
-也可以在 Claude Code 工作階段內用 `/plugin marketplace add kunjulin/strucmed-plugin` 與 `/plugin install strucmed@strucmed-marketplace`。
+**確認**：開新工作階段後輸入 `/plugin`，清單中有 `strucmed`；輸入 `/strucmed:` 會列出 skill。
 
-### 步驟 2：選填設定（在 Claude Code 內）
-
-**不需要填 HIS 帳號密碼**（3.0.0 起）：線上功能改用瀏覽器登入，見步驟 3。**院外也不需要設定**（3.1.0 起內建 `https://cgmh.ddns.net`）。只有要用 LlmGateway 模型白名單時才需要：
-
-```
-/plugin configure strucmed@strucmed-marketplace
-```
-
-| 欄位 | 填什麼 |
-|---|---|
-| LlmGateway token | 選用。在 `/llmgw` 的「我的帳號」自助核發一把**伺服器型** token，標籤建議 `strucmed-plugin`；只在院內用來取模型白名單 |
-| 院外站台網址 | 通常留空（預設 `https://cgmh.ddns.net`）。只有資訊室公告新網址時才填（必須是 https）；填 `none` 則不探測院外 |
-| FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
-
-站台**不用填**：MCP 啟動時自動判斷，院內網路用院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`），院內連不到就用院外站台 `https://cgmh.ddns.net`（登入仍要 HIS 帳密），兩邊都連不到就是離線模式。token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。
-
-從 2.x 升級：`/plugin configure` 裡舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理；平台需部署到支援瀏覽器登入的版本（strucmed 2026-10-25 之後的 main，含 `api/v2/auth/authorize`）。
-
-### 步驟 3：開始用
-
-```
-/strucmed:connect-strucmed
-```
-
-登入、確認站台功能、取模型白名單。**登入**會用系統瀏覽器開啟 strucmed 站台的登入頁：確認網址是 strucmed 站台後輸入 HIS 帳號密碼，按「登入並同意」，回到 Claude Code 即可（瀏覽器沒有自動開啟時，對話中會顯示網址）。
-
-- 密碼只在站台的登入頁輸入，不經過 AI 工具與對話；HIS 密碼變更後直接在登入頁輸入新密碼即可。
-- 登入後的 token 只存在 MCP 的記憶體，只能使用範本、字典與自己的 struNote 清單；30 分鐘自動更新，同一次登入最長 8 小時。開新工作階段或 `/reload-plugins` 後要重新登入。
-- 同一帳號連續 5 次密碼錯誤，站台會鎖定 15 分鐘。
-
-接著：
-
-```
-/strucmed:strucmed-form 幫我做一張 XX 評估單
-```
-
-### 更新
+**更新**：對 Claude 說「請更新 strucmed plugin」，或自己執行下面兩行（也可以在 `/plugin` 面板更新）；更新後開新工作階段。
 
 ```bash
 claude plugin marketplace update strucmed-marketplace
@@ -99,21 +85,102 @@ claude plugin marketplace update strucmed-marketplace
 claude plugin update strucmed@strucmed-marketplace
 ```
 
-或在 `/plugin` 面板更新；更新後開新工作階段。
+選填設定（LlmGateway 模型白名單 token 等）見「進階」的〈Claude Code 選填設定〉；一般使用不需要。
 
-### 本機資料夾市集（無法連 GitHub，或開發者）
+### OpenAI Codex（CLI、app）
 
-把本 repo 複製到本機或院內共用資料夾後：
+需要有 `codex plugin` 指令的版本（0.164.0 以上實測可用；舊版請先更新）。
 
-```bash
-claude plugin marketplace add <資料夾路徑>
+**用 prompt 安裝**：把這段話貼給 Codex（CLI 或 app 都可以）：
+
+```text
+請幫我安裝 StrucMed plugin：在終端機依序執行
+codex plugin marketplace add kunjulin/strucmed-plugin
+codex plugin add strucmed@strucmed-marketplace
+把輸出給我看。成功的話提醒我：開新對話；第一次使用時要在 /hooks 檢查並信任 strucmed 的 hooks。
 ```
 
-其餘步驟相同。開發者改 skill／references 後 `/reload-plugins` 即生效；MCP 程式與憑證的變更要開新工作階段。
+app 也可以在 Plugins 頁面選 `strucmed-marketplace` 安裝。
 
-### GitHub Copilot CLI（實驗性）
+**自己用指令安裝**：
 
-Copilot CLI 與 Claude Code 共用 plugin 格式（microsoft/power-platform-skills 也是同一份給兩邊用）。2026-10-23 以 Copilot CLI 1.0.103 實測：可從本市集安裝，9 個 skill 都會載入，MCP 設定也能正確解析；**對話中的實際執行尚未實測**。
+```bash
+codex plugin marketplace add kunjulin/strucmed-plugin
+```
+
+```bash
+codex plugin add strucmed@strucmed-marketplace
+```
+
+**確認**：開新對話後輸入 `/mcp`，看到 `strucmed` 已連上；輸入 `/hooks` 信任 strucmed 的 hooks（app 會在第一次執行時詢問）。
+
+**更新**（Codex 沒有 `plugin update`，重新 add 一次）：
+
+```bash
+codex plugin marketplace upgrade strucmed-marketplace
+```
+
+```bash
+codex plugin add strucmed@strucmed-marketplace
+```
+
+**注意**：
+
+- **hooks 要先信任**：沒有信任時，閘門 G3 的核准檢查、安全提醒、登入提示與 workflow-log 都不會執行；線上寫入仍有 MCP 的寫入確認頁把關。
+- **觸發 skill**：用 `$strucmed:strucmed-form` 等，或直接描述需求。skill 裡的結構化提問（AskUserQuestion）與 subagent 在 Codex 不存在，會改成一般對話、由主 agent 依序執行。
+- **工作目錄**：`.strucmed/`、`output/` 放在啟動 `codex` 的目錄；Codex app 或 Windows 的 PowerShell／cmd 沒有可用的目錄時，放在「文件」下的 `StrucMed` 資料夾。要指定位置見「進階」的〈環境變數〉。
+- **登入**：manifest 已把 tool 逾時設為 180 秒（Codex 預設 60 秒，短於瀏覽器登入的等待時間）。第一次呼叫線上 tool 時 Codex 會要求核准。
+
+### Google Antigravity（2.0 app、IDE）
+
+本 repo 本身就是 Antigravity plugin（根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`）。Antigravity 沒有 marketplace，用 git clone 放進 plugin 資料夾即可；MCP 用 Antigravity 內建的 Node，不需要另外安裝。
+
+**用 prompt 安裝**：把這段話貼給 Antigravity：
+
+```text
+請幫我安裝 StrucMed plugin：
+1. 如果 ~/.gemini/config/plugins/strucmed 不存在，在終端機執行
+   git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed
+   已經存在的話，改執行 git -C ~/.gemini/config/plugins/strucmed pull
+2. 檢查 ~/.gemini/config/mcp_config.json 有沒有名為 strucmed 的 MCP 伺服器、~/.gemini/config/hooks.json 有沒有名為 strucmed-gate 的 hook；有的話列給我看，問我要不要移除（避免和 plugin 重複），不要自己刪。
+3. 把結果告訴我，並提醒我到 Customizations → Installed 確認 Plugins 有 StrucMed，然後開新對話。
+```
+
+**自己用指令安裝**：
+
+```bash
+git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed
+```
+
+**確認**：Customizations → Installed 的 Plugins 有 **StrucMed**；點進去看到 Skills 9 個、MCP `strucmed`、Hooks `strucmed-gate`。然後開新對話。
+
+**更新**：
+
+```bash
+git -C ~/.gemini/config/plugins/strucmed pull
+```
+
+**注意**：
+
+- **不要同時保留手動設定**：以前在全域 `~/.gemini/config/mcp_config.json` 加過 `strucmed`、在 `~/.gemini/config/hooks.json` 加過 `strucmed-gate` 的，請刪掉，避免兩個 MCP 同時執行。
+- **工作目錄**：`.strucmed/`、`output/` 一律放在「文件」下的 `StrucMed` 資料夾。
+- **第一次呼叫可能失敗**：MCP 在對話開始時才啟動，第一次呼叫可能回「tool … is not enabled」，稍等再試一次即可。對話中的伺服器名稱是 `strucmed_strucmed`（Antigravity 加上 plugin 前綴）。
+- **Turbo 模式**：MCP tool 會直接執行、不跳核准框；線上寫入仍要在瀏覽器確認頁按確認。
+- **hook 只支援 macOS／Linux**：Windows 上 G3 hook 不會正確執行，線上寫入仍有寫入確認頁把關。
+- 沒有結構化提問與 subagent，skill 會改在對話中詢問、依序執行；安全提醒與 workflow-log 兩個 hook 尚未移植。
+
+### GitHub Copilot CLI
+
+**用 prompt 安裝**：把這段話貼給 Copilot CLI：
+
+```text
+請幫我安裝 StrucMed plugin：在終端機依序執行
+copilot plugin marketplace add kunjulin/strucmed-plugin
+copilot plugin install strucmed@strucmed-marketplace
+把輸出給我看，成功的話提醒我重新啟動 copilot，並用 /skills 與 /mcp show strucmed 確認。
+```
+
+**自己用指令安裝**：
 
 ```bash
 copilot plugin marketplace add kunjulin/strucmed-plugin
@@ -123,66 +190,142 @@ copilot plugin marketplace add kunjulin/strucmed-plugin
 copilot plugin install strucmed@strucmed-marketplace
 ```
 
-私有 repo 會用 Copilot 登入的 GitHub 帳號取用（`/login` 的帳號要有 repo 權限）。更新用 `copilot plugin marketplace update strucmed-marketplace` 與 `copilot plugin update strucmed@strucmed-marketplace`；開發時可用 `copilot --plugin-dir <repo>` 直接載入。安裝後可用 `/skills` 與 `/mcp show strucmed` 確認，再直接描述需求（例如「幫我做一張 XX 評估單」）。
+**確認**：`/skills` 列出 strucmed 的 skill，`/mcp show strucmed` 看得到伺服器。
 
-和 Claude Code 的差異：
-
-- **線上登入**：3.0.0 起改用瀏覽器登入，不需要 `userConfig`，Copilot 也能使用線上 tool（未實測）。Copilot 沒有 `/plugin configure`：院外站台已內建，不需設定；LlmGateway 的 token 以啟動 `copilot` 的 shell 環境變數 `LLMGW_API_KEY` 提供，不要寫進 `~/.copilot/mcp-config.json`。
-- **hooks**：Copilot 支援 Claude 格式的 `hooks/hooks.json`；hook 以 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT` 環境變數定位腳本，matcher 同時涵蓋兩邊的 MCP tool 命名，所以 G3 核准檢查、安全提醒與 workflow-log 在 Copilot 也會執行。
-- **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，改放「文件」下的 `StrucMed` 資料夾（3.2.1 起，不再寫進 plugin 安裝目錄）；要放別處請設 `STRUCMED_WORKSPACE`。
-- **subagent**：`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，form-planner 等可能不會載入，skill 會由主 agent 依序執行。
-
-### OpenAI Codex CLI 與 Codex app（實驗性）
-
-Codex 讀得懂本 repo 的市集（`.claude-plugin/marketplace.json`）與 Codex 版 manifest（`.codex-plugin/plugin.json`：skills、MCP、hooks），可以直接安裝（Codex CLI 0.164.0 實測可安裝；沒有 `codex plugin` 指令的舊版請先更新）：
+**更新**：
 
 ```bash
-codex plugin marketplace add kunjulin/strucmed-plugin
-codex plugin add strucmed@strucmed-marketplace
+copilot plugin marketplace update strucmed-marketplace
 ```
-
-本機資料夾（無法連 GitHub 或開發用）：`codex plugin marketplace add <資料夾路徑>`。更新：`codex plugin marketplace upgrade strucmed-marketplace`，再執行一次 `codex plugin add strucmed@strucmed-marketplace`（Codex 沒有 plugin update）。安裝或更新後開新工作階段。
-
-Codex app：可在對話中請 Codex 執行上面的 `codex plugin marketplace add`，或在 Plugins 頁面選 `strucmed-marketplace` 安裝；安裝後開新對話。2026-10-26 實測可安裝、瀏覽器登入（院外站台）、建立並匯出測試表單；過程中需核准 hooks。
-
-- **hooks 要先信任**：Codex 不會自動執行 plugin 的 hooks。安裝或更新後在 Codex 輸入 `/hooks`（app 會在第一次執行時詢問），檢查並信任 strucmed 的 hooks（安全提醒、G3 核准檢查、登入提示、workflow-log）。沒有信任時 G3 不會執行，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。
-- **上架**：G3 在 Codex 的阻擋行為尚未實測；實測通過前，上架請回 Claude Code 或用編輯器匯入。
-- **工作目錄**：Codex 以 plugin 目錄當 MCP 的 cwd，MCP 改用啟動 `codex` 時的目錄（`PWD`）放 `.strucmed/`、`output/`。沒有可用的 `PWD` 時（Codex app、Windows 的 PowerShell／cmd），改放「文件」下的 `StrucMed` 資料夾；3.2.1 起不再寫進 plugin 快取（更新 plugin 時會被清掉）。匯出結果會回傳完整路徑。要放在專案資料夾，CLI 可先指定：
-
-  ```powershell
-  $env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
-  ```
-- **設定**：沒有 `/plugin configure`。LlmGateway token 等改用環境變數（`LLMGW_API_KEY`、`FMAPI_API_KEY`、`STRUCMED_EXTERNAL_URL`、`STRUCMED_RUNTIME_WEB`），在啟動 `codex` 的 shell 設定；**不要**寫進 `config.toml`。HIS 帳密不需要，線上以瀏覽器登入。
-- **登入**：manifest 已把 tool 逾時設為 180 秒（Codex 預設 60 秒，短於瀏覽器登入的等待時間）。第一次呼叫線上 tool 時 Codex 會要求核准。
-- skill 以 `$strucmed:strucmed-form` 等觸發，或直接描述需求；`/mcp` 可確認 `strucmed` 已連上。tool 名稱是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`。
-- skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
-
-### Google Antigravity（實驗性）
-
-3.5.0 起本 repo 同時是 Antigravity plugin（根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`）：skills、MCP 與閘門 G3 hook 一起載入，MCP 用 Antigravity 內建的 `agy-node`，不需要另外安裝 Node.js。Antigravity 沒有 marketplace，以 git clone 安裝：
 
 ```bash
-git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed
+copilot plugin update strucmed@strucmed-marketplace
 ```
 
-更新：`git -C ~/.gemini/config/plugins/strucmed pull`。安裝或更新後，在 Antigravity 的 Customizations → Installed 確認 Plugins 有 **StrucMed**（Skills 9 個、MCP `strucmed`、Hooks `strucmed-gate`），再開新對話。
+**注意**：私有 repo 會用 Copilot 登入的 GitHub 帳號取用（`/login` 的帳號要有 repo 權限）。Claude 格式的 hooks 在 Copilot 也會執行。`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，skill 會由主 agent 依序執行。`.strucmed/`、`output/` 放在啟動 `copilot` 的目錄（Windows 的 PowerShell／cmd 改放「文件」下的 `StrucMed`）。開發時可用 `copilot --plugin-dir <repo>` 直接載入。
 
-- **不要同時保留手動設定**：以前照下方「手動設定」在全域 `mcp_config.json` 加過 `strucmed`、在全域 `hooks.json` 加過 `strucmed-gate` 的，請刪掉，避免兩個 MCP 同時執行。
-- **工作目錄**：plugin 的 MCP 沒有設定 `STRUCMED_WORKSPACE`，`.strucmed/`、`output/` 一律放在「文件」下的 `StrucMed` 資料夾。
-- **伺服器名稱**：Antigravity 會加上 plugin 前綴，MCP 伺服器在對話中叫 `strucmed_strucmed`。對話剛開始時 MCP 才啟動，第一次呼叫可能回「tool … is not enabled」，稍等再呼叫一次即可。
-- **hook 只支援 macOS／Linux**：`hooks.json` 的指令用 sh 尋找 `agy-node`；Windows 上 hook 不會正確執行，線上寫入仍有 MCP 的寫入確認頁把關。
-- 2026-10-26 以 Antigravity 2.0 app 2.26.0 實測 plugin 安裝：Plugins 列出 StrucMed 與 9 個 skill；`form_search` 成功；放一份未核准的上架計畫時，`online_template_create` 的第二次呼叫被 `strucmed-gate` 擋下（hook 以 `agy-node` 執行、自動找到預設工作目錄）。
+### 其他本機 MCP client（只用 MCP tool）
 
-#### 手動設定（只註冊 MCP，進階）
+任何支援 stdio MCP 的 client 都可以註冊同一個伺服器。沒有 skill 流程與閘門，等於手動操作 tool；線上寫入仍有寫入確認頁，但不建議用這類 client 上架。
 
-不裝 plugin、只把 MCP 註冊進全域設定時用這一節（沒有 skill 流程）。Antigravity IDE 與 Antigravity 2.0 app 讀同一份全域設定，下面的步驟兩邊共用。2026-10-26 實測：
+**用 prompt 安裝**：把這段話貼給該工具的 AI：
 
-- **IDE 2.5.5**：離線模式可載入 16 個 tool、呼叫 `form_create` 建立 draft；G3 hook（3.3.1）對沒有核准計畫的上架呼叫回 deny、對已核准的回 ask；3.4.0 起沒有計畫檔時改回 ask，交給寫入確認頁。
-- **2.0 app 2.26.0**：同一份設定直接生效；依序呼叫 `form_create`、`form_add_area`、`form_add_control`、`form_validate`、`form_preview`（html）都成功，並以下方「網頁預覽」開出可輸入的預覽頁；加上 BMI 計算式（`formula_check` 試算、`form_validate` 通過）後，預覽頁填身高 170、體重 65 即顯示 BMI 22.5。同一個 2.0 app 也實測了線上：院外站台瀏覽器登入、唯讀 tool（`online_me`、`online_features`、`online_folder_list`、`online_dictionary_search`、`online_template_get`），以及把這張表單經寫入確認頁上架到個人資料夾 `usr`（Turbo 模式，G3 hook 已安裝）。
-- IDE 只測了離線與假站台的 G3 阻擋；真正的線上登入與上架只在 2.0 app 測過。
+```text
+請幫我把 StrucMed MCP 伺服器加進你的 MCP 設定：
+1. 在終端機執行 git clone https://github.com/kunjulin/strucmed-plugin.git ~/strucmed-plugin（已存在就 git -C ~/strucmed-plugin pull）
+2. 新增一個 stdio MCP 伺服器，名稱 strucmed：command 用 node 的完整路徑（which node），args 是 ~/strucmed-plugin/mcp/strucmed-mcp/src/server.mjs 的絕對路徑，env 設 STRUCMED_SITE=offline。所有路徑都寫絕對路徑。
+3. 告訴我設定檔的位置與內容，提醒我重新載入 MCP。
+```
 
-1. 把發佈 repo 複製到本機（例如 `git clone https://github.com/kunjulin/strucmed-plugin.git`），記下資料夾的絕對路徑。
-2. 編輯 `~/.gemini/config/mcp_config.json`（IDE：Agent 面板 → `…` → MCP Servers → Manage MCP Servers → View raw config 會開同一個檔）：
+**自己設定**：
+
+```bash
+git clone https://github.com/kunjulin/strucmed-plugin.git ~/strucmed-plugin
+```
+
+然後在 client 的 MCP 設定加入（路徑換成你的絕對路徑）：
+
+```json
+{
+  "mcpServers": {
+    "strucmed": {
+      "command": "/opt/homebrew/bin/node",
+      "args": ["/Users/<你>/strucmed-plugin/mcp/strucmed-mcp/src/server.mjs"],
+      "env": { "STRUCMED_SITE": "offline" }
+    }
+  }
+}
+```
+
+`STRUCMED_SITE=offline` 完全不連線；拿掉後可使用線上 tool（瀏覽器登入）。`.strucmed/`、`output/` 放在 MCP 的工作目錄，可用 `STRUCMED_WORKSPACE` 指定。
+
+### 第一次使用
+
+安裝好之後，在任何一個工具都可以這樣開始：
+
+1. **連線與登入**：輸入下表的「連線」，或直接說「幫我連線 strucmed」。系統瀏覽器會開啟 strucmed 站台的登入頁：確認網址是 strucmed 站台後輸入 HIS 帳號密碼，按「登入並同意」，回到 AI 工具即可（瀏覽器沒有自動開啟時，對話中會顯示網址）。
+2. **做表單**：輸入下表的「做表單」，或直接描述需求，例如「幫我做一張跌倒風險評估單」。
+
+| 工具 | 連線 | 做表單 |
+|---|---|---|
+| Claude Code | `/strucmed:connect-strucmed` | `/strucmed:strucmed-form 幫我做一張 XX 評估單` |
+| Codex | `$strucmed:connect-strucmed` | `$strucmed:strucmed-form 幫我做一張 XX 評估單` |
+| Antigravity、Copilot CLI | 「幫我連線 strucmed」 | 「幫我做一張 XX 評估單」 |
+
+- 密碼只在站台的登入頁輸入；HIS 密碼變更後直接在登入頁輸入新密碼即可。同一帳號連續 5 次密碼錯誤，站台會鎖定 15 分鐘。
+- 登入後的 token 只存在 MCP 的記憶體，只能使用範本、字典與自己的 struNote 清單；30 分鐘自動更新，同一次登入最長 8 小時。重新啟動工具或 MCP 後要重新登入。
+- 第一次上架建議先放到個人資料夾（`usr`）並在編輯器確認；不需要的測試範本請在編輯器自行刪除（本工具不提供刪除）。
+
+### 進階
+
+#### 本機資料夾安裝（無法連 GitHub，或開發者）
+
+把發佈 repo 複製到本機或院內共用資料夾後，把指令中的 `kunjulin/strucmed-plugin` 換成資料夾路徑：
+
+```bash
+claude plugin marketplace add <資料夾路徑>
+```
+
+Codex：`codex plugin marketplace add <資料夾路徑>`。Antigravity：把資料夾複製或連結到 `~/.gemini/config/plugins/strucmed`。開發者改 skill／references 後在 Claude Code 執行 `/reload-plugins` 即生效；MCP 程式的變更要開新工作階段。
+
+#### Claude Code 選填設定
+
+一般使用不需要。要用 LlmGateway 模型白名單時：
+
+```text
+/plugin configure strucmed@strucmed-marketplace
+```
+
+| 欄位 | 填什麼 |
+|---|---|
+| LlmGateway token | 選用。在 `/llmgw` 的「我的帳號」自助核發一把**伺服器型** token，標籤建議 `strucmed-plugin`；只在院內用來取模型白名單 |
+| 院外站台網址 | 通常留空（預設 `https://cgmh.ddns.net`）。只有資訊室公告新網址時才填（必須是 https）；填 `none` 則不探測院外 |
+| FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
+
+token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。從 2.x 升級：舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理。
+
+#### 環境變數（Codex、Copilot CLI、其他 MCP client）
+
+這些工具沒有 `/plugin configure`，選填設定改用環境變數，在啟動工具的 shell 設定；**不要**寫進 `config.toml`、`mcp-config.json` 等設定檔（設定檔是明文）。
+
+| 變數 | 用途 |
+|---|---|
+| `STRUCMED_WORKSPACE` | `.strucmed/`、`output/` 的位置 |
+| `LLMGW_API_KEY` | LlmGateway token（院內取模型白名單） |
+| `FMAPI_API_KEY` | FMapi 檢視金鑰 |
+| `STRUCMED_EXTERNAL_URL` | 院外站台網址（通常不用設；`none` 不探測院外） |
+| `STRUCMED_SITE` | `offline` 完全不連線；`internal`／`external` 強制站台 |
+| `STRUCMED_RUNTIME_WEB` | 平台 `web/` 副本（網頁預覽用） |
+
+例如在專案資料夾啟動 Codex（PowerShell）：
+
+```powershell
+$env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
+```
+
+#### 網頁預覽（選用）
+
+用 HIS 端 runtime 在本機離線呈現表單，可以實際填值、看計算式結果；不連線、不存檔。需要 StrucMed 平台原始碼裡 `web/` 的本機副本（有 `TempHtml.html` 的那個資料夾）；plugin 不附這份檔案，沒有副本時只能用文字版的 `form_preview`（tree／markdown）。Claude Code 的 `verify-runtime` skill 會自動做以下步驟；其他工具：
+
+1. 讓 MCP 找得到副本：設定 `STRUCMED_RUNTIME_WEB`（Claude Code 在選填設定填「平台 `web/` 副本」）；以 Antigravity plugin 安裝時不能加環境變數，把副本放在（或連結到）`~/Documents/StrucMed/repo/strucmed/web`。
+2. 請 agent 對 draft 呼叫 `form_preview`（`format: "html"`），回傳的 `runtime_available` 應為 `true`。
+3. 請 agent 在終端機執行（環境變數寫在指令前面）：
+
+   ```bash
+   STRUCMED_WORKSPACE="<工作目錄>" STRUCMED_RUNTIME_WEB="<平台 web/ 副本>" node "<plugin 資料夾>/scripts/preview.mjs" <draft_id>
+   ```
+
+   它會在背景啟動只聽本機的預覽伺服器（127.0.0.1:8765），並印出 `http://127.0.0.1:8765/__preview/<draft_id>`。
+4. 點對話裡的連結，用自己的瀏覽器開啟。伺服器會留著讓你重開連結，不用時結束那個 node 程序即可。
+
+Antigravity 的 `/browser` 瀏覽器代理也能去開預覽頁，但它要連 Google Chrome，且 Chrome 必須先在 `chrome://inspect/#remote-debugging` 開啟遠端偵錯（會改 Chrome 的安全設定，請自行決定）；這條路尚未實測成功。
+
+#### Antigravity 手動設定（不裝 plugin，只註冊 MCP）
+
+不想用 plugin 時，可以只把 MCP 註冊進全域設定（沒有 skill 流程）。IDE 與 2.0 app 讀同一份設定。
+
+1. `git clone https://github.com/kunjulin/strucmed-plugin.git` 到任意位置，記下絕對路徑。
+2. 編輯 `~/.gemini/config/mcp_config.json`（IDE：Agent 面板 → `…` → MCP Servers → Manage MCP Servers → View raw config）：
 
    ```json
    {
@@ -192,7 +335,6 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugi
          "args": ["<plugin 資料夾>/mcp/strucmed-mcp/src/server.mjs"],
          "env": {
            "STRUCMED_SITE": "offline",
-           "STRUCMED_FLAGS": "<plugin 資料夾>/feature-flags.json",
            "STRUCMED_WORKSPACE": "<你的家目錄>/Documents/StrucMed"
          }
        }
@@ -200,8 +342,8 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugi
    }
    ```
 
-3. 確認載入：IDE 在 Manage MCP Servers 按 **Refresh**，`strucmed` 顯示 Enabled、16 個 tool（改設定後都要再按一次）；2.0 app 在 Customizations → Installed 最下方的 MCP Servers 看到 `strucmed` 綠燈、16 tools enabled。
-4. **拿掉 `STRUCMED_SITE=offline`（啟用線上 tool）時必裝**：閘門 G3 的 Antigravity 版 hook。建立 `~/.gemini/config/hooks.json`（已有這個檔就把 `strucmed-gate` 加進去）：
+3. 確認載入：IDE 在 Manage MCP Servers 按 **Refresh**（改設定後都要再按）；2.0 app 在 Customizations → Installed 最下方的 MCP Servers 看到 `strucmed` 綠燈。
+4. 拿掉 `STRUCMED_SITE=offline`（啟用線上 tool）時，在 `~/.gemini/config/hooks.json` 加上 G3 hook：
 
    ```json
    {
@@ -213,37 +355,11 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugi
    }
    ```
 
-   上架類 tool（`online_template_create`／`update`、`online_dictionary_create`／`batch`）帶 `confirm_token` 的第二段呼叫，若 `<STRUCMED_WORKSPACE>/.strucmed/plans/<draft_id>/` 有上架計畫，必須是核准過且沒被改過才放行，否則擋下；沒有計畫檔時（Antigravity 不載入 publish-form skill，通常如此）交給 MCP 的瀏覽器確認頁把關。工作目錄從同一個 `mcp_config.json` 的 `STRUCMED_WORKSPACE` 讀取。放行時交回 Antigravity 原本的核准流程（hook 不替使用者核准；IDE 實測會跳核准框）。
+一律寫絕對路徑（沒有 `${CLAUDE_PLUGIN_ROOT}`、沒有 `cwd` 欄位）；`command` 寫 `node` 的完整路徑（`which node`），從 Dock 開的 app 不一定吃得到 shell 的 PATH。金鑰不要寫進 `mcp_config.json`（明文）。`hooks/hooks.json`（Claude 格式）在 Antigravity 不能用。
 
-#### 網頁預覽（選用）
+#### 給維護者：Antigravity 的 hook 行為
 
-用 HIS 端 runtime 在本機離線呈現表單，可以實際填值、看計算式結果；不連線、不存檔。需要 StrucMed 平台原始碼裡 `web/` 的本機副本（有 `TempHtml.html` 的那個資料夾）；plugin 不附這份檔案，沒有副本時只能用文字版的 `form_preview`（tree／markdown）。
-
-1. 讓 MCP 找得到平台 `web/` 副本：手動設定時在 `mcp_config.json` 的 strucmed `env` 加一行 `"STRUCMED_RUNTIME_WEB": "<平台 web/ 副本>"` 並重新載入 MCP；以 plugin 安裝時（不能加環境變數）把副本放在（或連結到）`~/Documents/StrucMed/repo/strucmed/web`。
-2. 請 agent 對 draft 呼叫 `form_preview`（`format: "html"`），回傳的 `runtime_available` 應為 `true`。
-3. 請 agent 在終端機執行（環境變數要寫在指令前面，終端機拿不到 `mcp_config.json` 的設定）：
-
-   ```bash
-   STRUCMED_WORKSPACE="<你的家目錄>/Documents/StrucMed" STRUCMED_RUNTIME_WEB="<平台 web/ 副本>" node "<plugin 資料夾>/scripts/preview.mjs" <draft_id>
-   ```
-
-   它會在背景啟動只聽本機的預覽伺服器（127.0.0.1:8765），並印出 `http://127.0.0.1:8765/__preview/<draft_id>`。
-4. 點對話裡的連結，用自己的瀏覽器開啟預覽頁。伺服器會留著讓你重開連結，不用時結束那個 node 程序即可。
-
-Antigravity 也可以用 `/browser` 叫瀏覽器代理去開預覽頁、自己填值截圖，但它要連到 Google Chrome，而且 Chrome 必須先在 `chrome://inspect/#remote-debugging` 開啟遠端偵錯（會改 Chrome 的安全設定，請自行決定）；沒開時會出現「Could not find DevToolsActivePort」。這條路尚未實測成功。
-
-注意：
-
-- **一律絕對路徑**：沒有 `${CLAUDE_PLUGIN_ROOT}`、沒有 `cwd` 欄位。`command` 寫 `node` 的完整路徑（`which node`）：從 Dock 開的 app 不一定吃得到 shell 的 PATH。`STRUCMED_WORKSPACE` 要明寫，`.strucmed/`、`output/` 放在這裡。
-- **只建議離線**：上例的 `STRUCMED_SITE=offline` 完全不連線，產出 `.htm` 由使用者在編輯器匯入。拿掉它可試線上唯讀 tool（`online_template_get`、`online_dictionary_search`；瀏覽器登入最長等 120 秒，Antigravity 的 tool 逾時未實測，可用 `STRUCMED_LOGIN_WAIT_MS` 縮短）。
-- **上架要在瀏覽器確認頁按確認**（3.4.0 起）：MCP 對每個線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫，都會開一頁 127.0.0.1 的「寫入確認頁」列出站台、登入者、資料夾與名稱，你按「確認寫入」才寫入，按取消或 10 分鐘內沒按都不寫；Turbo 模式也一樣。Antigravity 沒有 publish-form skill，不會先產生並核准上架計畫，這頁就是唯一的確認。2026-10-26 已在 Antigravity 2.0 實測：按確認後同一次呼叫完成上架，取回內容與 draft 一致。第一次使用仍建議先上架到個人資料夾（`usr`）並在編輯器確認；上架後不需要的測試範本請在編輯器自行刪除（MCP 不提供刪除）。`hooks/hooks.json`（Claude 格式）在 Antigravity 不能用：輸入格式不同，照搬會被當成第一段呼叫放行。
-- **金鑰不要寫進 `mcp_config.json`**：`env` 是明文存檔。GUI app 也拿不到 shell 的環境變數，所以 LlmGateway 白名單在 Antigravity 改用內建靜態表。
-- 第一次呼叫每個 tool，IDE 會跳出「Allow using this MCP tool?」核准框。2.0 app 在 Turbo 模式下 MCP tool 直接執行、不跳核准框（實測），需要逐一確認時請改用其他模式。
-- 給維護者：Antigravity 的 hook 裡 MCP tool 一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`；stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程，回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 還沒移植）。G3 的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。
-
-### 其他本機 MCP client（只用 MCP tool）
-
-任何支援 stdio MCP 的 client 都可註冊同一個伺服器，用法同上：`command = node`、`args = <repo>/mcp/strucmed-mcp/src/server.mjs`、`STRUCMED_FLAGS` 指向 `feature-flags.json`；線上 tool 以瀏覽器登入，`STRUCMED_SITE=offline` 可完全不連線。這種用法沒有任何 skill 流程與閘門，等於手動操作 tool；寫入線上的 tool 不建議在這類 client 使用。
+MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`。stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程；回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 尚未移植）。G3 的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。各工具的實測紀錄見 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 院內與院外
 
