@@ -1,4 +1,4 @@
-// 跨工具（Claude Code／Copilot CLI）啟動環境：未展開的 ${...}、Copilot 以 plugin 根目錄為 cwd
+// 跨工具（Claude Code／Copilot CLI／Codex）啟動環境：未展開的 ${...}、Copilot 與 Codex 以 plugin 根目錄為 cwd
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -50,4 +50,23 @@ test('workspace: plugin root stays when PWD is missing or does not exist', () =>
 test('flags: an unexpanded STRUCMED_FLAGS falls back to the bundled feature-flags.json', () => {
   const p = withEnv({ STRUCMED_FLAGS: '${CLAUDE_PLUGIN_ROOT}/feature-flags.json' }, tmp, flagsFile);
   assert.equal(p, path.join(PLUGIN_ROOT, 'feature-flags.json'));
+});
+
+test('codex manifest: same plugin as .claude-plugin, paths resolve from the plugin root', () => {
+  const read = p => JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, p), 'utf8'));
+  const claude = read('.claude-plugin/plugin.json'), codex = read('.codex-plugin/plugin.json');
+  assert.equal(codex.name, claude.name);
+  assert.equal(codex.version, claude.version, '兩份 manifest 的版本要一起改');
+  // Codex 的 manifest 路徑必須以 ./ 開頭且在 plugin 根目錄內，且不展開 ${...}
+  for (const p of [codex.skills, codex.hooks]) {
+    assert.match(p, /^\.\/[^.]/);
+    assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, p)), p);
+  }
+  const mcp = codex.mcpServers.strucmed;
+  assert.equal(mcp.cwd, '.', 'cwd＝plugin 根目錄，args 才能用相對路徑');
+  assert.ok(!JSON.stringify(mcp).includes('${'), 'Codex 不展開 ${...}');
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, mcp.args[0])), mcp.args[0]);
+  assert.deepEqual(claude.mcpServers.strucmed.args.map(a => a.replace('${CLAUDE_PLUGIN_ROOT}/', './')), mcp.args);
+  for (const k of ['PWD', 'STRUCMED_WORKSPACE', 'LLMGW_API_KEY', 'FMAPI_API_KEY', 'STRUCMED_EXTERNAL_URL', 'STRUCMED_RUNTIME_WEB']) assert.ok(mcp.env_vars.includes(k), k);
+  assert.ok(mcp.tool_timeout_sec > 120, 'online_login 預設最多等 120 秒');
 });

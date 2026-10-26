@@ -1,6 +1,6 @@
 // Local workspace: <root>/.strucmed/{drafts/*.json, dictionaries.json}
 // <root> = STRUCMED_WORKSPACE or the server's cwd. Nothing leaves this machine.
-// Copilot CLI starts plugin MCP servers with cwd = plugin root; then <root> falls back to PWD (the directory the CLI was launched from).
+// Copilot CLI and Codex (.codex-plugin/plugin.json, cwd ".") start plugin MCP servers with cwd = plugin root; then <root> falls back to PWD (the directory the CLI was launched from).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';

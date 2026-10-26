@@ -10,6 +10,8 @@ allowed-tools: Read, AskUserQuestion, Bash(node *)
 
 # report-issue
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 1. 用 `AskUserQuestion` 或對話確認三件事：一句話標題、做了什麼與預期／實際結果、錯誤訊息（可貼 tool 回傳的 JSON）。不要請使用者提供帳密、token 或病歷號；若貼上的內容含這些，腳本會遮蔽，但仍提醒使用者。
 2. 把描述與錯誤各存成暫存檔（工作目錄 `.strucmed/` 下），執行：
    ```bash

@@ -9,6 +9,8 @@ allowed-tools: Read, Bash(node *)
 
 # connect-strucmed
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 目的：讓後續流程知道「現在能用什麼」。全部只讀；strucmed 以瀏覽器登入（HIS 密碼只在站台登入頁輸入），選用的 token 由使用者自己以 `/plugin configure` 或環境變數提供，本 skill 只檢查有沒有，不設定、不索取。
 站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 內建的院外站台 `https://cgmh.ddns.net`（沒有 LlmGateway 與 FMapi；`/plugin configure` 的「院外站台網址」只在資訊室公告新網址時才需要填，填 `none` 則不探測院外）；兩邊都連不到 → 離線。
 

@@ -11,6 +11,8 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Bash(node *)
 
 # publish-form
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 流程細節與錯誤對照：`references/PublishWorkflow.md`；閘門格式：`references/Gates.md`；不變量：`references/SecurityInvariants.md`。
 
 ## 步驟

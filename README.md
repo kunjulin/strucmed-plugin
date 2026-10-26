@@ -19,13 +19,13 @@
 
 ### 支援的工具
 
-本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks，不需另備 manifest；其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
+本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex CLI 讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
 
 | 工具 | 支援程度 | 可用 | 缺少 |
 |---|---|---|---|
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
-| **OpenAI Codex CLI** | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（stdio，含瀏覽器登入） | hooks（G3 核准檢查、安全提醒、workflow-log）、subagent 與結構化提問；未經實測 |
+| **OpenAI Codex CLI** | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需在 `/hooks` 信任） | `userConfig`（改用環境變數）、subagent 與結構化提問；G3 阻擋與對話中的執行未經實測 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
@@ -133,44 +133,28 @@ copilot plugin install strucmed@strucmed-marketplace
 
 ### OpenAI Codex CLI（實驗性）
 
-Codex 讀得懂 `SKILL.md` 與 stdio MCP（3.0.0 起含瀏覽器登入），但**不會**載入本 plugin 的 `plugin.json`、`hooks/` 與 `userConfig`，所以：
+Codex CLI 讀得懂本 repo 的市集（`.claude-plugin/marketplace.json`）與 Codex 版 manifest（`.codex-plugin/plugin.json`：skills、MCP、hooks），可以直接安裝（Codex CLI 0.164.0 實測可安裝；沒有 `codex plugin` 指令的舊版請先更新）：
 
-- **G3 上架核准的 hook 不會執行**，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。Codex 可以登入、讀取範本與字典；上架建議回到 Claude Code 或用編輯器匯入（G3 移進 MCP 之前）。
-- 沒有安全儲存區：LlmGateway 等 token **不要**寫進 `config.toml`，只以環境變數名稱轉傳（下方 `env_vars`）。
+```bash
+codex plugin marketplace add kunjulin/strucmed-plugin
+codex plugin add strucmed@strucmed-marketplace
+```
+
+本機資料夾（無法連 GitHub 或開發用）：`codex plugin marketplace add <資料夾路徑>`。更新：`codex plugin marketplace upgrade strucmed-marketplace`，再執行一次 `codex plugin add strucmed@strucmed-marketplace`（Codex 沒有 plugin update）。安裝或更新後開新工作階段。
+
+- **hooks 要先信任**：Codex 不會自動執行 plugin 的 hooks。安裝或更新後在 Codex 輸入 `/hooks`，檢查並信任 strucmed 的 hooks（安全提醒、G3 核准檢查、登入提示、workflow-log）。沒有信任時 G3 不會執行，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。
+- **上架**：G3 在 Codex 的阻擋行為尚未實測；實測通過前，上架請回 Claude Code 或用編輯器匯入。
+- **工作目錄**：Codex 以 plugin 目錄當 MCP 的 cwd，MCP 改用啟動 `codex` 時的目錄（`PWD`）放 `.strucmed/`、`output/`。Windows 的 PowerShell／cmd 沒有 `PWD`，請先指定：
+
+  ```powershell
+  $env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
+  ```
+
+  或在 WSL、Git Bash 使用。
+- **設定**：沒有 `/plugin configure`。LlmGateway token 等改用環境變數（`LLMGW_API_KEY`、`FMAPI_API_KEY`、`STRUCMED_EXTERNAL_URL`、`STRUCMED_RUNTIME_WEB`），在啟動 `codex` 的 shell 設定；**不要**寫進 `config.toml`。HIS 帳密不需要，線上以瀏覽器登入。
+- **登入**：manifest 已把 tool 逾時設為 180 秒（Codex 預設 60 秒，短於瀏覽器登入的等待時間）。第一次呼叫線上 tool 時 Codex 會要求核准。
+- skill 以 `$strucmed:strucmed-form` 等觸發，或直接描述需求；`/mcp` 可確認 `strucmed` 已連上。tool 名稱是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`。
 - skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
-- tool 名稱在 Codex 是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`；skill 文字中的全名請自行對應。
-
-步驟（以 Codex 2026 版的路徑為準，舊版若不同請以 `codex --help` 與官方文件確認）：
-
-1. 取得 repo（同下方「本機開發」的 `git clone`），以下以 `<repo>` 代表它的絕對路徑。
-2. 讓 skill 中的 `${CLAUDE_PLUGIN_ROOT}` 能解析：在 shell 設定檔加入
-
-   ```bash
-   export CLAUDE_PLUGIN_ROOT="<repo>"
-   ```
-
-3. 安裝 skills（使用者層級；目錄不存在就建立）：
-
-   ```bash
-   mkdir -p ~/.agents/skills && for d in <repo>/skills/*/; do ln -s "$d" ~/.agents/skills/strucmed-$(basename "$d"); done
-   ```
-
-   Windows 改用 `mklink /D` 或直接複製資料夾。
-4. 註冊 MCP 伺服器，在 `~/.codex/config.toml` 加入：
-
-   ```toml
-   [mcp_servers.strucmed]
-   command = "node"
-   args = ["<repo>/mcp/strucmed-mcp/src/server.mjs"]
-   startup_timeout_sec = 20
-   # 只轉傳名稱，值由啟動 codex 的 shell 提供；不要把 token 寫在這裡（HIS 帳密不需要，線上改用瀏覽器登入）
-   env_vars = ["STRUCMED_EXTERNAL_URL", "LLMGW_API_KEY", "FMAPI_API_KEY", "STRUCMED_RUNTIME_WEB"]
-
-   [mcp_servers.strucmed.env]
-   STRUCMED_FLAGS = "<repo>/feature-flags.json"
-   ```
-
-5. 開 Codex，以 `$strucmed-strucmed-form 幫我做一張 XX 評估單` 或直接描述需求觸發 skill；`/mcp` 可確認 `strucmed` 已連上。
 
 ### 其他本機 MCP client（只用 MCP tool）
 

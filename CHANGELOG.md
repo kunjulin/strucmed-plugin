@@ -14,7 +14,21 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.1.0（MCP 2.1.0）— 2026-10-25：院外站台內建（未發佈）
+## 3.2.0（MCP 2.1.0）— 未發佈：Codex 一行安裝
+
+- **Codex manifest**：新增 `.codex-plugin/plugin.json`（skills、hooks、MCP）。Codex CLI 直接讀既有的 `.claude-plugin/marketplace.json`，所以 `codex plugin marketplace add kunjulin/strucmed-plugin` → `codex plugin add strucmed@strucmed-marketplace` 即可安裝，不必再手動連結 skills 與編輯 `config.toml`。
+  - Codex 不展開 `${CLAUDE_PLUGIN_ROOT}`：MCP 以 `cwd: "."`（plugin 根目錄）與相對路徑啟動；工作目錄沿用 Copilot 的 `PWD` 機制，Windows PowerShell 需先設 `STRUCMED_WORKSPACE`。
+  - `tool_timeout_sec` 180 秒：Codex 預設 60 秒，短於 `online_login` 的 120 秒等待。
+  - 只轉傳環境變數名稱（`env_vars`），token 不寫進設定檔。
+  - hooks 與 Claude Code 共用 `hooks/hooks.json`（Codex 會設定 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT`）；需使用者在 `/hooks` 信任後才執行。G3 在 Codex 的阻擋行為尚未實測，上架仍建議回 Claude Code。
+- **skills**：用到 `${CLAUDE_PLUGIN_ROOT}` 的 6 個 skill 加註：不展開這個變數的工具改用 `skills/` 的上一層。
+- **文件**：README 與公開版 README 的 Codex 段落改為市集安裝；「支援的工具」表更新；docs/13 G3 移進 MCP 的說明同步。
+- **測試**：`host.test.mjs` 新增 Codex manifest 檢查（版本與 `.claude-plugin` 一致、路徑在 plugin 根目錄內、不含 `${…}`、逾時大於登入等待）。共 89 項：88 過、1 略過。
+- 實測：Codex CLI 0.164.0 以本機資料夾市集安裝成功（`codex plugin list` 3.2.0、`codex mcp get strucmed` 設定正確、`codex debug prompt-input` 列出 9 個 `strucmed:*` skill）；以 Codex 的環境變數啟動 MCP，工作目錄取自 `PWD`。對話中的登入與 hooks 待實機驗收。
+
+## 3.1.0（MCP 2.1.0）— 2026-10-25：院外站台內建
+
+strucmed-skill#37；發佈：strucmed-plugin `b0d54db`（由 main `ff2c0ee` 產生）。發佈時：`release-plugin.mjs` ok、184 個檔案、掃描無發現；`npm test` 87 過、1 略過；`claude plugin validate --strict` 通過。發佈前確認 LVAIW 與 cgmh.ddns.net 兩站的 `api/v2/auth/authorize` 皆存在。
 
 - **院外站台不再需要設定**：`src/site.mjs` 內建 `DEFAULT_EXTERNAL_URL = https://cgmh.ddns.net`（已公開的院外入口；登入仍需 HIS 帳密）。院內連不到時自動改用院外站台，`/plugin configure` 的「院外站台網址」改為覆寫用：留空＝預設、填網址＝覆寫（必須 https）、`none`／`off`／`0`／`false`＝不探測院外。
 - **訊息**：`E_ONLINE_DISABLED` 的原因與 `check-env.mjs` 的站台檢查不再說「未設定院外站台網址」，改說「院外站台已停用或網址無效」。

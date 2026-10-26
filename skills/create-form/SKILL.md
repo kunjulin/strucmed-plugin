@@ -11,6 +11,8 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 
 # create-form
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 以本機 MCP `strucmed` 產生定義檔；**使用者本人**在編輯器「匯入表單（及字典）」後檢視並保存。預設不連線、不處理帳密、不接觸病人資料。
 規則依據：`references/FormDesignRules.md`（控制項推論、字典、必填、禁止事項）、`references/FormulaMacroRules.md`（計算式、HIS 參照、巨集、LLM 按鈕）、`references/TablesTabsRules.md`（表格與頁籤）。閘門格式：`references/Gates.md`。
 

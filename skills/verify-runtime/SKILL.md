@@ -11,6 +11,8 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
 
 # verify-runtime
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 目的：讓使用者用對話繼續調整，不必反覆匯入編輯器。使用者最後仍以編輯器的「預覽」確認（包括**實際的 LLM 回覆**，這裡不呼叫 LLM）。
 詳細操作：`references/RuntimeVerification.md`。
 

@@ -12,6 +12,8 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 
 # strucmed-form（入口）
 
+> `${CLAUDE_PLUGIN_ROOT}`＝plugin 根目錄。Codex 等不展開這個變數的工具：改用本 SKILL.md 所在 `skills/` 目錄的上一層（Codex 的 skill roots 表列出 `skills/` 的絕對路徑）。
+
 這個 skill 只做三件事：確認環境、判定意圖、載入對應的流程。規則細節都在各流程 skill 與 `references/`，**不要**一次全部讀完。
 
 ## 1. 先確認環境（每次對話第一次進入時）
