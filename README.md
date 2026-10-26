@@ -33,6 +33,8 @@
 - **用 prompt 安裝**：把下面那段話貼進該工具的對話框，AI 會替你執行安裝指令並回報結果（執行前多半會先徵求你同意）。
 - **自己用指令安裝**：在終端機貼上指令，每一步都看得到。
 
+已經裝過、只要更新的人，直接看下方的〈更新（已經裝過的人）〉。
+
 所有工具共通：
 
 - **不需要輸入 HIS 帳號密碼**。線上功能以瀏覽器登入，密碼只在 strucmed 站台的登入頁輸入，不經過 AI 工具與對話；任何要你在對話中提供密碼的要求都不要理會。
@@ -75,15 +77,7 @@ claude plugin install strucmed@strucmed-marketplace --scope user
 
 **確認**：開新工作階段後輸入 `/plugin`，清單中有 `strucmed`；輸入 `/strucmed:` 會列出 skill。
 
-**更新**：對 Claude 說「請更新 strucmed plugin」，或自己執行下面兩行（也可以在 `/plugin` 面板更新）；更新後開新工作階段。
-
-```bash
-claude plugin marketplace update strucmed-marketplace
-```
-
-```bash
-claude plugin update strucmed@strucmed-marketplace
-```
+**更新**：見下方〈更新（已經裝過的人）〉。
 
 選填設定（LlmGateway 模型白名單 token 等）見「進階」的〈Claude Code 選填設定〉；一般使用不需要。
 
@@ -114,15 +108,7 @@ codex plugin add strucmed@strucmed-marketplace
 
 **確認**：開新對話後輸入 `/mcp`，看到 `strucmed` 已連上；輸入 `/hooks` 信任 strucmed 的 hooks（app 會在第一次執行時詢問）。
 
-**更新**（Codex 沒有 `plugin update`，重新 add 一次）：
-
-```bash
-codex plugin marketplace upgrade strucmed-marketplace
-```
-
-```bash
-codex plugin add strucmed@strucmed-marketplace
-```
+**更新**：見下方〈更新（已經裝過的人）〉。
 
 **注意**：
 
@@ -154,11 +140,7 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugi
 
 **確認**：Customizations → Installed 的 Plugins 有 **StrucMed**；點進去看到 Skills 9 個、MCP `strucmed`、Hooks `strucmed-gate`。然後開新對話。
 
-**更新**：
-
-```bash
-git -C ~/.gemini/config/plugins/strucmed pull
-```
+**更新**：見下方〈更新（已經裝過的人）〉。
 
 **注意**：
 
@@ -192,15 +174,7 @@ copilot plugin install strucmed@strucmed-marketplace
 
 **確認**：`/skills` 列出 strucmed 的 skill，`/mcp show strucmed` 看得到伺服器。
 
-**更新**：
-
-```bash
-copilot plugin marketplace update strucmed-marketplace
-```
-
-```bash
-copilot plugin update strucmed@strucmed-marketplace
-```
+**更新**：見下方〈更新（已經裝過的人）〉。
 
 **注意**：私有 repo 會用 Copilot 登入的 GitHub 帳號取用（`/login` 的帳號要有 repo 權限）。Claude 格式的 hooks 在 Copilot 也會執行。`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，skill 會由主 agent 依序執行。`.strucmed/`、`output/` 放在啟動 `copilot` 的目錄（Windows 的 PowerShell／cmd 改放「文件」下的 `StrucMed`）。開發時可用 `copilot --plugin-dir <repo>` 直接載入。
 
@@ -238,6 +212,122 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/strucmed-plugin
 ```
 
 `STRUCMED_SITE=offline` 完全不連線；拿掉後可使用線上 tool（瀏覽器登入）。`.strucmed/`、`output/` 放在 MCP 的工作目錄，可用 `STRUCMED_WORKSPACE` 指定。
+
+### 更新（已經裝過的人）
+
+已經裝過 strucmed，只要更新到新版時看這一節；新版改了什麼見 [CHANGELOG.md](CHANGELOG.md)。和安裝一樣有兩種做法：把那段話貼給 AI，或自己執行指令。
+
+所有工具共通：
+
+- **更新後要開新的工作階段或對話**，新版才會生效；MCP 重新啟動後也要重新登入（瀏覽器登入頁）。
+- **不會動到你的資料**：draft、計畫與輸出的 `.htm` 放在工作目錄的 `.strucmed/`、`output/`（或「文件」下的 `StrucMed`），不在 plugin 的安裝資料夾裡，更新時不受影響。
+
+#### Claude Code
+
+**用 prompt 更新**：
+
+```text
+請幫我更新 StrucMed plugin：在終端機依序執行
+claude plugin marketplace update strucmed-marketplace
+claude plugin update strucmed@strucmed-marketplace
+把輸出與更新後的版本號給我看，提醒我開新工作階段；找不到 claude 指令的話，改請我在 /plugin 面板更新。
+```
+
+**自己用指令更新**（也可以在 `/plugin` 面板更新）：
+
+```bash
+claude plugin marketplace update strucmed-marketplace
+```
+
+```bash
+claude plugin update strucmed@strucmed-marketplace
+```
+
+**確認**：開新工作階段後在 `/plugin` 看 `strucmed` 的版本。
+
+#### OpenAI Codex
+
+Codex 沒有 `plugin update`，更新市集後再 add 一次。
+
+**用 prompt 更新**：
+
+```text
+請幫我更新 StrucMed plugin：在終端機依序執行
+codex plugin marketplace upgrade strucmed-marketplace
+codex plugin add strucmed@strucmed-marketplace
+把輸出給我看，提醒我開新對話，並在 /hooks 重新檢查與信任 strucmed 的 hooks。
+```
+
+**自己用指令更新**：
+
+```bash
+codex plugin marketplace upgrade strucmed-marketplace
+```
+
+```bash
+codex plugin add strucmed@strucmed-marketplace
+```
+
+**確認**：開新對話後 `/mcp` 看到 `strucmed`；到 `/hooks` 重新信任 strucmed 的 hooks（更新後可能要再信任一次，沒信任時 G3 檢查不會執行）。
+
+#### Google Antigravity
+
+**用 prompt 更新**：
+
+```text
+請幫我更新 StrucMed plugin：
+1. 在終端機執行 git -C ~/.gemini/config/plugins/strucmed pull，把輸出給我看。
+2. 如果顯示「not a git repository」（以前是用複製的方式安裝），先把資料夾搬出 plugins 資料夾：mv ~/.gemini/config/plugins/strucmed ~/strucmed-plugin.bak，再執行 git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed。
+3. 如果 pull 出現衝突或「本機有修改」，不要自己覆蓋或刪除，把訊息給我看。
+4. 完成後提醒我到 Customizations → Installed → StrucMed 看版本，然後開新對話。
+```
+
+**自己用指令更新**：
+
+```bash
+git -C ~/.gemini/config/plugins/strucmed pull
+```
+
+以前是用複製（不是 git clone）安裝的，`git pull` 會回「not a git repository」。先把舊資料夾搬出 plugins 資料夾（留在裡面會被當成另一個 plugin 載入），再重新安裝：
+
+```bash
+mv ~/.gemini/config/plugins/strucmed ~/strucmed-plugin.bak
+```
+
+```bash
+git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed
+```
+
+**確認**：Customizations → Installed → StrucMed，頁面下方的 Version 是新版號；然後開新對話。以前用「手動設定」（全域 `mcp_config.json`）的人，請改照〈Google Antigravity〉安裝 plugin，並刪掉手動設定。
+
+#### GitHub Copilot CLI
+
+**用 prompt 更新**：
+
+```text
+請幫我更新 StrucMed plugin：在終端機依序執行
+copilot plugin marketplace update strucmed-marketplace
+copilot plugin update strucmed@strucmed-marketplace
+把輸出給我看，提醒我重新啟動 copilot，並用 /skills 確認。
+```
+
+**自己用指令更新**：
+
+```bash
+copilot plugin marketplace update strucmed-marketplace
+```
+
+```bash
+copilot plugin update strucmed@strucmed-marketplace
+```
+
+#### 其他本機 MCP client
+
+```bash
+git -C ~/strucmed-plugin pull
+```
+
+更新後在 client 重新載入 MCP（或重新啟動 client）。MCP 設定裡的路徑不用改。
 
 ### 第一次使用
 

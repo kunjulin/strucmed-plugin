@@ -20,6 +20,8 @@ strucmed-skill#55；發佈：strucmed-plugin `ee5bed5`（由 main `19dc40f` 產�
 
 文件更新（版本不變）：strucmed-skill#57 的 README 安裝說明（依工具分節，每個工具都有「用 prompt 安裝」與「自己用指令安裝」）與案例文件的登入說法，另於 strucmed-plugin `f83e0ab`（由 main `5c87f2f` 產生）發佈；`release-plugin.mjs` ok、3 個檔案有變動、掃描無發現；`npm test` 104 過、1 略過。
 
+文件更新（版本不變）：strucmed-skill#59 在 README「第一次使用」加入〈範例：一段 prompt 做出 MMSE／CDR 語音訪談表單〉，另於 strucmed-plugin `baaaceb`（由 main `077f72f` 產生）發佈；`release-plugin.mjs` ok、2 個檔案有變動、掃描無發現；`npm test` 104 過、1 略過。
+
 - **Antigravity plugin**：本 repo 根目錄新增 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）、`rules/AGENTS.md`，整個 repo 同時是 Antigravity plugin。安裝：`git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed`；更新：`git pull`。skills、MCP 與 G3 hook 一起載入。
 - **不需要另外安裝 Node.js**：MCP 以 Antigravity 內建的 `agy-node`（Node 24）執行，cwd 是 plugin 資料夾、路徑用相對路徑；hook 以 sh 依序找 `agy-node`、`~/Library/Application Support/Antigravity/bin/agy-node`、`node`，都找不到就阻擋（只支援 macOS／Linux）。
 - **規則**：`rules/AGENTS.md` 告訴 Antigravity 的 agent：不得替使用者操作寫入確認頁、`${CLAUDE_PLUGIN_ROOT}` 是 plugin 根目錄、沒有 AskUserQuestion／Task 時改在對話中詢問並依序執行、伺服器名稱是 `strucmed_strucmed`。
