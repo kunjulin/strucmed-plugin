@@ -24,7 +24,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Bash(node *)
    - **保存後即上架**（有捷徑＋作業別）要用粗體提醒；測試表單不應有捷徑。
    - 有 LLM／語音巨集：W_AI_DATAFLOW 必列（不需另行審查，但不可省略）。
 5. **核准**：改「## 核准」為 Approved → `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <publish-plan.md> --by <user_id>`。沒有這一步，hooks 會阻擋第二次呼叫。
-6. **執行**：先字典（`online_dictionary_batch`／`create` 第二次呼叫），再範本第二次呼叫（更新帶 `if_match`）。錯誤依 `PublishWorkflow.md` §4 處理；`E_UPSTREAM` 帶 `pending` 時**不要重試**。
+6. **執行**：先字典（`online_dictionary_batch`／`create` 第二次呼叫），再範本第二次呼叫（更新帶 `if_match`）。第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起）：回 `pending`（附 `approve_url`）時，請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消）就停止，需要時重新取得計畫。錯誤依 `PublishWorkflow.md` §4 處理；`E_UPSTREAM` 帶 `pending` 時**不要重試**。
 7. **收尾**：`online_template_get` 取回確認名稱與控制項數；更新另跑 `online_template_versions`。最後交付（§5）。
 
 ## 不做

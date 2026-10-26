@@ -44,7 +44,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 依 `references/AppBuildWorkflow.md`：
 1. **主機位置**先問一次：H0 本機 Docker（預設）、H1 既有 struNote（只把範本加進清單）、H2 站台 `/strucmed/apps/<slug>/`。
 2. **前提**：範本已上架（`online_template_get`）；`online_features` 看登入者是否在 HIS 端存檔白名單；有 `FMAPI_BASE_URL` 時 `fmapi_status` 看站台健康。
-3. **H1**：`online_me_notes_get` → `online_me_notes_set`（`add`，兩段式，plan 就是閘門）→ 告知在平板開 `/strucmed/note/`。
+3. **H1**：`online_me_notes_get` → `online_me_notes_set`（`add`，兩段式，plan 就是閘門；第二次呼叫要使用者在瀏覽器確認頁按「確認寫入」）→ 告知在平板開 `/strucmed/note/`。
 4. **H0／H2**：寫 `<workspace>/.strucmed/plans/<slug>/app-plan.md`「## 應用程式計畫」→ ▶ **G4**（`AskUserQuestion` 核准／要求修改／取消）→ 核准後 `verify-plan.mjs prepare` → 寫 `config.json` → `Task(app-builder)` 執行 scaffold → 本 skill 在輸出目錄 `npm install`、`npm run build`、`check-app-dist.mjs dist`（不通過不交付）；H0 再 `docker compose build && docker compose up -d`（映像只裝入這份 dist，容器內不跑 npm）。
 5. **交付**：輸出目錄、`docker compose` 指令（H0）或 `dist/` 交平台（H2）、待辦（存檔白名單、LlmGateway APP 登記（PKCE））。
 

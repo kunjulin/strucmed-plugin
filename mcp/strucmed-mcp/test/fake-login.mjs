@@ -43,3 +43,17 @@ export async function browserLogin(m, args = {}) {
   await r.text();
   return m.call('online_login', args);
 }
+
+// 測試端的使用者在寫入確認頁按鈕：第二段呼叫回 pending 與 approve_url，開頁後送出決定（approve／reject），再呼叫一次
+export async function browserApprove(m, name, args, decision = 'approve') {
+  const first = await m.call(name, args);
+  if (!first.ok || !first.data.pending) return first;
+  const u = new URL(first.data.approve_url);
+  const page = await (await fetch(u)).text();
+  const r = await fetch(new URL('/decide', u), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ n: u.searchParams.get('n'), d: decision }).toString() });
+  await r.text();
+  const second = await m.call(name, args);
+  second.approvePage = page;
+  return second;
+}

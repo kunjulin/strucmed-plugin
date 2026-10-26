@@ -72,7 +72,8 @@ Approved-By:
 
 ## 4. 執行
 
-- 第二次呼叫帶 `confirm_token`（更新另帶 plan 的 `if_match`）。
+- 第二次呼叫帶 `confirm_token`（更新另帶 plan 的 `if_match`）。第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起）：回 `pending`（附 `approve_url`）時，請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消）就停止，需要時重新取得計畫。
+- 對話中的 G3 核准與瀏覽器確認頁是兩件事：前者是 skill 流程（Claude Code、Codex），後者由 MCP 強制、任何 client 都有；兩者都通過才寫入。
 - 成功：記下 `template_id`、`rev`、`folder`；draft 內也存了 `published`。
 - 錯誤對照：
 

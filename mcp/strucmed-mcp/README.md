@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.2.1）
+# strucmed-mcp（v2.3.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -8,6 +8,7 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 - **站台偵測只看 `api/health`**：啟動時探測站台（只 GET、不帶憑證）；`STRUCMED_SITE=offline` 時完全不連線，`tools/list` 不列出線上 tool，呼叫一律回 `E_ONLINE_DISABLED`。
 - 只寫入 `<workspace>/.strucmed/`（draft、字典索引）與 `<workspace>/output/`（產出），兩者皆 gitignore。
 - 輸出與刪除 draft 採**兩段式確認**（`confirm_token`：HMAC、綁定內容雜湊、10 分鐘有效、金鑰只存在本次行程）。
+- 線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫另有**瀏覽器寫入確認頁**（2.3.0，`src/approve.mjs`）：在 127.0.0.1 開一頁列出 plan，使用者按「確認寫入」才寫入；還沒按時回 `pending` 與 `approve_url`，再呼叫一次接著等；按取消回 `E_REJECTED`。每次確認只能用一次，無法關閉；網址含一次性 nonce，POST 檢查 Host／Origin，頁面內容一律跳脫並帶嚴格 CSP。`STRUCMED_APPROVE_WAIT_MS` 調整單次等待（預設 120 秒）。
 - stdout 只輸出 JSON-RPC；診斷訊息寫 stderr。
 - 表單 JS 區塊只寫入產生器標記註解，不產生可執行程式碼。
 
@@ -121,7 +122,7 @@ cd mcp/strucmed-mcp && npm test
 - `test/formula-explain.test.mjs`：`formula_check` 的標籤化公式（`labeled`、`ref_labels`）與試算（`samples`）：運算子優先順序、百分比、常用函數、缺值與不支援時回報不猜、BMI 身高體重對調回 `E_FORMULA_SAMPLE_MISMATCH`、進位函數與 MOD 和 Calx 2.2.8 一致（BMI 160／80 → 31.2、只差最後一位的提示）、固定表格的說明格。
 - `test/e2e.test.mjs`：以真實 stdio 協定走完 create → export 兩段式流程，驗證套件 v2 與 `.htm` 內嵌套件一致，並以編輯器匯入器相同邏輯擷取 `var tempdata`。
 - `test/v1.test.mjs`：改版流程（合成的既有表單 fixture）：三種來源格式、未修改時逐位元組保真、新增／修改／移除與參照保護、嚴重度分級、`derivedFrom`。
-- `test/online.test.mjs`：線上 tool，以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
+- `test/online.test.mjs`：線上 tool，以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
 - `test/llmgw.test.mjs`：LlmGateway tool，以 127.0.0.1 上的假閘道：未設定時隱藏與 `E_LLMGW_DISABLED`、網址限制、bearer、快取寫入與別名對應、401／轉址／空清單、`formula_check` 對照白名單（不在清單、deprecated、視覺）、`form_validate` 的 `W_LLM_WHITELIST_STALE`、chat_test（flag、白名單、個資、標頭、思考模式、429）；金鑰不出現在 stdout、stderr、工作目錄。
 - `test/fmapi.test.mjs`：FMapi tool，以假 FMapi：未設定時隱藏、errorlog 狀態、相關站台過濾與 `W_SITE_DOWN`、uptime 被拒／停用只回 warnings；金鑰不外洩。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。

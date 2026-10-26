@@ -14,9 +14,23 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.3.2（MCP 2.2.1）— 2026-10-26：formula_check 試算與 HIS runtime 一致
+## 3.4.0（MCP 2.3.0）— 2026-10-26：線上寫入改由瀏覽器確認頁把關
 
 尚未發佈。
+
+原本「核准」靠 AI 遵守流程：對話中問使用者，再由 AI 自己執行 `verify-plan.mjs prepare` 寫核准紀錄，MCP 的 `confirm_token` 也是 AI 第一次呼叫拿到、第二次帶回。Claude Code 有 skill、結構化提問與 hooks 把關；Antigravity 不載入 skill、Turbo 模式下 tool 不跳核准框，Codex 的 hooks 要先信任，都沒有辦法確保「是人按的同意」。
+
+- **瀏覽器寫入確認頁**（新增 `src/approve.mjs`）：`online_template_create`／`update`、`online_dictionary_create`／`batch`、`online_me_notes_set` 的第二次呼叫，在 127.0.0.1 開一頁列出第一次呼叫時的 plan，使用者按「確認寫入」才寫入。做法同 `online_login`：還沒按時回 `pending`（附 `approve_url`），帶同一個 `confirm_token` 再呼叫一次接著等；按取消回 `E_REJECTED`；10 分鐘內未確認、MCP 重啟或確認已用過，都要重新取得計畫。沒有任何略過確認的開關。
+- **確認頁的防護**：只聽 127.0.0.1；網址含一次性 nonce；POST 檢查 Host（防 DNS rebinding）與 Origin（防跨站送出）；plan 內容一律跳脫，回應帶 `Content-Security-Policy: default-src 'none'` 與 `X-Frame-Options: DENY`；不載入外部資源。
+- **Antigravity 版 G3 hook**：沒有上架計畫檔（或找不到工作目錄）時改回 `ask`，交給確認頁把關；有計畫檔但未核准、核准後被改過或檢查出錯，仍然阻擋。Claude Code／Copilot／Codex 的 hook 不變：skill 流程照舊寫計畫與 sidecar，再加上確認頁。
+- **文件**：publish-form、build-form-app、`PublishWorkflow.md`、`SecurityInvariants.md`、MCP README 與 README 的 Antigravity 一節說明確認頁；agent 不得替使用者確認或操作確認頁。
+- **測試**：`test/online.test.mjs` 既有寫入測試改為經確認頁；新增確認頁流程（pending、同頁續等、錯 nonce、Host、Origin、確認一次、取消）；新增 `test/approve.test.mjs`（跳脫與 CSP、計畫須先記下且綁動作）；`test/gate.test.mjs` 更新 Antigravity hook 行為。
+- **實測（Antigravity 2.0 app 2.26.0，院外站台）**：Turbo 模式下，以 BMI 測試表單（無捷徑、保存不上架）新建到個人資料夾 `usr`。第一次呼叫取得 plan、未寫入；第二次呼叫開出確認頁，使用者按「確認寫入」後同一次呼叫完成（約 25 秒），回 `template_id`、rev 1；`online_template_get` 取回名稱與 3 個控制項（含 BMI 公式）與 draft 一致。Antigravity 版 G3 hook 在沒有計畫檔時回 ask、交給確認頁，未擋下。取回時套件的 `template.rev` 是 0、新建回應是 1，兩者差異未查證。
+- **未實測**：Claude Code、Codex 在真實站台經確認頁上架。
+
+## 3.3.2（MCP 2.2.1）— 2026-10-26：formula_check 試算與 HIS runtime 一致
+
+strucmed-skill#51（README 的 Antigravity 2.0 與網頁預覽：#50）；發佈：strucmed-plugin `c42120d`（由 main `d584712` 產生）。發佈時：`release-plugin.mjs` ok、190 個檔案、掃描無發現；`npm test` 99 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。
 
 Antigravity 2.0 app 實測 BMI 時發現：`formula_check` 試算身高 160、體重 80 得到 31.3（判定符合），HIS runtime 預覽實際顯示 31.2。原因是離線試算的進位先補了浮點誤差（`+1e-9`），Calx 沒有；80 ÷ 1.6² 在瀏覽器裡是 31.249999…。
 

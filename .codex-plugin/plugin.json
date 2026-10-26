@@ -1,6 +1,6 @@
 {
   "name": "strucmed",
-  "version": "3.3.2",
+  "version": "3.4.0",
   "description": "長庚結構化病歷 2.0（StrucMed）表單製作 plugin（Codex 版 manifest）：與使用者互動設計表單、離線驗證與 runtime 預覽、經 strucmed API v2 上架、LlmGateway 模型白名單、表單 APP 產生。站台自動判斷院內／院外；線上功能以瀏覽器登入站台，HIS 密碼只在站台登入頁輸入，不經 AI 工具與對話。",
   "author": {
     "name": "Kunjulin"

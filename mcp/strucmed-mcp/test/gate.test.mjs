@@ -76,13 +76,15 @@ test('antigravity hook: 非寫入 tool 與第一段照原流程（ask），不�
   assert.deepEqual(decision(run(AGY_HOOK, { toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }, { env })), { decision: 'ask' });
 });
 
-test('antigravity hook: 第二段未核准、沒有計畫、改過計畫都阻擋；核准後才回 ask', () => {
+test('antigravity hook: 有計畫但未核准、改過計畫都阻擋；核准後回 ask；沒有計畫交給 MCP 的瀏覽器確認（ask）', () => {
   for (const tool of ['online_template_create', 'online_template_update', 'online_dictionary_create', 'online_dictionary_batch']) {
     const d = decision(run(AGY_HOOK, agy(tool, { draft_id: DRAFT, confirm_token: 't' }), { env: { STRUCMED_WORKSPACE: workspace('pending') } }));
     assert.equal(d.decision, 'deny', tool);
     assert.match(d.reason, /尚未核准/);
   }
-  assert.equal(decision(run(AGY_HOOK, agy('online_template_create', { draft_id: DRAFT, confirm_token: 't' }), { env: { STRUCMED_WORKSPACE: workspace('none') } })).decision, 'deny');
+  const noPlan = decision(run(AGY_HOOK, agy('online_template_create', { draft_id: DRAFT, confirm_token: 't' }), { env: { STRUCMED_WORKSPACE: workspace('none') } }));
+  assert.equal(noPlan.decision, 'ask');
+  assert.match(noPlan.reason, /瀏覽器確認頁/);
   const ws = workspace('approved');
   const call = agy('online_template_create', { draft_id: DRAFT, folder_type: 'usr', confirm_token: 't' });
   assert.deepEqual(decision(run(AGY_HOOK, call, { env: { STRUCMED_WORKSPACE: ws } })), { decision: 'ask' });
@@ -90,15 +92,15 @@ test('antigravity hook: 第二段未核准、沒有計畫、改過計畫都阻�
   assert.equal(decision(run(AGY_HOOK, call, { env: { STRUCMED_WORKSPACE: ws } })).decision, 'deny');
 });
 
-test('antigravity hook: 工作目錄取自 mcp_config.json 的 STRUCMED_WORKSPACE；找不到就阻擋', () => {
+test('antigravity hook: 工作目錄取自 mcp_config.json 的 STRUCMED_WORKSPACE；找不到時交給瀏覽器確認', () => {
   const ws = workspace('approved');
   const call = agy('online_template_create', { draft_id: DRAFT, confirm_token: 't' });
   const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-cfg-'));
   fs.writeFileSync(path.join(cfgDir, 'mcp_config.json'), JSON.stringify({ mcpServers: { strucmed: { command: 'node', args: ['/x/mcp/strucmed-mcp/src/server.mjs'], env: { STRUCMED_WORKSPACE: ws } } } }));
   assert.deepEqual(decision(run(AGY_HOOK, call, { cwd: cfgDir })), { decision: 'ask' }, 'hook 的 cwd 是 hooks.json 所在目錄（與 mcp_config.json 同一層）');
   const d = decision(run(AGY_HOOK, call));
-  assert.equal(d.decision, 'deny');
-  assert.match(d.reason, /找不到工作目錄/);
+  assert.equal(d.decision, 'ask');
+  assert.match(d.reason, /瀏覽器確認頁/);
 });
 
 test('antigravity hook: Arguments 是字串、缺 draft_id、輸入壞掉都不會放行', () => {

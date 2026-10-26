@@ -9,7 +9,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { buildPackage } from '../src/package.mjs';
-import { fakeAuthorize, browserLogin } from './fake-login.mjs';
+import { fakeAuthorize, browserLogin, browserApprove } from './fake-login.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(HERE, '../src/server.mjs');
@@ -130,7 +130,7 @@ function handler(req, res) {
 // ── MCP 子行程 ──────────────────────────────────────────────
 function startMcp(env) {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-online-'));
-  const proc = spawn(process.execPath, [SERVER], { env: { ...process.env, STRUCMED_WORKSPACE: ws, STRUCMED_SITE: 'offline', STRUCMED_ONLINE_BASE_URL: '', STRUCMED_NO_BROWSER: '1', STRUCMED_LOGIN_WAIT_MS: '300', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const proc = spawn(process.execPath, [SERVER], { env: { ...process.env, STRUCMED_WORKSPACE: ws, STRUCMED_SITE: 'offline', STRUCMED_ONLINE_BASE_URL: '', STRUCMED_NO_BROWSER: '1', STRUCMED_LOGIN_WAIT_MS: '300', STRUCMED_APPROVE_WAIT_MS: '300', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let seq = 0;
   const m = { ws, proc, stdout: '', stderr: '' };
@@ -468,7 +468,7 @@ test('online_template_create: two-step plan → POST, published recorded, errors
   assert.equal(reqs.filter(x => x.method === 'POST' && x.path.includes('/templates')).length, 0, 'plan step sends nothing');
   const bad = await mcp.call('online_template_create', { draft_id: id, folder_type: 'dpt', confirm_token: plan.data.confirm_token });
   assert.equal(bad.error.code, 'E_CONFIRM_MISMATCH', 'token bound to folder');
-  const done = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token });
+  const done = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token });
   assert.equal(done.ok, true, JSON.stringify(done));
   assert.match(done.data.template_id, /^T-\d+$/);
   assert.equal(done.data.rev, 1);
@@ -480,14 +480,62 @@ test('online_template_create: two-step plan → POST, published recorded, errors
   assert.equal(back.data.package.template.templateID, done.data.template_id);
   behavior.writesDisabled = true;
   const plan2 = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
-  const r503 = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan2.data.confirm_token });
+  const r503 = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan2.data.confirm_token });
   assert.equal(r503.error.code, 'E_WRITES_DISABLED');
   delete behavior.writesDisabled; behavior.pendingFail = true;
   const plan3 = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
-  const r502 = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan3.data.confirm_token });
+  const r502 = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan3.data.confirm_token });
   assert.equal(r502.error.code, 'E_UPSTREAM');
   assert.equal(r502.error.details.pending, true);
   assert.match(r502.error.message, /請勿重複保存/);
+});
+
+// 2.3.0：寫入的第二段呼叫要使用者在瀏覽器確認頁按「確認寫入」；token 再對也不會自己寫入
+test('online writes wait for the browser confirmation page: pending → approve once, reject, guarded page', async () => {
+  await browserLogin(mcp, {});
+  const id = await makeDraft(mcp, { name: '確認頁測試' });
+  const posts = () => reqs.filter(x => x.method === 'POST' && x.path.includes('/templates')).length;
+  const plan = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
+  const args = { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token };
+  const pend = await mcp.call('online_template_create', args);
+  assert.equal(pend.ok, true, JSON.stringify(pend));
+  assert.equal(pend.data.pending, true);
+  assert.equal(pend.data.browser_opened, false, 'STRUCMED_NO_BROWSER=1');
+  assert.equal(posts(), 0, 'a valid confirm_token alone writes nothing');
+  const u = new URL(pend.data.approve_url);
+  assert.equal(u.hostname, '127.0.0.1');
+  const again = await mcp.call('online_template_create', args);
+  assert.equal(again.data.approve_url, pend.data.approve_url, 'calling again keeps waiting on the same page');
+
+  const page = await (await fetch(u)).text();
+  for (const s of ['新增範本', '確認頁測試', USER_ID, '確認寫入']) assert.ok(page.includes(s), s);
+  const wrongNonce = new URL(u); wrongNonce.searchParams.set('n', '0'.repeat(32));
+  assert.equal((await fetch(wrongNonce)).status, 404);
+  const raw = (method, headers, body) => new Promise((ok, no) => {
+    const r = http.request({ host: '127.0.0.1', port: u.port, path: method === 'GET' ? u.pathname + u.search : '/decide', method, headers }, res => { res.resume(); res.on('end', () => ok(res.statusCode)); });
+    r.on('error', no); r.end(body);
+  });
+  assert.equal(await raw('GET', { Host: 'evil.example' }), 400, 'DNS rebinding: Host must be 127.0.0.1:<port>');
+  const form = new URLSearchParams({ n: u.searchParams.get('n'), d: 'approve' }).toString();
+  assert.equal(await raw('POST', { Host: `127.0.0.1:${u.port}`, Origin: 'https://evil.example', 'Content-Type': 'application/x-www-form-urlencoded' }, form), 403, 'cross-site POST refused');
+  assert.equal(posts(), 0);
+
+  const r = await fetch(new URL('/decide', u), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+  assert.match(await r.text(), /已確認/);
+  const done = await mcp.call('online_template_create', args);
+  assert.equal(done.ok, true, JSON.stringify(done));
+  assert.equal(posts(), 1);
+  const reuse = await mcp.call('online_template_create', args);
+  assert.equal(reuse.error.code, 'E_CONFIRM_MISMATCH', 'an approval is used once');
+  assert.equal(posts(), 1);
+
+  // 取消：不寫入，同一個 token 也不能再用
+  const plan2 = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
+  const args2 = { draft_id: id, folder_type: 'usr', confirm_token: plan2.data.confirm_token };
+  const rejected = await browserApprove(mcp, 'online_template_create', args2, 'reject');
+  assert.equal(rejected.error.code, 'E_REJECTED');
+  assert.equal(posts(), 1);
+  assert.equal((await mcp.call('online_template_create', args2)).error.code, 'E_CONFIRM_MISMATCH');
 });
 
 test('online_template_create refuses drafts with pending dictionaries (E_DICT_PENDING)', async () => {
@@ -514,14 +562,14 @@ test('online_template_update: only derived drafts, If-Match from ETag, 409 → E
   assert.equal(plan.data.plan.diff.controls_before, 1);
   const noIfMatch = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', confirm_token: plan.data.confirm_token });
   assert.equal(noIfMatch.error.code, 'E_INVALID_INPUT');
-  const done = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', if_match: plan.data.plan.if_match, confirm_token: plan.data.confirm_token });
+  const done = await browserApprove(mcp, 'online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', if_match: plan.data.plan.if_match, confirm_token: plan.data.confirm_token });
   assert.equal(done.ok, true, JSON.stringify(done));
   assert.equal(done.data.rev, 2);
   const put = reqs.find(x => x.method === 'PUT');
   assert.ok(put, 'PUT sent');
   const plan2 = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1' });
   behavior.conflict = true;
-  const conflict = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', if_match: plan2.data.plan.if_match, confirm_token: plan2.data.confirm_token });
+  const conflict = await browserApprove(mcp, 'online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', if_match: plan2.data.plan.if_match, confirm_token: plan2.data.confirm_token });
   assert.equal(conflict.error.code, 'E_CONFLICT');
   assert.equal(conflict.error.details.currentSha256, 'sha-other');
   const versions = await mcp.call('online_template_versions', { template_id: 'T-1' });
@@ -555,7 +603,7 @@ test('online_dictionary_create (flag on): creates or reuses, binds dicid, refuse
     const plan = await m.call('online_dictionary_create', { draft_id: id, name: '新字典A' });
     assert.equal(plan.ok, true, JSON.stringify(plan));
     assert.deepEqual(plan.data.plan.used_by_itemids, [2]);
-    const done = await m.call('online_dictionary_create', { draft_id: id, name: '新字典A', confirm_token: plan.data.confirm_token });
+    const done = await browserApprove(m, 'online_dictionary_create', { draft_id: id, name: '新字典A', confirm_token: plan.data.confirm_token });
     assert.equal(done.ok, true, JSON.stringify(done));
     assert.equal(done.data.created, true);
     assert.deepEqual(done.data.bound_itemids, [2]);
@@ -572,11 +620,11 @@ test('online_dictionary_create (flag on): creates or reuses, binds dicid, refuse
     const a2 = await m.call('form_add_area', { draft_id: id2.data.draft_id, type: 'form', title: 'x' });
     await m.call('form_add_control', { draft_id: id2.data.draft_id, area_itemid: a2.data.area_itemid, label_text: 'y', control: { datatype: 'textbox', dictionary: { name: '已刪除字典' } } });
     const p2 = await m.call('online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典' });
-    const r409 = await m.call('online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典', confirm_token: p2.data.confirm_token });
+    const r409 = await browserApprove(m, 'online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典', confirm_token: p2.data.confirm_token });
     assert.equal(r409.error.code, 'E_DELETED_EXISTS');
     assert.equal(r409.error.details.candidates[0].id, 'D9');
     const p3 = await m.call('online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典', force: true });
-    const forced = await m.call('online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典', force: true, confirm_token: p3.data.confirm_token });
+    const forced = await browserApprove(m, 'online_dictionary_create', { draft_id: id2.data.draft_id, name: '已刪除字典', force: true, confirm_token: p3.data.confirm_token });
     assert.equal(forced.ok, true, JSON.stringify(forced));
     assert.ok(reqs.some(x => x.path.endsWith('/api/v2/dictionaries') && x.body && x.body.force === true));
   } finally { m.stop(); fs.rmSync(flags, { force: true }); }
@@ -594,7 +642,7 @@ test('online_dictionary_batch (flag on): binds successes, leaves failures pendin
       assert.equal((await m.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: nm, control: { datatype: 'textbox', dictionary: { name: nm } } })).ok, true);
     const plan = await m.call('online_dictionary_batch', { draft_id: c.data.draft_id });
     assert.equal(plan.data.plan.rows.length, 2);
-    const done = await m.call('online_dictionary_batch', { draft_id: c.data.draft_id, confirm_token: plan.data.confirm_token });
+    const done = await browserApprove(m, 'online_dictionary_batch', { draft_id: c.data.draft_id, confirm_token: plan.data.confirm_token });
     assert.equal(done.ok, true, JSON.stringify(done));
     assert.equal(done.data.succeeded, 1);
     assert.deepEqual(done.data.pending_left, ['已刪除字典']);
@@ -614,7 +662,7 @@ test('online_me_notes_get/set: incremental diff plan, two-step PUT, no-change sh
   assert.equal(plan.data.plan.added.length, 1);
   assert.equal(plan.data.plan.removed.length, 1);
   assert.equal(reqs.filter(x => x.method === 'PUT').length, 0, 'plan step does not write');
-  const done = await mcp.call('online_me_notes_set', { add: [{ template_id: 'T-2', name: '疼痛評估' }], remove: ['T-1'], confirm_token: plan.data.confirm_token });
+  const done = await browserApprove(mcp, 'online_me_notes_set', { add: [{ template_id: 'T-2', name: '疼痛評估' }], remove: ['T-1'], confirm_token: plan.data.confirm_token });
   assert.equal(done.ok, true, JSON.stringify(done));
   assert.deepEqual(done.data.items, [{ template_id: 'T-2', name: '疼痛評估' }]);
   const put = reqs.find(x => x.method === 'PUT' && x.path.endsWith('/api/v2/me/notes'));

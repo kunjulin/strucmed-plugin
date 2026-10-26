@@ -1,12 +1,14 @@
 // Online write tools：經 strucmed API v2 新建／更新範本、建立字典、讀版本。
 // 安全姿態（references/SecurityInvariants.md）：
 //   - 每個寫入都是兩段式：第一次回 plan（給使用者看），第二次帶 confirm_token；token 綁定站台、登入者、draft 內容與參數
+//   - 第二次呼叫還要使用者在瀏覽器確認頁按「確認寫入」（approve.mjs，2.3.0）；確認只能用一次，還沒按時回 pending、不寫入
 //   - 寫入不重試（伺服器端也不重試；502 pending 時提示不要重複保存）
 //   - 不提供 trash／字典刪除／硬刪除；update 只允許「以該範本 import 後改版」的 draft，且帶 If-Match
 //   - feature flags：templateUpdate（online_template_update）、dictionaryWrite（online_dictionary_create／batch）
 import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as confirm from './confirm.mjs';
+import * as approve from './approve.mjs';
 import * as online from './online.mjs';
 import { validateDraft } from './validate.mjs';
 import { buildArtifacts } from './export.mjs';
@@ -85,6 +87,7 @@ export const ONLINE_WRITE_TOOLS = [
     name: 'online_template_create',
     description: '（online，寫入範本）把已驗證的 draft 新建成線上範本（POST api/v2/folders/{type}/templates，回 201）。兩段式：先不帶 confirm_token 取得 plan，' +
       '**必須把 plan（站台、登入者、資料夾、名稱、捷徑、作業別、是否保存即上架、字典、警告）原樣給使用者確認**，同意後帶 confirm_token 再呼叫一次。' +
+      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。' +
       '前置：form_validate 無 error、沒有待新建字典（否則 E_DICT_PENDING）。資料夾只能 usr／sub／dpt（sys 需管理者）。寫入不重試；502 pending 時不要重複保存。',
     inputSchema: { type: 'object', required: ['draft_id', 'folder_type'], properties: {
       draft_id: str('draft id'), folder_type: str('目標資料夾', { enum: WRITE_FOLDERS }), confirm_token: str('第二次呼叫帶入') } },
@@ -96,13 +99,17 @@ export const ONLINE_WRITE_TOOLS = [
       built.size = size;
       const h = confirm.hashPayload({ action: 'create', base, user: user.userId, draft: draftHash(d), folder_type });
       if (!confirm_token) {
+        const plan = { action: '新增範本', folder_type, folder_code: folderCode(folder_type, user.deptNo, user.userId), ...planCommon(d, v, built, user, base) };
+        approve.offer('online_template_create', h, '新增範本', plan);
         return {
-          plan: { action: '新增範本', folder_type, folder_code: folderCode(folder_type, user.deptNo, user.userId), ...planCommon(d, v, built, user, base) },
+          plan,
           confirm_token: confirm.issue('online_template_create', h),
           next: '請把 plan 給使用者確認（閘門 G3），同意後帶 confirm_token 再呼叫一次'
         };
       }
       confirm.verify('online_template_create', h, confirm_token);
+      const ok = await approve.awaitApproval('online_template_create', h);
+      if (ok.pending) return ok;
       const r = await online.callRaw('POST', `api/v2/folders/${folder_type}/templates`, { body }, '新增範本');
       if (r.status !== 201 && r.status !== 200) mapWriteError(r, '新增範本');
       const j = r.json || {};
@@ -119,7 +126,8 @@ export const ONLINE_WRITE_TOOLS = [
     flag: 'templateUpdate',
     description: '（online，寫入範本，flag templateUpdate）更新線上既有範本（PUT api/v2/templates/{id}，If-Match）。只允許 draft 是以該範本 online_template_get → form_import 改版而來（derivedFrom.templateID 相同）。' +
       '兩段式：第一次呼叫會讀線上目前版本取得 If-Match（ETag）與差異摘要並回 plan；**plan 必須原樣給使用者確認**，同意後帶 confirm_token 與 plan 的 if_match 再呼叫一次。' +
-      '線上內容在取得計畫後被他人修改 → E_CONFLICT，必須重新 import 改版。寫入不重試。',
+      '線上內容在取得計畫後被他人修改 → E_CONFLICT，必須重新 import 改版。寫入不重試。' +
+      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
     inputSchema: { type: 'object', required: ['draft_id', 'template_id'], properties: {
       draft_id: str('draft id（derivedFrom.templateID 必須等於 template_id）'), template_id: str('要更新的範本 ID'),
       if_match: str('第二次呼叫帶入 plan 的 if_match'), confirm_token: str('第二次呼叫帶入') } },
@@ -148,13 +156,17 @@ export const ONLINE_WRITE_TOOLS = [
       if (!etag) fail(E.INVALID_INPUT, '第二次呼叫必須帶 plan 的 if_match');
       const h = confirm.hashPayload({ action: 'update', base, user: user.userId, draft: draftHash(d), template_id: id, if_match: etag });
       if (!confirm_token) {
+        const plan = { action: `更新範本 ${id}`, template_id: id, if_match: etag, diff, ...planCommon(d, v, built, user, base) };
+        approve.offer('online_template_update', h, `更新範本 ${id}`, plan);
         return {
-          plan: { action: `更新範本 ${id}`, template_id: id, if_match: etag, diff, ...planCommon(d, v, built, user, base) },
+          plan,
           confirm_token: confirm.issue('online_template_update', h),
           next: '請把 plan 給使用者確認（閘門 G3），同意後帶 confirm_token 與 if_match 再呼叫一次'
         };
       }
       confirm.verify('online_template_update', h, confirm_token);
+      const ok = await approve.awaitApproval('online_template_update', h);
+      if (ok.pending) return ok;
       const r = await online.callRaw('PUT', `api/v2/templates/${id}`, { body, headers: { 'If-Match': `"${etag}"` } }, '更新範本');
       if (r.status !== 200) mapWriteError(r, '更新範本');
       const j = r.json || {};
@@ -185,7 +197,8 @@ export const ONLINE_WRITE_TOOLS = [
     flag: 'dictionaryWrite',
     description: '（online，寫入字典，flag dictionaryWrite）把 draft 的一個「待新建字典」建立到線上（POST api/v2/dictionaries，scope 固定 dept：建立者＝登入者、類型＝登入科部）。' +
       '兩段式：先取得 plan 給使用者確認，再帶 confirm_token。同名未刪除字典存在時伺服器回 reused（沿用既有 id）；有自己可還原的同名已刪除字典時回 E_DELETED_EXISTS（候選列在 details），' +
-      '**不自動 force**，由使用者決定還原（請管理者在字典頁操作）或帶 force:true 建立新的。成功後把 draft 內使用該名稱的控制項綁上 id、移出待新建清單、更新本機字典索引。',
+      '**不自動 force**，由使用者決定還原（請管理者在字典頁操作）或帶 force:true 建立新的。成功後把 draft 內使用該名稱的控制項綁上 id、移出待新建清單、更新本機字典索引。' +
+      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
     inputSchema: { type: 'object', required: ['draft_id', 'name'], properties: {
       draft_id: str('draft id'), name: str('待新建字典名稱（必須在 draft 的 pendingDictionaries 內）'), comment: str('說明（選填；預設用規劃時的 comment）'),
       force: { type: 'boolean', description: '有已刪除同名字典時仍建立新的（只在使用者明確決定後帶）' }, confirm_token: str('第二次呼叫帶入') } },
@@ -200,14 +213,18 @@ export const ONLINE_WRITE_TOOLS = [
       walk(d, n => { if (isControl(n) && n.dictionary === name && !n.dicid) usedBy.push(n.itemid); });
       const h = confirm.hashPayload({ action: 'dict-create', base, user: user.userId, draft_id, name, dicComment, force: !!force });
       if (!confirm_token) {
+        const plan = { action: '新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', name, comment: dicComment, force: !!force, used_by_itemids: usedBy,
+          note: '同名未刪除字典存在時會沿用既有（reused），不會重複建立' };
+        approve.offer('online_dictionary_create', h, '新增字典', plan);
         return {
-          plan: { action: '新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', name, comment: dicComment, force: !!force, used_by_itemids: usedBy,
-            note: '同名未刪除字典存在時會沿用既有（reused），不會重複建立' },
+          plan,
           confirm_token: confirm.issue('online_dictionary_create', h),
           next: '請把 plan 給使用者確認，同意後帶 confirm_token 再呼叫一次'
         };
       }
       confirm.verify('online_dictionary_create', h, confirm_token);
+      const ok = await approve.awaitApproval('online_dictionary_create', h);
+      if (ok.pending) return ok;
       const body = { dicName: name, dicComment, scope: 'dept', ...(force ? { force: true } : {}) };
       const r = await online.callRaw('POST', 'api/v2/dictionaries', { body }, '新增字典');
       if (r.status === 409 && r.json && r.json.error && r.json.error.code === 'E_DELETED_EXISTS')
@@ -226,7 +243,8 @@ export const ONLINE_WRITE_TOOLS = [
     name: 'online_dictionary_batch',
     flag: 'dictionaryWrite',
     description: '（online，寫入字典，flag dictionaryWrite）把 draft 的全部「待新建字典」一次建立（POST api/v2/dictionaries/batch，最多 500 筆，逐筆回報）。兩段式：先取得 plan 給使用者確認。' +
-      '成功的字典會綁回 draft 並更新本機索引；失敗的留在待新建清單並回 warnings（例如 E_DELETED_EXISTS 需改用 online_dictionary_create 逐一決定）。',
+      '成功的字典會綁回 draft 並更新本機索引；失敗的留在待新建清單並回 warnings（例如 E_DELETED_EXISTS 需改用 online_dictionary_create 逐一決定）。' +
+      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'), confirm_token: str('第二次呼叫帶入') } },
     async handler({ draft_id, confirm_token }) {
       const user = online.currentUser();
@@ -237,10 +255,14 @@ export const ONLINE_WRITE_TOOLS = [
       if (rows.length > BATCH_MAX) fail(E.LIMIT, `待新建字典 ${rows.length} 筆超過批次上限 ${BATCH_MAX}`);
       const h = confirm.hashPayload({ action: 'dict-batch', base, user: user.userId, draft_id, rows });
       if (!confirm_token) {
-        return { plan: { action: '批次新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', rows }, confirm_token: confirm.issue('online_dictionary_batch', h),
+        const plan = { action: '批次新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', rows };
+        approve.offer('online_dictionary_batch', h, '批次新增字典', plan);
+        return { plan, confirm_token: confirm.issue('online_dictionary_batch', h),
           next: '請把 plan 給使用者確認，同意後帶 confirm_token 再呼叫一次' };
       }
       confirm.verify('online_dictionary_batch', h, confirm_token);
+      const ok = await approve.awaitApproval('online_dictionary_batch', h);
+      if (ok.pending) return ok;
       const r = await online.callRaw('POST', 'api/v2/dictionaries/batch', { body: { rows } }, '批次新增字典');
       if (r.status !== 200) mapWriteError(r, '批次新增字典');
       const results = Array.isArray(r.json && r.json.results) ? r.json.results : [];
@@ -268,6 +290,7 @@ export const ONLINE_WRITE_TOOLS = [
     name: 'online_me_notes_set',
     description: '（online，寫入 struNote 清單）整份取代登入者的 struNote 表單清單（PUT api/v2/me/notes，最多 500 筆；B2 的 H1 做法：把已上架的範本加進既有 struNote）。' +
       '兩段式：第一次不帶 confirm_token，會先讀目前清單並回 plan（新增／移除／保留的差異），**plan 必須給使用者確認**；同意後帶 confirm_token 再呼叫一次。' +
+      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。' +
       '建議用 add／remove 做增量，items 則是整份指定。',
     inputSchema: { type: 'object', properties: {
       items: { type: 'array', items: { type: 'object', required: ['template_id', 'name'], properties: { template_id: str('範本 ID'), name: str('顯示名稱（≤4000 字）') } }, description: '整份清單（與 add／remove 擇一）' },
@@ -298,10 +321,14 @@ export const ONLINE_WRITE_TOOLS = [
       const h = confirm.hashPayload({ action: 'me-notes-set', base, user: user.userId, body });
       if (!confirm_token) {
         if (!diff.added.length && !diff.removed.length && !diff.renamed.length) return { plan: null, no_change: true, current, next: '清單沒有變化，不需要寫入' };
-        return { plan: { action: '整份取代 struNote 表單清單', site: base, user_id: user.userId, before: current.length, after: next.length, ...diff, items: next },
+        const plan = { action: '整份取代 struNote 表單清單', site: base, user_id: user.userId, before: current.length, after: next.length, ...diff, items: next };
+        approve.offer('online_me_notes_set', h, '更新 struNote 表單清單', plan);
+        return { plan,
           confirm_token: confirm.issue('online_me_notes_set', h), next: '請把 plan（新增／移除／改名）給使用者確認，同意後帶 confirm_token 再呼叫一次' };
       }
       confirm.verify('online_me_notes_set', h, confirm_token);
+      const ok = await approve.awaitApproval('online_me_notes_set', h);
+      if (ok.pending) return ok;
       const r = await online.callRaw('PUT', 'api/v2/me/notes', { body }, '寫入 struNote 清單');
       if (r.status !== 200) mapWriteError(r, '寫入 struNote 清單');
       return { fill_id: (r.json && r.json.fillID) || null, count: (r.json && r.json.count) ?? next.length, items: next };

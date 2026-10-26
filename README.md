@@ -26,7 +26,7 @@
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
 | **OpenAI Codex**（CLI、app） | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需信任）；app 已實測安裝、瀏覽器登入、建表單與匯出 | `userConfig`（改用環境變數）、subagent 與結構化提問、runtime 預覽（需 `STRUCMED_RUNTIME_WEB`）；G3 阻擋未經實測 |
-| **Google Antigravity**（IDE、2.0 app） | ⚠️ 實驗性，只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool（全域 `mcp_config.json`，兩版共用）；IDE 2.5.5、2.0 app 2.26.0 已實測離線建表單；網頁預覽需平台 `web/` 副本 | skill 流程與其他 hooks（plugin 格式不同，尚未移植）；G3 要另外裝 Antigravity 版 hook（已實測阻擋）；線上登入未經實測；上架建議回 Claude Code |
+| **Google Antigravity**（IDE、2.0 app） | ⚠️ 實驗性，只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool（全域 `mcp_config.json`，兩版共用）；IDE 2.5.5、2.0 app 2.26.0 已實測離線建表單；網頁預覽需平台 `web/` 副本 | skill 流程與其他 hooks（plugin 格式不同，尚未移植）；G3 要另外裝 Antigravity 版 hook（已實測阻擋）；2.0 app 已實測瀏覽器登入、唯讀 tool，以及經瀏覽器確認頁上架到個人資料夾（3.4.0 起） |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
@@ -161,9 +161,9 @@ Codex app：可在對話中請 Codex 執行上面的 `codex plugin marketplace a
 
 Antigravity 有自己的 plugin、hooks 格式，也沒有 marketplace，目前只能把 MCP 伺服器註冊進全域設定；skill 流程不會載入，閘門 G3 要另外裝 Antigravity 版 hook（步驟 4）。Antigravity IDE 與 Antigravity 2.0 app 讀同一份全域設定，下面的步驟兩邊共用。2026-10-26 實測：
 
-- **IDE 2.5.5**：離線模式可載入 16 個 tool、呼叫 `form_create` 建立 draft；G3 hook 對沒有核准計畫的上架呼叫回 deny、對已核准的回 ask。
-- **2.0 app 2.26.0**：同一份設定直接生效；依序呼叫 `form_create`、`form_add_area`、`form_add_control`、`form_validate`、`form_preview`（html）都成功，並以下方「網頁預覽」開出可輸入的預覽頁；加上 BMI 計算式（`formula_check` 試算、`form_validate` 通過）後，預覽頁填身高 170、體重 65 即顯示 BMI 22.5。G3 hook 在 2.0 app 未重測。
-- 兩版都未測：真正的線上登入。
+- **IDE 2.5.5**：離線模式可載入 16 個 tool、呼叫 `form_create` 建立 draft；G3 hook（3.3.1）對沒有核准計畫的上架呼叫回 deny、對已核准的回 ask；3.4.0 起沒有計畫檔時改回 ask，交給寫入確認頁。
+- **2.0 app 2.26.0**：同一份設定直接生效；依序呼叫 `form_create`、`form_add_area`、`form_add_control`、`form_validate`、`form_preview`（html）都成功，並以下方「網頁預覽」開出可輸入的預覽頁；加上 BMI 計算式（`formula_check` 試算、`form_validate` 通過）後，預覽頁填身高 170、體重 65 即顯示 BMI 22.5。同一個 2.0 app 也實測了線上：院外站台瀏覽器登入、唯讀 tool（`online_me`、`online_features`、`online_folder_list`、`online_dictionary_search`、`online_template_get`），以及把這張表單經寫入確認頁上架到個人資料夾 `usr`（Turbo 模式，G3 hook 已安裝）。
+- IDE 只測了離線與假站台的 G3 阻擋；真正的線上登入與上架只在 2.0 app 測過。
 
 1. 把發佈 repo 複製到本機（例如 `git clone https://github.com/kunjulin/strucmed-plugin.git`），記下資料夾的絕對路徑。
 2. 編輯 `~/.gemini/config/mcp_config.json`（IDE：Agent 面板 → `…` → MCP Servers → Manage MCP Servers → View raw config 會開同一個檔）：
@@ -197,7 +197,7 @@ Antigravity 有自己的 plugin、hooks 格式，也沒有 marketplace，目前�
    }
    ```
 
-   上架類 tool（`online_template_create`／`update`、`online_dictionary_create`／`batch`）帶 `confirm_token` 的第二段呼叫，只有在 `<STRUCMED_WORKSPACE>/.strucmed/plans/<draft_id>/` 有核准過的上架計畫時才會放行，其餘一律擋下；工作目錄從同一個 `mcp_config.json` 的 `STRUCMED_WORKSPACE` 讀取。放行時交回 Antigravity 原本的核准流程（hook 不替使用者核准；IDE 實測會跳核准框）。
+   上架類 tool（`online_template_create`／`update`、`online_dictionary_create`／`batch`）帶 `confirm_token` 的第二段呼叫，若 `<STRUCMED_WORKSPACE>/.strucmed/plans/<draft_id>/` 有上架計畫，必須是核准過且沒被改過才放行，否則擋下；沒有計畫檔時（Antigravity 不載入 publish-form skill，通常如此）交給 MCP 的瀏覽器確認頁把關。工作目錄從同一個 `mcp_config.json` 的 `STRUCMED_WORKSPACE` 讀取。放行時交回 Antigravity 原本的核准流程（hook 不替使用者核准；IDE 實測會跳核准框）。
 
 #### 網頁預覽（選用）
 
@@ -220,7 +220,7 @@ Antigravity 也可以用 `/browser` 叫瀏覽器代理去開預覽頁、自己�
 
 - **一律絕對路徑**：沒有 `${CLAUDE_PLUGIN_ROOT}`、沒有 `cwd` 欄位。`command` 寫 `node` 的完整路徑（`which node`）：從 Dock 開的 app 不一定吃得到 shell 的 PATH。`STRUCMED_WORKSPACE` 要明寫，`.strucmed/`、`output/` 放在這裡。
 - **只建議離線**：上例的 `STRUCMED_SITE=offline` 完全不連線，產出 `.htm` 由使用者在編輯器匯入。拿掉它可試線上唯讀 tool（`online_template_get`、`online_dictionary_search`；瀏覽器登入最長等 120 秒，Antigravity 的 tool 逾時未實測，可用 `STRUCMED_LOGIN_WAIT_MS` 縮短）。
-- **上架建議回 Claude Code**：Antigravity 沒有 publish-form skill，不會替你產生並核准上架計畫，所以裝了步驟 4 的 hook 後，線上寫入實際上都會被擋下。上架請回 Claude Code 或用編輯器匯入。`hooks/hooks.json`（Claude 格式）在 Antigravity 不能用：輸入格式不同，照搬會被當成第一段呼叫放行。
+- **上架要在瀏覽器確認頁按確認**（3.4.0 起）：MCP 對每個線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫，都會開一頁 127.0.0.1 的「寫入確認頁」列出站台、登入者、資料夾與名稱，你按「確認寫入」才寫入，按取消或 10 分鐘內沒按都不寫；Turbo 模式也一樣。Antigravity 沒有 publish-form skill，不會先產生並核准上架計畫，這頁就是唯一的確認。2026-10-26 已在 Antigravity 2.0 實測：按確認後同一次呼叫完成上架，取回內容與 draft 一致。第一次使用仍建議先上架到個人資料夾（`usr`）並在編輯器確認；上架後不需要的測試範本請在編輯器自行刪除（MCP 不提供刪除）。`hooks/hooks.json`（Claude 格式）在 Antigravity 不能用：輸入格式不同，照搬會被當成第一段呼叫放行。
 - **金鑰不要寫進 `mcp_config.json`**：`env` 是明文存檔。GUI app 也拿不到 shell 的環境變數，所以 LlmGateway 白名單在 Antigravity 改用內建靜態表。
 - 第一次呼叫每個 tool，IDE 會跳出「Allow using this MCP tool?」核准框。2.0 app 在 Turbo 模式下 MCP tool 直接執行、不跳核准框（實測），需要逐一確認時請改用其他模式。
 - 給維護者：Antigravity 的 hook 裡 MCP tool 一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`；stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程，回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 還沒移植）。G3 的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。
@@ -265,7 +265,7 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 |---|---|---|
 | G1 | `## 表單計畫` | 建置 draft |
 | G2 | `## 驗證結果` | 輸出 `.htm` 或進入上架 |
-| G3 | `## 上架計畫` | 呼叫 `online_template_create`／`update` 第二段（唯一寫線上的點；hook 會檢查核准 sidecar） |
+| G3 | `## 上架計畫` | 呼叫 `online_template_create`／`update` 第二段（唯一寫線上的點；hook 會檢查核准 sidecar，MCP 再開瀏覽器確認頁由使用者按「確認寫入」） |
 | G4 | `## 應用程式計畫` | 產生 B2 app 目錄 |
 
 計畫檔與核准 sidecar 放在工作目錄的 `.strucmed/plans/<id>/`，`scripts/verify-plan.mjs` 以 sha256 比對；計畫一改，核准就失效。格式見 [references/Gates.md](references/Gates.md)。
