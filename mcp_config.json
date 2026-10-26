@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "strucmed": {
+      "command": "agy-node",
+      "args": ["mcp/strucmed-mcp/src/server.mjs"]
+    }
+  }
+}

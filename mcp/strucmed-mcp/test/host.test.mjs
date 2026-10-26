@@ -77,3 +77,26 @@ test('codex manifest: same plugin as .claude-plugin, paths resolve from the plug
   for (const k of ['PWD', 'STRUCMED_WORKSPACE', 'LLMGW_API_KEY', 'FMAPI_API_KEY', 'STRUCMED_EXTERNAL_URL', 'STRUCMED_RUNTIME_WEB']) assert.ok(mcp.env_vars.includes(k), k);
   assert.ok(mcp.tool_timeout_sec > 120, 'online_login 預設最多等 120 秒');
 });
+
+test('antigravity manifest: plugin root files, same version, relative paths from the plugin root', () => {
+  const read = p => JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, p), 'utf8'));
+  const claude = read('.claude-plugin/plugin.json'), agy = read('plugin.json');
+  assert.equal(agy.name, claude.name);
+  assert.equal(agy.version, claude.version, 'plugin.json（Antigravity）的版本要和 .claude-plugin 一起改');
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, agy.logo)), agy.logo);
+  // Antigravity 以 plugin 資料夾為 MCP 的 cwd，用內建的 agy-node；不展開 ${...}
+  const mcp = read('mcp_config.json').mcpServers.strucmed;
+  assert.equal(mcp.command, 'agy-node');
+  assert.ok(!JSON.stringify(mcp).includes('${'));
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, mcp.args[0])), mcp.args[0]);
+  assert.deepEqual(claude.mcpServers.strucmed.args.map(a => a.replace('${CLAUDE_PLUGIN_ROOT}/', '')), mcp.args);
+  // hooks.json：Antigravity 格式（具名 hook、matcher call_mcp_tool），cwd＝plugin 根目錄，腳本存在
+  const gate = read('hooks.json')['strucmed-gate'].PreToolUse[0];
+  assert.equal(gate.matcher, 'call_mcp_tool');
+  const cmd = gate.hooks[0].command;
+  const script = cmd.match(/(hooks\/antigravity\/[\w-]+\.js)/)[1];
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, script)), script);
+  assert.match(cmd, /agy-node/);
+  assert.match(cmd, /"decision":"deny"/, '找不到 node 時一律阻擋');
+  assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, 'rules', 'AGENTS.md')));
+});

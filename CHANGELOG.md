@@ -14,9 +14,21 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.5.0（MCP 2.3.0）— 2026-10-26：Antigravity plugin
+
+尚未發佈。MCP 程式不變。
+
+- **Antigravity plugin**：本 repo 根目錄新增 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）、`rules/AGENTS.md`，整個 repo 同時是 Antigravity plugin。安裝：`git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed`；更新：`git pull`。skills、MCP 與 G3 hook 一起載入。
+- **不需要另外安裝 Node.js**：MCP 以 Antigravity 內建的 `agy-node`（Node 24）執行，cwd 是 plugin 資料夾、路徑用相對路徑；hook 以 sh 依序找 `agy-node`、`~/Library/Application Support/Antigravity/bin/agy-node`、`node`，都找不到就阻擋（只支援 macOS／Linux）。
+- **規則**：`rules/AGENTS.md` 告訴 Antigravity 的 agent：不得替使用者操作寫入確認頁、`${CLAUDE_PLUGIN_ROOT}` 是 plugin 根目錄、沒有 AskUserQuestion／Task 時改在對話中詢問並依序執行、伺服器名稱是 `strucmed_strucmed`。
+- **Antigravity 版 G3 hook**：找不到設定的工作目錄時，改用 MCP 的預設 `~/Documents/StrucMed`（存在才用）；plugin 的 MCP 沒有 `STRUCMED_WORKSPACE`，用的就是這裡。
+- **README**：Antigravity 一節改以 plugin 安裝為主，原本的全域 `mcp_config.json` 做法改為「手動設定」；網頁預覽在 plugin 安裝時把平台 `web/` 副本放在 `~/Documents/StrucMed/repo/strucmed/web`。
+- **實測**（Antigravity 2.0 app 2.26.0，發佈版內容複製到 `~/.gemini/config/plugins/strucmed`）：Plugins 列出 StrucMed（Skills 9、MCP、Hooks）；MCP 以 `agy-node` 從 plugin 資料夾啟動；`form_search` 成功；未核准的上架計畫下，`online_template_create` 第二次呼叫被 hook 擋下。發現：對話開始時才啟動 MCP，第一次呼叫可能回「not enabled」；伺服器名稱帶 plugin 前綴。
+- **測試**：`test/host.test.mjs` 新增 Antigravity manifest 一項（版本同步、相對路徑存在、hook 指令）；`test/gate.test.mjs` 新增預設工作目錄一項。
+
 ## 3.4.0（MCP 2.3.0）— 2026-10-26：線上寫入改由瀏覽器確認頁把關
 
-尚未發佈。
+strucmed-skill#53；發佈：strucmed-plugin `4bccc33`（由 main `804d11f` 產生）。發佈時：`release-plugin.mjs` ok、192 個檔案、掃描無發現；`npm test` 102 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。
 
 原本「核准」靠 AI 遵守流程：對話中問使用者，再由 AI 自己執行 `verify-plan.mjs prepare` 寫核准紀錄，MCP 的 `confirm_token` 也是 AI 第一次呼叫拿到、第二次帶回。Claude Code 有 skill、結構化提問與 hooks 把關；Antigravity 不載入 skill、Turbo 模式下 tool 不跳核准框，Codex 的 hooks 要先信任，都沒有辦法確保「是人按的同意」。
 

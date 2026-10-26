@@ -19,14 +19,14 @@
 
 ### 支援的工具
 
-本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex（CLI 與 app）讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
+本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex（CLI 與 app）讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。Antigravity 讀根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）與 `rules/AGENTS.md`。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
 
 | 工具 | 支援程度 | 可用 | 缺少 |
 |---|---|---|---|
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
 | **OpenAI Codex**（CLI、app） | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需信任）；app 已實測安裝、瀏覽器登入、建表單與匯出 | `userConfig`（改用環境變數）、subagent 與結構化提問、runtime 預覽（需 `STRUCMED_RUNTIME_WEB`）；G3 阻擋未經實測 |
-| **Google Antigravity**（IDE、2.0 app） | ⚠️ 實驗性，只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool（全域 `mcp_config.json`，兩版共用）；IDE 2.5.5、2.0 app 2.26.0 已實測離線建表單；網頁預覽需平台 `web/` 副本 | skill 流程與其他 hooks（plugin 格式不同，尚未移植）；G3 要另外裝 Antigravity 版 hook（已實測阻擋）；2.0 app 已實測瀏覽器登入、唯讀 tool，以及經瀏覽器確認頁上架到個人資料夾（3.4.0 起） |
+| **Google Antigravity**（IDE、2.0 app） | ⚠️ 實驗性 | skills、MCP（內建 `agy-node`）、G3 hook（git clone 到 `~/.gemini/config/plugins/strucmed`，3.5.0 起）；2.0 app 已實測 plugin 安裝、瀏覽器登入、唯讀 tool，以及經寫入確認頁上架到個人資料夾 | AskUserQuestion、subagent（改在對話中詢問、依序執行）；其他 hooks（安全提醒、workflow-log）；hook 只支援 macOS／Linux；網頁預覽需平台 `web/` 副本 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
@@ -157,9 +157,25 @@ Codex app：可在對話中請 Codex 執行上面的 `codex plugin marketplace a
 - skill 以 `$strucmed:strucmed-form` 等觸發，或直接描述需求；`/mcp` 可確認 `strucmed` 已連上。tool 名稱是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`。
 - skill 裡的 AskUserQuestion、Task（subagent）在 Codex 不存在，會退化成一般對話與單一 agent 依序執行。
 
-### Google Antigravity（實驗性，只用 MCP tool）
+### Google Antigravity（實驗性）
 
-Antigravity 有自己的 plugin、hooks 格式，也沒有 marketplace，目前只能把 MCP 伺服器註冊進全域設定；skill 流程不會載入，閘門 G3 要另外裝 Antigravity 版 hook（步驟 4）。Antigravity IDE 與 Antigravity 2.0 app 讀同一份全域設定，下面的步驟兩邊共用。2026-10-26 實測：
+3.5.0 起本 repo 同時是 Antigravity plugin（根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`）：skills、MCP 與閘門 G3 hook 一起載入，MCP 用 Antigravity 內建的 `agy-node`，不需要另外安裝 Node.js。Antigravity 沒有 marketplace，以 git clone 安裝：
+
+```bash
+git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed
+```
+
+更新：`git -C ~/.gemini/config/plugins/strucmed pull`。安裝或更新後，在 Antigravity 的 Customizations → Installed 確認 Plugins 有 **StrucMed**（Skills 9 個、MCP `strucmed`、Hooks `strucmed-gate`），再開新對話。
+
+- **不要同時保留手動設定**：以前照下方「手動設定」在全域 `mcp_config.json` 加過 `strucmed`、在全域 `hooks.json` 加過 `strucmed-gate` 的，請刪掉，避免兩個 MCP 同時執行。
+- **工作目錄**：plugin 的 MCP 沒有設定 `STRUCMED_WORKSPACE`，`.strucmed/`、`output/` 一律放在「文件」下的 `StrucMed` 資料夾。
+- **伺服器名稱**：Antigravity 會加上 plugin 前綴，MCP 伺服器在對話中叫 `strucmed_strucmed`。對話剛開始時 MCP 才啟動，第一次呼叫可能回「tool … is not enabled」，稍等再呼叫一次即可。
+- **hook 只支援 macOS／Linux**：`hooks.json` 的指令用 sh 尋找 `agy-node`；Windows 上 hook 不會正確執行，線上寫入仍有 MCP 的寫入確認頁把關。
+- 2026-10-26 以 Antigravity 2.0 app 2.26.0 實測 plugin 安裝：Plugins 列出 StrucMed 與 9 個 skill；`form_search` 成功；放一份未核准的上架計畫時，`online_template_create` 的第二次呼叫被 `strucmed-gate` 擋下（hook 以 `agy-node` 執行、自動找到預設工作目錄）。
+
+#### 手動設定（只註冊 MCP，進階）
+
+不裝 plugin、只把 MCP 註冊進全域設定時用這一節（沒有 skill 流程）。Antigravity IDE 與 Antigravity 2.0 app 讀同一份全域設定，下面的步驟兩邊共用。2026-10-26 實測：
 
 - **IDE 2.5.5**：離線模式可載入 16 個 tool、呼叫 `form_create` 建立 draft；G3 hook（3.3.1）對沒有核准計畫的上架呼叫回 deny、對已核准的回 ask；3.4.0 起沒有計畫檔時改回 ask，交給寫入確認頁。
 - **2.0 app 2.26.0**：同一份設定直接生效；依序呼叫 `form_create`、`form_add_area`、`form_add_control`、`form_validate`、`form_preview`（html）都成功，並以下方「網頁預覽」開出可輸入的預覽頁；加上 BMI 計算式（`formula_check` 試算、`form_validate` 通過）後，預覽頁填身高 170、體重 65 即顯示 BMI 22.5。同一個 2.0 app 也實測了線上：院外站台瀏覽器登入、唯讀 tool（`online_me`、`online_features`、`online_folder_list`、`online_dictionary_search`、`online_template_get`），以及把這張表單經寫入確認頁上架到個人資料夾 `usr`（Turbo 模式，G3 hook 已安裝）。
@@ -203,7 +219,7 @@ Antigravity 有自己的 plugin、hooks 格式，也沒有 marketplace，目前�
 
 用 HIS 端 runtime 在本機離線呈現表單，可以實際填值、看計算式結果；不連線、不存檔。需要 StrucMed 平台原始碼裡 `web/` 的本機副本（有 `TempHtml.html` 的那個資料夾）；plugin 不附這份檔案，沒有副本時只能用文字版的 `form_preview`（tree／markdown）。
 
-1. 在 `mcp_config.json` 的 strucmed `env` 加一行 `"STRUCMED_RUNTIME_WEB": "<平台 web/ 副本>"`，重新載入 MCP。
+1. 讓 MCP 找得到平台 `web/` 副本：手動設定時在 `mcp_config.json` 的 strucmed `env` 加一行 `"STRUCMED_RUNTIME_WEB": "<平台 web/ 副本>"` 並重新載入 MCP；以 plugin 安裝時（不能加環境變數）把副本放在（或連結到）`~/Documents/StrucMed/repo/strucmed/web`。
 2. 請 agent 對 draft 呼叫 `form_preview`（`format: "html"`），回傳的 `runtime_available` 應為 `true`。
 3. 請 agent 在終端機執行（環境變數要寫在指令前面，終端機拿不到 `mcp_config.json` 的設定）：
 
@@ -328,6 +344,8 @@ strucmed-plugin/
 ├── .claude-plugin/
 │   ├── plugin.json          # plugin 定義：userConfig（憑證欄位）、MCP 註冊
 │   └── marketplace.json     # 市集定義（source 指向 repo 本身）
+├── .codex-plugin/plugin.json # Codex 版 manifest
+├── plugin.json、mcp_config.json、hooks.json、rules/AGENTS.md  # Antigravity 版 plugin（3.5.0 起）
 ├── AGENTS.md                # 所有 agent 與 skill 的共同規則
 ├── feature-flags.json       # 功能開關（online／llmgateway／fmapi 自動；templateUpdate 開；dictionaryWrite 關）
 ├── skills/                  # 9 個 skill（見上表）

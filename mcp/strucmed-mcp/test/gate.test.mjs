@@ -110,3 +110,16 @@ test('antigravity hook: Arguments 是字串、缺 draft_id、輸入壞掉都不�
   assert.equal(decision(run(AGY_HOOK, agy('online_template_create', '{bad'), { env })).decision, 'deny');
   assert.equal(decision(run(AGY_HOOK, 'not json', { env })).decision, 'deny');
 });
+
+test('antigravity hook: 找不到設定時用 MCP 的預設工作目錄（~/Documents/StrucMed）', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-home-'));
+  const ws = path.join(home, 'Documents', 'StrucMed');
+  const dir = path.join(ws, '.strucmed', 'plans', DRAFT);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'publish-plan.md'), PLAN);    // 有計畫但未核准
+  const r = spawnSync(process.execPath, [AGY_HOOK], { input: JSON.stringify(agy('online_template_create', { draft_id: DRAFT, confirm_token: 't' })),
+    cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, STRUCMED_WORKSPACE: '' }, encoding: 'utf8' });
+  const d = JSON.parse(r.stdout);
+  assert.equal(d.decision, 'deny');
+  assert.match(d.reason, /尚未核准/);
+});
