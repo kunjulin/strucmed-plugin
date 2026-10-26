@@ -19,13 +19,13 @@
 
 ### 支援的工具
 
-本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex CLI 讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
+本 plugin 依 Claude Code plugin 規格打包（`userConfig` 選填設定、hooks 閘門、`${CLAUDE_PLUGIN_ROOT}`、AskUserQuestion／Task subagent）。GitHub Copilot CLI 直接讀 `.claude-plugin/` 的 manifest 與 Claude 格式的 hooks；Codex（CLI 與 app）讀同一個市集與 `.codex-plugin/plugin.json`（MCP 的路徑寫法不同，所以另備一份）。其他工具只能用其中的 `skills/*/SKILL.md`（開放的 Agent Skills 格式）與 stdio MCP，安全機制不完整。
 
 | 工具 | 支援程度 | 可用 | 缺少 |
 |---|---|---|---|
 | **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 全部 | — |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝） | `userConfig`（院外站台網址等改用環境變數）、subagent；對話中的執行與線上登入未經實測 |
-| **OpenAI Codex CLI** | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需在 `/hooks` 信任） | `userConfig`（改用環境變數）、subagent 與結構化提問；G3 阻擋與對話中的執行未經實測 |
+| **OpenAI Codex**（CLI、app） | ⚠️ 實驗性，上架建議回 Claude Code | skills、MCP（含瀏覽器登入）、hooks（同一個市集安裝；hooks 需信任）；app 已實測安裝、瀏覽器登入、建表單與匯出 | `userConfig`（改用環境變數）、subagent 與結構化提問、runtime 預覽（需 `STRUCMED_RUNTIME_WEB`）；G3 阻擋未經實測 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | `form_*`、`dictionary_*`、`formula_check` 等 tool | 所有 skill 流程、閘門與 hooks |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機 stdio 伺服器、執行 `node` 腳本或連到院內站台 |
 
@@ -128,12 +128,12 @@ copilot plugin install strucmed@strucmed-marketplace
 
 - **線上登入**：3.0.0 起改用瀏覽器登入，不需要 `userConfig`，Copilot 也能使用線上 tool（未實測）。Copilot 沒有 `/plugin configure`：院外站台已內建，不需設定；LlmGateway 的 token 以啟動 `copilot` 的 shell 環境變數 `LLMGW_API_KEY` 提供，不要寫進 `~/.copilot/mcp-config.json`。
 - **hooks**：Copilot 支援 Claude 格式的 `hooks/hooks.json`；hook 以 `PLUGIN_ROOT`／`CLAUDE_PLUGIN_ROOT` 環境變數定位腳本，matcher 同時涵蓋兩邊的 MCP tool 命名，所以 G3 核准檢查、安全提醒與 workflow-log 在 Copilot 也會執行。
-- **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，草稿會落到 plugin 安裝目錄，建議在 WSL 或 Git Bash 使用。
+- **工作目錄**：Copilot 以 plugin 目錄當 MCP 的 cwd，MCP 會改用啟動 `copilot` 時的目錄（`PWD`）。請在要放 `.strucmed/`、`output/` 的目錄啟動 Copilot。Windows 的 PowerShell／cmd 沒有 `PWD`，改放「文件」下的 `StrucMed` 資料夾（3.2.1 起，不再寫進 plugin 安裝目錄）；要放別處請設 `STRUCMED_WORKSPACE`。
 - **subagent**：`agents/*.md` 不是 Copilot 的 `.agent.md` 格式，form-planner 等可能不會載入，skill 會由主 agent 依序執行。
 
-### OpenAI Codex CLI（實驗性）
+### OpenAI Codex CLI 與 Codex app（實驗性）
 
-Codex CLI 讀得懂本 repo 的市集（`.claude-plugin/marketplace.json`）與 Codex 版 manifest（`.codex-plugin/plugin.json`：skills、MCP、hooks），可以直接安裝（Codex CLI 0.164.0 實測可安裝；沒有 `codex plugin` 指令的舊版請先更新）：
+Codex 讀得懂本 repo 的市集（`.claude-plugin/marketplace.json`）與 Codex 版 manifest（`.codex-plugin/plugin.json`：skills、MCP、hooks），可以直接安裝（Codex CLI 0.164.0 實測可安裝；沒有 `codex plugin` 指令的舊版請先更新）：
 
 ```bash
 codex plugin marketplace add kunjulin/strucmed-plugin
@@ -142,15 +142,15 @@ codex plugin add strucmed@strucmed-marketplace
 
 本機資料夾（無法連 GitHub 或開發用）：`codex plugin marketplace add <資料夾路徑>`。更新：`codex plugin marketplace upgrade strucmed-marketplace`，再執行一次 `codex plugin add strucmed@strucmed-marketplace`（Codex 沒有 plugin update）。安裝或更新後開新工作階段。
 
-- **hooks 要先信任**：Codex 不會自動執行 plugin 的 hooks。安裝或更新後在 Codex 輸入 `/hooks`，檢查並信任 strucmed 的 hooks（安全提醒、G3 核准檢查、登入提示、workflow-log）。沒有信任時 G3 不會執行，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。
+Codex app：可在對話中請 Codex 執行上面的 `codex plugin marketplace add`，或在 Plugins 頁面選 `strucmed-marketplace` 安裝；安裝後開新對話。2026-10-26 實測可安裝、瀏覽器登入（院外站台）、建立並匯出測試表單；過程中需核准 hooks。
+
+- **hooks 要先信任**：Codex 不會自動執行 plugin 的 hooks。安裝或更新後在 Codex 輸入 `/hooks`（app 會在第一次執行時詢問），檢查並信任 strucmed 的 hooks（安全提醒、G3 核准檢查、登入提示、workflow-log）。沒有信任時 G3 不會執行，線上寫入只剩 MCP 本身的兩段式 `confirm_token`。
 - **上架**：G3 在 Codex 的阻擋行為尚未實測；實測通過前，上架請回 Claude Code 或用編輯器匯入。
-- **工作目錄**：Codex 以 plugin 目錄當 MCP 的 cwd，MCP 改用啟動 `codex` 時的目錄（`PWD`）放 `.strucmed/`、`output/`。Windows 的 PowerShell／cmd 沒有 `PWD`，請先指定：
+- **工作目錄**：Codex 以 plugin 目錄當 MCP 的 cwd，MCP 改用啟動 `codex` 時的目錄（`PWD`）放 `.strucmed/`、`output/`。沒有可用的 `PWD` 時（Codex app、Windows 的 PowerShell／cmd），改放「文件」下的 `StrucMed` 資料夾；3.2.1 起不再寫進 plugin 快取（更新 plugin 時會被清掉）。匯出結果會回傳完整路徑。要放在專案資料夾，CLI 可先指定：
 
   ```powershell
   $env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
   ```
-
-  或在 WSL、Git Bash 使用。
 - **設定**：沒有 `/plugin configure`。LlmGateway token 等改用環境變數（`LLMGW_API_KEY`、`FMAPI_API_KEY`、`STRUCMED_EXTERNAL_URL`、`STRUCMED_RUNTIME_WEB`），在啟動 `codex` 的 shell 設定；**不要**寫進 `config.toml`。HIS 帳密不需要，線上以瀏覽器登入。
 - **登入**：manifest 已把 tool 逾時設為 180 秒（Codex 預設 60 秒，短於瀏覽器登入的等待時間）。第一次呼叫線上 tool 時 Codex 會要求核准。
 - skill 以 `$strucmed:strucmed-form` 等觸發，或直接描述需求；`/mcp` 可確認 `strucmed` 已連上。tool 名稱是 `strucmed` 伺服器下的 `form_validate` 等，不是 `mcp__plugin_strucmed_strucmed__*`。

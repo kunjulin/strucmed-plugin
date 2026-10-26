@@ -9,7 +9,7 @@ import { workspaceRoot } from '../src/store.mjs';
 import { flagsFile } from '../src/flags.mjs';
 
 const PLUGIN_ROOT = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..'));
-const KEYS = ['STRUCMED_WORKSPACE', 'PWD', 'PLUGIN_ROOT', 'CLAUDE_PLUGIN_ROOT', 'STRUCMED_FLAGS'];
+const KEYS = ['STRUCMED_WORKSPACE', 'PWD', 'PLUGIN_ROOT', 'CLAUDE_PLUGIN_ROOT', 'STRUCMED_FLAGS', 'HOME', 'USERPROFILE'];
 
 function withEnv(env, cwd, fn) {
   const saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
@@ -42,9 +42,16 @@ test('workspace: ordinary cwd is kept even when PWD differs (Claude Code)', () =
   assert.equal(withEnv({ PWD: other, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT }, tmp, workspaceRoot), tmp);
 });
 
-test('workspace: plugin root stays when PWD is missing or does not exist', () => {
-  assert.equal(withEnv({}, PLUGIN_ROOT, workspaceRoot), PLUGIN_ROOT);
-  assert.equal(withEnv({ PWD: path.join(tmp, 'nope') }, PLUGIN_ROOT, workspaceRoot), PLUGIN_ROOT);
+test('workspace: never the plugin root; without a usable PWD (Codex app, Windows) use ~/Documents/StrucMed', () => {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-home-')));
+  const env = { HOME: home, USERPROFILE: home };
+  assert.equal(withEnv(env, PLUGIN_ROOT, workspaceRoot), path.join(home, 'StrucMed'), '沒有 Documents 時用家目錄');
+  fs.mkdirSync(path.join(home, 'Documents'));
+  const want = path.join(home, 'Documents', 'StrucMed');
+  assert.equal(withEnv(env, PLUGIN_ROOT, workspaceRoot), want, '沒有 PWD');
+  assert.equal(withEnv({ ...env, PWD: path.join(tmp, 'nope') }, PLUGIN_ROOT, workspaceRoot), want, 'PWD 不存在');
+  assert.equal(withEnv({ ...env, PWD: PLUGIN_ROOT }, PLUGIN_ROOT, workspaceRoot), want, 'PWD 就是 plugin 目錄');
+  assert.equal(withEnv({ ...env, PWD: path.parse(tmp).root }, PLUGIN_ROOT, workspaceRoot), want, 'PWD 是磁碟根目錄（從 Finder／Dock 啟動）');
 });
 
 test('flags: an unexpanded STRUCMED_FLAGS falls back to the bundled feature-flags.json', () => {

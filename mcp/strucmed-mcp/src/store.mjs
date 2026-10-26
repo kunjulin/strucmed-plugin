@@ -1,7 +1,9 @@
 // Local workspace: <root>/.strucmed/{drafts/*.json, dictionaries.json}
 // <root> = STRUCMED_WORKSPACE or the server's cwd. Nothing leaves this machine.
 // Copilot CLI and Codex (.codex-plugin/plugin.json, cwd ".") start plugin MCP servers with cwd = plugin root; then <root> falls back to PWD (the directory the CLI was launched from).
+// Without a usable PWD (Codex app, Windows) <root> is ~/Documents/StrucMed: the plugin root is a cache that plugin updates replace.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -16,9 +18,15 @@ export function workspaceRoot() {
   if (!unset(process.env.STRUCMED_WORKSPACE)) return path.resolve(process.env.STRUCMED_WORKSPACE.trim());
   const cwd = real(process.cwd());
   const roots = [PLUGIN_ROOT, process.env.PLUGIN_ROOT, process.env.CLAUDE_PLUGIN_ROOT].filter(r => !unset(r)).map(real);
+  if (!roots.includes(cwd)) return cwd;
   const pwd = unset(process.env.PWD) ? '' : real(process.env.PWD);
-  if (roots.includes(cwd) && pwd && pwd !== cwd && fs.existsSync(pwd)) return pwd;
-  return cwd;
+  if (pwd && !roots.includes(pwd) && pwd !== path.parse(pwd).root && fs.existsSync(pwd)) return pwd;
+  return defaultWorkspace();
+}
+
+export function defaultWorkspace() {
+  const docs = path.join(os.homedir(), 'Documents');
+  return path.join(fs.existsSync(docs) ? docs : os.homedir(), 'StrucMed');
 }
 
 export function workspace() {

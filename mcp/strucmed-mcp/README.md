@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.1.0）
+# strucmed-mcp（v2.1.1）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -16,7 +16,7 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 ```bash
 node mcp/strucmed-mcp/src/server.mjs
 ```
-環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
+環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
 
 ## 線上 tool（strucmed V2 API）
 呼叫 strucmed 的 token 保護 API。

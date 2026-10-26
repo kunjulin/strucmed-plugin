@@ -14,7 +14,16 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.2.0（MCP 2.1.0）— 未發佈：Codex 一行安裝
+## 3.2.1（MCP 2.1.1）— 未發佈：Codex app 工作目錄
+
+- **工作目錄不再落在 plugin 快取**：Codex app 實測（Windows）時，草稿與匯出檔寫進了 Codex 的 plugin 快取資料夾，使用者找不到，且更新 plugin 時會被清掉。`store.mjs` 在 cwd 是 plugin 目錄、又沒有可用的 `PWD`（未設定、不存在、就是 plugin 目錄，或是磁碟根目錄）時，改用 `~/Documents/StrucMed`（沒有 Documents 時用 `~/StrucMed`）。`STRUCMED_WORKSPACE` 仍最優先；Claude Code 不受影響。Copilot CLI 在 Windows 也一樣受惠。
+- **`form_export` 回傳 `workspace`**：計畫與結果都帶工作目錄的完整路徑，agent 可以直接告訴使用者檔案在哪。
+- **文件**：README「支援的工具」改為 Codex（CLI、app），記錄 app 實測結果（安裝、瀏覽器登入、建表單與匯出可用；hooks 需核准；runtime 預覽需 `STRUCMED_RUNTIME_WEB`）。
+- **測試**：`host.test.mjs` 的工作目錄測試改為「永遠不是 plugin 目錄」，涵蓋沒有 PWD、PWD 不存在、PWD 是 plugin 目錄、PWD 是磁碟根目錄。
+
+## 3.2.0（MCP 2.1.0）— 2026-10-26：Codex 一行安裝
+
+strucmed-skill#41；發佈：strucmed-plugin `2b1c88a`（由 main `afefc70` 產生）。發佈時：`release-plugin.mjs` ok、185 個檔案、掃描無發現；`npm test` 88 過、1 略過；`claude plugin validate --strict` 通過。
 
 - **Codex manifest**：新增 `.codex-plugin/plugin.json`（skills、hooks、MCP）。Codex CLI 直接讀既有的 `.claude-plugin/marketplace.json`，所以 `codex plugin marketplace add kunjulin/strucmed-plugin` → `codex plugin add strucmed@strucmed-marketplace` 即可安裝，不必再手動連結 skills 與編輯 `config.toml`。
   - Codex 不展開 `${CLAUDE_PLUGIN_ROOT}`：MCP 以 `cwd: "."`（plugin 根目錄）與相對路徑啟動；工作目錄沿用 Copilot 的 `PWD` 機制，Windows PowerShell 需先設 `STRUCMED_WORKSPACE`。

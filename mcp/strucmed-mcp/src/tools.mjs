@@ -618,7 +618,7 @@ export const TOOLS = [
   },
   {
     name: 'form_export',
-    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。',
+    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/（相對於回傳的 workspace，請告訴使用者完整路徑）。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), out_dir: str('輸出目錄（預設 <workspace>/output）'),
       overwrite: bool('覆寫同名檔案'), confirm_token: str('第二次呼叫帶入') } },
@@ -635,6 +635,7 @@ export const TOOLS = [
       if (!confirm_token) {
         return {
           plan: {
+            workspace: ws.root,
             files: Object.values(w.files).map(f => path.relative(ws.root, f)),
             overwrite: w.exists.map(f => path.relative(ws.root, f)),
             new_dictionaries: d.pendingDictionaries.map(p => p.name),
@@ -647,7 +648,7 @@ export const TOOLS = [
       }
       confirm.verify('form_export', h, confirm_token);
       const r = w.write();
-      return { files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker };
+      return { workspace: ws.root, files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker };
     }
   }
 ];
