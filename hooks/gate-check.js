@@ -8,17 +8,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const GATED = /online_(template_create|template_update|dictionary_create|dictionary_batch)$/;
+const GATED = /online_(template_create|template_update|dictionary_create|dictionary_batch|dictionary_memo_set)$/;
+// 字典補述與升級申請可以在上架流程外單獨使用（不屬於任何 draft）：沒帶 draft_id 時只靠 MCP 的瀏覽器確認頁（與 online_me_notes_set 相同）；
+// 帶了 draft_id（publish-form 合併在 G3 時）就照樣檢查該 draft 的上架計畫核准
+const DRAFT_OPTIONAL = /online_(dictionary_memo_set)$/;
 
 function checkGate({ tool, args, workspace }) {
   if (!args || !args.confirm_token) return { ok: true };            // 第一段：只取 plan
   const draftId = String(args.draft_id || '');
+  if (!draftId && DRAFT_OPTIONAL.test(String(tool))) return { ok: true };   // 單獨使用：交給瀏覽器確認頁
   if (!/^d-[0-9a-f]{12}$/.test(draftId)) return { ok: false, code: 'no_draft', reason: `strucmed 閘門：${tool} 缺少 draft_id，無法確認核准` };
   const dir = path.join(String(workspace), '.strucmed', 'plans', draftId);
   const plan = path.join(dir, 'publish-plan.md');
   const sidecar = path.join(dir, '.approved-publish-plan.md');
   if (!fs.existsSync(plan)) return { ok: false, code: 'no_plan', reason: `strucmed 閘門 G3：找不到上架計畫 ${plan}。請先用 publish-form 取得 plan、寫入計畫檔並取得使用者核准。` };
-  if (!fs.existsSync(sidecar)) return { ok: false, code: 'not_approved', reason: `strucmed 閘門 G3：上架計畫尚未核准（沒有 ${sidecar}）。請把「## 上架計畫」給使用者確認，核准後執行 scripts/verify-plan.mjs prepare。` };
+  if (!fs.existsSync(sidecar)) return { ok: false, code: 'not_approved', reason: `strucmed 閘門 G3：上架計畫尚未核准（沒有 ${sidecar}）。請把「## 上架計畫」給使用者確認（Claude Code 用 AskUserQuestion；沒有時在對話中詢問），使用者核准後才執行 scripts/verify-plan.mjs prepare；不要自己把計畫標成 Approved。` };
   try {
     const text = fs.readFileSync(plan, 'utf8');
     // 與 scripts/verify-plan.mjs 相同：排除「### 建置對照表」段
@@ -31,7 +35,7 @@ function checkGate({ tool, args, workspace }) {
       return { ok: false, code: 'changed', reason: `strucmed 閘門 G3：上架計畫在核准後被修改（核准 rev ${s.revision}，目前 rev ${rev}）。核准失效，請重新呈現計畫並核准。` };
     }
     if (!/^Status:\s*Approved\s*$/m.test(text.split(/^## 核准/m)[1] || '')) {
-      return { ok: false, code: 'not_approved', reason: 'strucmed 閘門 G3：計畫檔的「## 核准」段不是 Approved。' };
+      return { ok: false, code: 'not_approved', reason: 'strucmed 閘門 G3：計畫檔的「## 核准」段不是 Approved。請用 AskUserQuestion（沒有時在對話中）取得使用者核准，再執行 scripts/verify-plan.mjs prepare；不要自己把計畫標成 Approved。' };
     }
   } catch (e) {
     return { ok: false, code: 'error', reason: `strucmed 閘門 G3：檢查時發生錯誤，無法確認核准，阻擋（${e.message}）。請重新產生計畫並核准。` };
@@ -39,4 +43,4 @@ function checkGate({ tool, args, workspace }) {
   return { ok: true };
 }
 
-module.exports = { GATED, checkGate };
+module.exports = { GATED, DRAFT_OPTIONAL, checkGate };

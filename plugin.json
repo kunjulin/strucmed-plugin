@@ -1,7 +1,7 @@
 {
   "name": "strucmed",
   "displayName": "StrucMed",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "長庚結構化病歷 2.0（StrucMed）表單製作 plugin（Antigravity 版 manifest）：與使用者互動設計表單、離線驗證與 runtime 預覽、經 strucmed API v2 上架（瀏覽器確認頁）、表單 APP 產生。線上功能以瀏覽器登入站台，HIS 密碼只在站台登入頁輸入，不經 AI 工具與對話。",
   "logo": ".claude-plugin/icon.png"
 }

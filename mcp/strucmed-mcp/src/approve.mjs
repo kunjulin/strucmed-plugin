@@ -33,11 +33,12 @@ export function offer(action, hash, title, plan) {
 const LABELS = {
   action: '動作', site: '站台', user_id: '登入者', dept_no: '科部', folder_type: '資料夾類型', folder_code: '資料夾', template_id: '範本 ID',
   name: '名稱', shortcut: '捷徑', groups: '作業別', description: '說明', publish_on_save: '保存即上架', areas: '區塊數', controls: '控制項數',
-  dictionaries: '字典', warnings: '警告', diff: '與線上版本的差異', if_match: 'If-Match', scope: '字典範圍', comment: '字典說明', force: '強制新建',
+  dictionaries: '字典', warnings: '警告', diff: '與線上版本的差異', meta: '名稱／捷徑／作業別／Info（線上 → 寫入）', if_match: 'If-Match', scope: '字典範圍', comment: '字典說明', force: '強制新建',
   used_by_itemids: '使用的控制項', rows: '字典清單', before: '原本筆數', after: '寫入後筆數', added: '新增', removed: '移除', renamed: '改名', kept: '保留',
-  items: '寫入後的清單', note: '備註', draft_sha256: 'draft 雜湊', body_chars: '本文字元數'
+  items: '寫入後的清單', note: '備註', draft_sha256: 'draft 雜湊', body_chars: '本文字元數',
+  memo: '補述', dic_comment_json: '寫入的字典 JSON', dic_id: '字典 ID', dic_type: '字典類型', level: '層級', desc: '說明', etag: 'ETag', to: '升級目標（體系碼）', reason: '理由'
 };
-const SHOWN_FIRST = ['action', 'site', 'user_id', 'folder_type', 'folder_code', 'template_id', 'name', 'shortcut', 'groups', 'publish_on_save'];
+const SHOWN_FIRST = ['action', 'site', 'user_id', 'folder_type', 'folder_code', 'template_id', 'name', 'shortcut', 'groups', 'publish_on_save', 'warnings', 'meta', 'diff'];
 
 function value(v) {
   if (v === null || v === undefined || v === '') return '<span class="m">（無）</span>';

@@ -427,6 +427,8 @@ $env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
 用 HIS 端 runtime 在本機離線呈現表單，可以實際填值、看計算式結果；不連線、不存檔。需要 StrucMed 平台原始碼裡 `web/` 的本機副本（有 `TempHtml.html` 的那個資料夾）；plugin 不附這份檔案，沒有副本時只能用文字版的 `form_preview`（tree／markdown）。Claude Code 的 `verify-runtime` skill 會自動做以下步驟；其他工具：
 
 1. 讓 MCP 找得到副本：設定 `STRUCMED_RUNTIME_WEB`（Claude Code 在選填設定填「平台 `web/` 副本」）；以 Antigravity plugin 安裝時不能加環境變數，把副本放在（或連結到）`~/Documents/StrucMed/repo/strucmed/web`。
+
+   編輯器「匯出」的 `.htm` 不能當副本：它只是 `TempHtml.html` 的外殼加上 `<base href="站台網址">`，引擎本身（`js/TempHtml.js`）與 jQuery、Bootstrap 等約 30 個檔案都在開啟時向站台載入；預覽伺服器為了不連外會封鎖這些請求，表單不會執行。
 2. 請 agent 對 draft 呼叫 `form_preview`（`format: "html"`），回傳的 `runtime_available` 應為 `true`。
 3. 請 agent 在終端機執行（環境變數寫在指令前面）：
 
@@ -584,7 +586,7 @@ strucmed-plugin/
 ├── .codex-plugin/plugin.json # Codex 版 manifest
 ├── plugin.json、mcp_config.json、hooks.json、rules/AGENTS.md  # Antigravity 版 plugin（3.5.0 起）
 ├── AGENTS.md                # 所有 agent 與 skill 的共同規則
-├── feature-flags.json       # 功能開關（online／llmgateway／fmapi 自動；templateUpdate 開；dictionaryWrite 關）
+├── feature-flags.json       # 功能開關（online／llmgateway／fmapi 自動；templateUpdate 開；dictionaryWrite 開）
 ├── skills/                  # 9 個 skill（見上表）
 ├── agents/                  # form-planner、form-builder、form-reviewer、app-builder
 ├── references/              # 設計規則、計算式與巨集、提示詞樣板、巨集工作流配方、表格頁籤規則與版面樣板、閘門、上架與 APP 流程、模型白名單、安全不變量

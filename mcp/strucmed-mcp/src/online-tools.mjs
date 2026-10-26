@@ -6,6 +6,7 @@ import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as online from './online.mjs';
 import * as site from './site.mjs';
+import * as dc from './dictcomment.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;                       // 與伺服器 TemplatePackage.IsValidId 相同
@@ -20,6 +21,28 @@ function checkCode(v, field, required) {
   if (v === undefined || v === null || v === '') { if (required) fail(E.INVALID_INPUT, `缺少 ${field}`); return ''; }
   if (!CODE_RE.test(String(v))) fail(E.INVALID_INPUT, `${field} 格式不正確`);
   return String(v);
+}
+
+const LARGE_CHARS = 50000;
+// 範本套件的摘要：online_template_get(save:true) 只回這些，整包留在存檔
+function summarize(pkg, chars) {
+  const t = (pkg && pkg.template) || {};
+  const form = Array.isArray(pkg && pkg.form) ? pkg.form : [];
+  let controls = 0;
+  const count = n => {
+    if (Array.isArray(n)) return n.forEach(count);
+    if (!n || typeof n !== 'object') return;
+    if (n.datatype && n.itemid !== undefined && n.datatype !== 'text' && n.datatype !== 'newline') controls++;
+    for (const k of ['item', 'itemtemp', 'datavalue', 'items', 'columns']) if (Array.isArray(n[k])) count(n[k]);
+  };
+  const areas = form.filter(x => x && x.itemtype !== 'javascript' && x.itemtype !== 'iot');
+  count(areas);
+  const types = {};
+  for (const a of areas) types[a.itemtype] = (types[a.itemtype] || 0) + 1;
+  return { template_id: String(t.templateID || ''), name: String(t.name || ''), shortcut: String(t.shortcut || ''), groups: Array.isArray(t.groups) ? t.groups : [],
+    rev: t.rev ?? null, areas: areas.length, area_types: types, controls,
+    js_chars: String((form.find(x => x && x.itemtype === 'javascript') || {}).content || '').length,
+    presets: Array.isArray(pkg && pkg.presets) ? pkg.presets.length : 0, dictionaries: Array.isArray(pkg && pkg.dictionaries) ? pkg.dictionaries.length : 0, chars };
 }
 
 export const ONLINE_TOOLS = [
@@ -58,19 +81,23 @@ export const ONLINE_TOOLS = [
   {
     name: 'online_template_get',
     description: '（online，唯讀）讀取範本套件 v2（GET api/v2/templates/{id}，strucmed.template/v2：form、presets、dictionaries、template、integrity）。' +
-      'save:true 時另存到 <workspace>/.strucmed/online/<id>.package.json，可接著用 form_import 載入為新 draft 修改。',
+      'save:true 時另存到 <workspace>/.strucmed/online/<id>.package.json，只回摘要（名稱、捷徑、作業別、rev、區塊與控制項數、JS 字數、存檔路徑），' +
+      '可接著用 form_import 載入（要更新同一張範本帶 for_update:true）；細節請從存檔讀，不要把整包讀進對話。include_package:true 才連同整包回傳。',
     inputSchema: { type: 'object', required: ['template_id'], properties: {
-      template_id: str('範本 ID（templateID）'), save: { type: 'boolean', description: '另存到工作目錄供 form_import 使用' } } },
-    async handler({ template_id, save }) {
+      template_id: str('範本 ID（templateID）'), save: { type: 'boolean', description: '另存到工作目錄供 form_import 使用（只回摘要）' },
+      include_package: { type: 'boolean', description: 'save:true 時仍回傳整包（範本很大時會占用大量對話內容，通常不需要）' } } },
+    async handler({ template_id, save, include_package }) {
       const id = checkId(template_id, 'template_id');
       const pkg = await online.call('GET', `api/v2/templates/${id}`, {}, '讀取範本');
-      if (!save) return { package: pkg };
+      const chars = JSON.stringify(pkg).length;
+      if (!save) return { package: pkg, ...(chars > LARGE_CHARS && { warnings: [`W_LARGE_RESPONSE：範本約 ${chars} 字元；請改用 save:true（只回摘要，內容存檔）`] }) };
       const ws = store.workspace();
       const dir = path.join(ws.base, 'online');
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${id}.package.json`);
       fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
-      return { package: pkg, saved: path.relative(ws.root, file).split(path.sep).join('/') };
+      const saved = path.relative(ws.root, file).split(path.sep).join('/');
+      return { saved, summary: summarize(pkg, chars), ...(include_package && { package: pkg }) };
     }
   },
   {
@@ -79,8 +106,12 @@ export const ONLINE_TOOLS = [
     inputSchema: { type: 'object', properties: {} },
     async handler() {
       const r = await online.call('GET', 'api/v2/me', {}, '讀取登入者');
-      return { user_id: String(r.userId || ''), name: String(r.name || ''), dept_no: String(r.deptNo || ''),
+      const out = { user_id: String(r.userId || ''), name: String(r.name || ''), dept_no: String(r.deptNo || ''),
         folders: r.folders && typeof r.folders === 'object' ? r.folders : {}, is_admin: !!r.isAdmin, token_expires_at: r.tokenExpiresAt || null };
+      // token 的科部取自登入時帶的 dept_no（online_login 參數或登入頁的科部欄），不是由 HIS 帳號推得（平台 V2NoteEndpoints.VerifyAsync）
+      if (!out.dept_no) out.warnings = ['W_NO_DEPT：這次登入沒有帶科部，所以 dept_no 是空白（科部取自登入時填的科部代碼，不是由 HIS 帳號推得）。' +
+        '字典比對、科部資料夾與 form_create 都需要科部：請使用者告知科部代碼，或 online_logout 後以 online_login(dept_no) 重新登入'];
+      return out;
     }
   },
   {
@@ -107,6 +138,7 @@ export const ONLINE_TOOLS = [
   {
     name: 'online_dictionary_search',
     description: '（online，唯讀）以登入者科部搜尋線上字典（GET api/v2/dictionaries?scope=match|exact&q=）：match＝4 層科部比對（與編輯器相同），exact＝只比對 token 的科部。' +
+      '每筆回 level（sys／own／sub／dpt／system）、desc（一行說明）、sys（體系標記：體系管理者升級時寫入，id 與 dic_type 不變；同體系他科也看得到）、memo（補述）、fhir、alias_of、etag（寫 memo 時要帶）；清單體系優先。' +
       'update_index:true 時把結果寫成本機字典索引（取代 dictionary_load 的 CSV），之後 dictionary_search 與 form_add_control 的字典比對、dicid 驗證都依此索引；要完整索引請不帶 q。',
     inputSchema: { type: 'object', properties: {
       q: str('名稱關鍵字（選填，最多 50 字）'), scope: str('match（預設）或 exact', { enum: ['match', 'exact'] }),
@@ -117,11 +149,14 @@ export const ONLINE_TOOLS = [
       const user = online.currentUser();
       const r = await online.call('GET', 'api/v2/dictionaries', { query: { scope, q } }, '搜尋字典');
       const items = Array.isArray(r && r.items) ? r.items : [];
-      const entries = items.map(d => ({ id: String(d.id || ''), dicType: String(d.dicType || ''), dicName: String(d.dicName || ''),
-        dicComment: String(d.dicComment || ''), createUser: '', createDate: String(d.createDate || '') })).filter(e => e.dicName);
-      const result = { dept_no: String((r && r.deptNo) || user.deptNo), scope: String((r && r.scope) || scope || 'match'), levels: (r && r.levels) || [],
+      const deptNo = String((r && r.deptNo) || user.deptNo);
+      const entries = items.map(d => dc.fromItem(d, deptNo)).filter(e => e.dicName)
+        .sort((a, b) => dc.levelRank(a.level) - dc.levelRank(b.level) || String(b.createDate).localeCompare(String(a.createDate)));
+      const result = { dept_no: deptNo, scope: String((r && r.scope) || scope || 'match'), levels: (r && r.levels) || [],
         total: Number.isFinite(r && r.total) ? r.total : entries.length, truncated: !!(r && r.truncated),
-        items: entries.map(e => ({ id: e.id, dic_type: e.dicType, name: e.dicName, comment: e.dicComment, create_date: e.createDate })), warnings: [] };
+        items: entries.map(e => ({ id: e.id, dic_type: e.dicType, level: e.level, name: e.dicName, desc: e.desc, sys: e.sys || null, memo: e.memo || null, fhir: e.fhir || [],
+          alias_of: e.alias_of || '', etag: e.etag, comment: e.dicComment, create_date: e.createDate })), warnings: [] };
+      if (items.length && !items.some(d => d.etag !== undefined)) result.warnings.push('W_SERVER_OLD：站台尚未升級字典 JSON 說明（回應沒有 etag／level）；memo 與升級申請工具會失敗，desc／memo 由本機解析 dicComment 推得');
       if (update_index) {
         if (q) result.warnings.push('W_INDEX_PARTIAL：索引只包含符合關鍵字的字典；要完整索引請不帶 q 再呼叫一次');
         if (result.truncated) result.warnings.push('W_INDEX_TRUNCATED：伺服器截斷了清單，索引不完整');

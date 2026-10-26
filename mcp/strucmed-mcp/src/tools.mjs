@@ -5,6 +5,7 @@ import path from 'node:path';
 import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
+import * as dc from './dictcomment.mjs';
 import { buildControl, toFormJson, buildStructuredArea, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, DEFERRABLE } from './validate.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
@@ -13,6 +14,7 @@ import { preview } from './preview.mjs';
 import { writeArtifacts, VERSION } from './export.mjs';
 import * as confirm from './confirm.mjs';
 import { parseSource, sha256 } from './importer.mjs';
+import { digestForm } from './formdiff.mjs';
 import { editableItems, findControl, refsTo, maxItemId, walk, isControl } from './formtree.mjs';
 
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
@@ -70,19 +72,38 @@ const hasScript = n => !!(n.formula || n.actionScript || (n.datatype === 'label'
 // 依字典參照設定控制項的 dictionary / dicid / dicrole（新增與修改共用）
 function applyDictionary(d, obj, ref, wantRole, warnings) {
   const res = dict.resolve(store.loadDictIndex(), ref, d.meta.dept_no);
+  if (res.warnings) warnings.push(...res.warnings);
   if (res.kind === 'bound') {
     obj.dictionary = res.entry.dicName; obj.dicid = res.entry.id; obj.dicrole = wantRole || 'tohis';
+    if (!res.entry.memo) warnings.push(`W_DICT_NO_MEMO：字典「${res.entry.dicName}」（${res.entry.id.slice(0, 8)}…）沒有補述 memo；上架時可用 online_dictionary_memo_set 補上`);
+    if (['own', 'sub', 'dpt'].includes(res.entry.level)) warnings.push(`W_DICT_DEPT_LEVEL：字典「${res.entry.dicName}」是${dc.LEVEL_LABEL[res.entry.level]}層級（${res.entry.dicType}）；跨科共用時列入計畫的「體系升級建議」，由體系字典管理者在字典頁升級（id 不變）`);
     prunePending(d, obj);
   } else if (res.kind === 'pending') {
     obj.dictionary = ref.name; obj.dicid = ''; obj.dicrole = 'tohis';
     if (wantRole && wantRole !== 'tohis') warnings.push(`W_DICT_ROLE_FORCED：新字典匯入後角色一律為 tohis（要求的 ${wantRole} 需匯入後在編輯器手動調整）`);
-    if (!d.pendingDictionaries.some(p => p.name === obj.dictionary)) d.pendingDictionaries.push({ name: obj.dictionary, comment: '' });
+    addPending(d, obj.dictionary, ref.comment, ref.memo);
     warnings.push(`W_NEW_DICTIONARY：「${obj.dictionary}」將於匯入時新建${res.otherTypes && res.otherTypes.length ? `（其他類別已有同名：${res.otherTypes.join(',')}）` : ''}`);
+    if (!(ref.comment || '').trim()) warnings.push(`W_DICT_NO_DESC：新字典「${obj.dictionary}」沒有說明（dictionary.comment）；請在計畫中補一行語意`);
   } else {
     if (wantRole && wantRole !== 'nohis') fail(E.DICT_REQUIRED, `dicrole=${wantRole} 需要綁定字典`);
     obj.dictionary = ''; obj.dicid = ''; obj.dicrole = 'nohis';
     prunePending(d, obj);
   }
+}
+// 待新建字典清單：{ name, comment（一行語意＝desc）, memo（補述） }；重複加入時保留既有非空內容再補充
+function addPending(d, name, comment, memo) {
+  dc.checkStorable(name, '字典名稱');
+  const cur = d.pendingDictionaries.find(p => p.name === name);
+  const m = memo ? dc.validateMemo(memo) : null;
+  if (!cur) {
+    const entry = { name, comment: String(comment || '').trim(), ...(m && { memo: m }) };
+    dc.build({ desc: entry.comment, memo: entry.memo });   // 先確認組起來不會超過長度
+    d.pendingDictionaries.push(entry);
+    return;
+  }
+  if (comment !== undefined && String(comment).trim()) cur.comment = String(comment).trim();
+  if (m) cur.memo = dc.mergeMemo(cur.memo, m);
+  dc.build({ desc: cur.comment, memo: cur.memo });
 }
 // 綁定既有字典、解除綁定或移除控制項後，把不再被任何「未綁 id」控制項使用的名稱移出待新建清單
 // （否則 online_template_create 會一直回 E_DICT_PENDING）。just 是剛改好但可能尚未放進樹的控制項。
@@ -123,7 +144,7 @@ export const TOOLS = [
   },
   {
     name: 'dictionary_search',
-    description: '在已載入的字典索引中搜尋（離線）。本科部比對範圍（deptNo／前4碼／前3碼／體系碼）的結果排在前面。',
+    description: '在已載入的字典索引中搜尋（離線）。本科部比對範圍（deptNo／前4碼／前3碼／體系碼）的結果排在前面，同範圍內體系（sys）優先；fuzzy 也比對 desc（說明）與 memo（補述）。每筆回 level（sys／own／sub／dpt／system）、desc、sys（體系標記）、memo、fhir、alias_of、etag；帶體系標記的同體系他科字典也在比對範圍內。',
     inputSchema: { type: 'object', required: ['query'], properties: {
       query: str('關鍵字'), dept_no: str('科部代碼，預設用載入時的代碼'),
       match: str('exact | prefix | fuzzy（預設 fuzzy）', { enum: ['exact', 'prefix', 'fuzzy'] }) } },
@@ -131,23 +152,28 @@ export const TOOLS = [
       const idx = store.loadDictIndex();
       if (!idx) fail(E.NOT_FOUND, '尚未載入字典 CSV，請先 dictionary_load');
       const r = dict.search(idx, query, dept_no, match);
-      return { total: r.length, results: r.slice(0, 50) };
+      return { total: r.length, results: r.slice(0, 50).map(e => ({ id: e.id, dicType: e.dicType, level: e.level, dicName: e.dicName, desc: e.desc, sys: e.sys || null, memo: e.memo || null, fhir: e.fhir || [],
+        alias_of: e.alias_of || '', etag: e.etag || '', createUser: e.createUser, createDate: e.createDate, deptMatch: e.deptMatch })) };
     }
   },
   {
     name: 'dictionary_create',
-    description: '【離線＝規劃】把新字典名稱加入 draft 的「待新建字典」清單；不寫入任何系統。實際建立由使用者以「匯入表單及字典」完成。',
+    description: '【離線＝規劃】把新字典名稱加入 draft 的「待新建字典」清單；不寫入任何系統。實際建立由 online_dictionary_create／batch 或使用者「匯入表單及字典」完成。' +
+      'comment＝一行語意（寫進字典 JSON 的 desc），memo＝補述（meaning／type／unit／range／asr／calx／llm／scope）；重複呼叫同名時保留既有內容再補充。',
     inputSchema: { type: 'object', required: ['draft_id', 'name'], properties: {
-      draft_id: str('draft id'), name: str('字典名稱'), comment: str('說明（選填）') } },
-    handler({ draft_id, name, comment }) {
+      draft_id: str('draft id'), name: str('字典名稱'), comment: str('說明（一行語意，建議必填）'),
+      memo: { type: 'object', description: '補述：meaning、type（datatype）、unit、range、asr（字串陣列）、calx、llm、scope', properties: {
+        meaning: str('欄位語意'), type: str('建議 datatype'), unit: str('單位'), range: str('合理範圍'), asr: { type: 'array', items: { type: 'string' }, description: '語音辨識別名' },
+        calx: str('計算式用途（白話）'), llm: str('LLM prompt 用的欄位描述'), scope: str('適用範圍／科別') } } } },
+    handler({ draft_id, name, comment, memo }) {
       const d = store.loadDraft(draft_id);
       const idx = store.loadDictIndex();
       const collision = idx ? idx.entries.filter(e => e.dicName === name).map(e => ({ id: e.id, dicType: e.dicType })) : [];
       const inDept = collision.filter(c => dict.deptTypes(d.meta.dept_no).includes(c.dicType));
       if (inDept.length) fail(E.DICT_AMBIGUOUS, `本科部已有字典「${name}」，請直接綁定其 id，不要新建`, { existing: inDept });
-      if (!d.pendingDictionaries.some(p => p.name === name)) d.pendingDictionaries.push({ name, comment: comment || '' });
+      addPending(d, name, comment, memo);
       store.saveDraft(d);
-      return { pending: d.pendingDictionaries, collision_other_types: collision };
+      return { pending: d.pendingDictionaries, collision_other_types: collision, warnings: (comment || '').trim() ? [] : [`W_DICT_NO_DESC：新字典「${name}」沒有說明（comment）；請補一行語意`] };
     }
   },
   {
@@ -183,44 +209,55 @@ export const TOOLS = [
     name: 'form_import',
     description: '【v1 改版】載入既有表單作為新 draft：範本套件 v2（.package.json 或含套件的 .htm）、舊版 .htm（var tempdata）、' +
       '編輯器「匯出 JSON 文件」的 .json。所有區塊（表格、圖形、頁籤、群組…）、計算式、巨集、表單 JS 都原封保留；輸出時是**新表單**，' +
-      '不沿用原 templateID。捷徑與作業別預設不沿用（避免與原表單在 HIS 清單重複），需要時明確指定。',
-    inputSchema: { type: 'object', required: ['source_path', 'name', 'dept_no'], properties: {
+      '不沿用原 templateID。捷徑與作業別預設不沿用（避免與原表單在 HIS 清單重複），需要時明確指定。' +
+      '要更新同一張線上範本（online_template_update）時帶 for_update:true：名稱可省略或與原表單相同、捷徑／作業別／Info 沿用來源，' +
+      '上架時沒有明確修改的名稱、捷徑、作業別、Info 一律沿用線上值（不會改名或下架）。',
+    inputSchema: { type: 'object', required: ['source_path', 'dept_no'], properties: {
       source_path: str('來源檔路徑（相對於工作目錄，且必須在工作目錄內）'),
-      name: str('新表單名稱（≤36 字；必須與原表單區分）'), dept_no: str('目標科部代碼'),
-      shortcut: str('新捷徑（選填；預設空白＝不上架）'),
-      groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別（選填；預設不勾）' },
+      name: str('新表單名稱（≤36 字；必須與原表單區分；for_update:true 時選填，可與原表單相同）'), dept_no: str('目標科部代碼'),
+      shortcut: str('新捷徑（選填；預設空白＝不上架；for_update:true 時預設沿用來源）'),
+      groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別（選填；預設不勾；for_update:true 時預設沿用來源）' },
       description: str('Info（選填；預設沿用原表單）'),
-      folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys'] }) } },
+      folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys'] }),
+      for_update: bool('要以 online_template_update 更新來源範本（來源必須帶 templateID：online_template_get(save:true) 的套件，或 iot 有 templateID／sheetid 的 .htm）') } },
     handler(a) {
       const ws = store.workspace();
       const p = path.resolve(ws.root, String(a.source_path || ''));
       if (!p.startsWith(ws.root + path.sep)) fail(E.INVALID_INPUT, '來源檔必須在工作目錄內');
       if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${a.source_path}`);
       if (fs.statSync(p).size > 10 * 1024 * 1024) fail(E.INVALID_INPUT, '來源檔超過 10MB');
-      const name = String(a.name || '').trim();
-      if (!name) fail(E.INVALID_INPUT, '新表單名稱不可空白');
-      if (name.length > 36) fail(E.INVALID_INPUT, '表單名稱超過 36 字');
-      checkText(name, 'name');
-
+      const forUpdate = !!a.for_update;
       const src = parseSource(fs.readFileSync(p, 'utf8'), path.basename(p));
       const js = (src.form.find(x => x.itemtype === 'javascript') || {}).content || '';
       const iot = src.form.find(x => x.itemtype === 'iot');
       const srcName = (src.template && src.template.name) || path.basename(p).replace(/\.[^.]+$/, '').replace(/\.package$/, '');
-      if (name === srcName) fail(E.INVALID_INPUT, '新表單名稱不可與原表單相同');
+      const srcID = String((src.template && src.template.templateID) || iot.templateID || iot.sheetid || '');
+      if (forUpdate && !srcID) fail(E.INVALID_INPUT, '來源沒有 templateID（套件 template.templateID 或 iot 的 templateID／sheetid），不能用來更新線上範本；請先 online_template_get(save:true)');
+      const name = String(a.name !== undefined ? a.name : forUpdate ? srcName.slice(0, 36) : '').trim();
+      if (!name) fail(E.INVALID_INPUT, '新表單名稱不可空白');
+      if (name.length > 36) fail(E.INVALID_INPUT, '表單名稱超過 36 字');
+      checkText(name, 'name');
+      if (!forUpdate && name === srcName) fail(E.INVALID_INPUT, '新表單名稱不可與原表單相同（要更新同一張範本請帶 for_update:true）');
+      const st = (forUpdate && src.template) || {};
+      // metaSet：使用者明確指定的欄位；online_template_update 只寫入這些欄位的 draft 值，其餘沿用線上值
+      const metaSet = ['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined);
       const d = {
         draft_id: store.newDraftId(), created: new Date().toISOString(),
-        meta: { name, dept_no: String(a.dept_no), shortcut: a.shortcut ? String(a.shortcut).toLowerCase() : '',
-          groups: a.groups || [], description: a.description !== undefined ? a.description : ((src.template && src.template.description) || ''),
+        meta: { name, dept_no: String(a.dept_no),
+          shortcut: a.shortcut !== undefined ? String(a.shortcut).toLowerCase() : String(st.shortcut || '').toLowerCase(),
+          groups: a.groups || (Array.isArray(st.groups) ? st.groups.slice() : []),
+          description: a.description !== undefined ? a.description : ((src.template && src.template.description) || ''),
           folder_type: a.folder_type || '', options: {} },
+        metaSet, forUpdate,
         areas: src.form.filter(x => x.itemtype !== 'javascript' && x.itemtype !== 'iot')
           .map(x => ({ imported: true, area: structuredClone(x) })),
         source: {
           kind: src.kind, javascript: js, iot: structuredClone(iot),
           presets: src.presets || [], dictionaries: src.dictionaries || [],
-          derivedFrom: {
-            templateID: String((src.template && src.template.templateID) || iot.templateID || iot.sheetid || ''),
-            name: srcName, sha256: sha256(JSON.stringify(src.form))
-          }
+          derivedFrom: { templateID: srcID, name: srcName, sha256: sha256(JSON.stringify(src.form)) },
+          // 套件（online_template_get 存檔或匯出的套件）是當時的線上內容：上架更新時用它比對「線上自來源後被改的地方」。
+          // 外部產生的 .htm／JSON 本身已含修改，無法分辨，不記錄
+          digest: src.template ? digestForm(src.form) : null
         },
         pendingDictionaries: [], touched: [], nextItemId: 1
       };
@@ -233,7 +270,9 @@ export const TOOLS = [
         draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom,
         area_types: types, controls: v.stats.controls, next_itemid: d.nextItemId,
         js_chars: js.length, presets: d.source.presets.length,
-        notes: ['輸出為新表單，不沿用原 templateID', '捷徑與作業別預設不沿用（避免在 HIS 清單重複）'],
+        notes: forUpdate
+          ? [`用於更新範本 ${srcID}（online_template_update）`, '上架時名稱、捷徑、作業別、Info 沿用線上值；要改請用 form_update_meta 明確設定']
+          : ['輸出為新表單，不沿用原 templateID', '捷徑與作業別預設不沿用（避免在 HIS 清單重複）'],
         validation: { valid: v.valid, errors: v.errors, warnings: v.warnings.slice(0, 20), warnings_total: v.warnings.length }
       };
     }
@@ -258,6 +297,7 @@ export const TOOLS = [
       if (a.description !== undefined) d.meta.description = String(a.description);
       if (a.folder_type !== undefined) d.meta.folder_type = a.folder_type;
       if (a.dept_no !== undefined) d.meta.dept_no = String(a.dept_no);
+      d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
       return { meta: d.meta };
     }
@@ -274,7 +314,7 @@ export const TOOLS = [
         options: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { value: { type: 'string' }, further: { type: 'array', items: { type: 'number' } } } }] } },
         multiple: bool('多選'), row: { type: 'number' }, datagroup: str('連動群組'), filter: bool('篩選'),
         minval: { type: 'number' }, maxval: { type: 'number' }, numpad: bool('數字鍵盤'), format: str('calendar：date|time|datetime'),
-        dictionary: { type: 'object', properties: { id: str('既有字典 id'), name: str('字典名稱') }, description: '重新綁定；傳 {} 表示解除綁定' },
+        dictionary: { type: 'object', properties: { id: str('既有字典 id'), name: str('字典名稱'), comment: str('新字典的一行說明（desc）'), memo: { type: 'object', description: '新字典的補述（meaning／type／unit／range／asr／calx／llm／scope）' } }, description: '重新綁定；傳 {} 表示解除綁定' },
         dicrole: str('nohis | tohis | fromhis | puthis', { enum: ['nohis', 'tohis', 'fromhis', 'puthis'] }),
         label_format: str('label：defaultValue | Reference | formula | hisquery', { enum: LABEL_FORMATS }),
         formula: str('label 計算式（Calx；以 A<itemid> 參照，比較運算子兩側加空白）'),
@@ -442,17 +482,25 @@ export const TOOLS = [
       'tab1＝垂直頁籤、tab2＝水平頁籤（titles＝頁籤名稱）；table1＝欄向動態表格（titles＝欄標題，使用者按「+」新增列）、table2＝列向動態表格（titles＝列標題，按「+」新增欄）。' +
       '權限預設為所有人（doctor）可顯示、可編輯，並回傳文字；要隱藏或不回傳時，必須明確宣告 hidden 或 return_text:false。雙欄 form2 不支援。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
-      draft_id: str('draft id'), type: str('區塊類型（預設 form）', { enum: AREA_TYPES }), title: str('區塊標題（只用於預覽與說明）'),
+      draft_id: str('draft id'), type: str('區塊類型（預設 form）', { enum: AREA_TYPES }),
+      title: str('區塊標題：**不會顯示在 HIS 表單上**，只用於預覽與計畫；要讓使用者看到標題請帶 visible_title:true，或第一個控制項的說明文字寫成標題'),
+      visible_title: bool('文字區塊（form）：在區塊第一行插入一行可見的標題文字（內容＝title）'),
       rows: { type: 'array', items: { type: 'string', enum: FORMTABLE_PATTERNS }, description: 'formtable：每列的欄寬（總和 6），預設 ["3,3"]' },
       titles: { type: 'array', items: { type: 'string' }, description: 'tab1/tab2：頁籤名稱；table1：欄標題；table2：列標題（不可含半形單引號）' },
       hidden: bool('刻意隱藏的區塊（authread 設為空）'), return_text: bool('false 表示不回傳 HIS（gettext:false）') } },
-    handler({ draft_id, type = 'form', title, hidden, return_text, rows, titles }) {
+    handler({ draft_id, type = 'form', title, visible_title, hidden, return_text, rows, titles }) {
       if (!AREA_TYPES.includes(type)) fail(E.UNSUPPORTED, `區塊類型 ${type} 不支援（可用：${AREA_TYPES.join(' / ')}；雙欄 form2 無法由編輯器建立，不支援）`);
+      if (visible_title) {
+        if (type !== 'form') fail(E.UNSUPPORTED, `visible_title 只適用文字區塊（form）；${type} 的標題請放在前一個文字區塊的最後一行，或第一格控制項的說明文字`);
+        if (!String(title || '').trim()) fail(E.INVALID_INPUT, 'visible_title 需要 title');
+        checkText(title, 'title');
+      }
       const d = store.loadDraft(draft_id);
       const auth = { authread: hidden ? [] : [RUNTIME_ROLE], authwrite: [RUNTIME_ROLE], gettext: return_text !== false };
       if (type === 'form') {
         const itemid = nextId(d);
-        d.areas.push({ itemid, type, title: title || '', hidden: !!hidden, return_text: return_text !== false, ...auth, items: [] });
+        const items = visible_title ? [{ datatype: 'text', datavalue: String(title).trim() }, { datatype: 'newline' }] : [];
+        d.areas.push({ itemid, type, title: title || '', hidden: !!hidden, return_text: return_text !== false, ...auth, items });
         store.saveDraft(d);
         return { area_itemid: itemid };
       }
@@ -481,7 +529,7 @@ export const TOOLS = [
     name: 'form_add_control',
     description: `在區塊末端加入「說明文字＋控制項（＋換行）」。支援的 datatype：${DATATYPES_V02.join(', ')}。` +
       'label 可用 format=formula（計算式）或 hisquery（HIS 參照）；action 為巨集按鈕、action2 為 LLM 按鈕。公式與腳本寫入前會先檢查。' +
-      '綁定字典時用 dictionary.id（須存在於字典 CSV）或 dictionary.name（本科部唯一符合則自動綁 id；查無則列為待新建，匯入後角色一律為 tohis）。',
+      '綁定字典時用 dictionary.id（須存在於字典索引）或 dictionary.name（本科部比對範圍內體系優先、同層級唯一才自動綁 id；有 alias_of 改綁目標；查無則列為待新建，匯入後角色一律為 tohis）。新字典請帶 dictionary.comment（一行說明）與 dictionary.memo（補述），會寫進字典 JSON。',
     inputSchema: { type: 'object', required: ['draft_id', 'area_itemid', 'control'], properties: {
       draft_id: str('draft id'), area_itemid: { type: 'number' },
       cell: { type: 'object', description: '表格／頁籤區塊內的位置：formtable 用 {row, col}；tab1/tab2/table1/table2 用 {index}（皆從 0 起算）。文字區塊不用帶',
@@ -490,7 +538,7 @@ export const TOOLS = [
       newline_after: bool('控制項後換行（預設 true；只用於本工具新建的文字區塊）'),
       control: { type: 'object', required: ['datatype'], properties: {
         datatype: str('控制項類型', { enum: DATATYPES_V02 }),
-        dictionary: { type: 'object', properties: { id: str('既有字典 id'), name: str('字典名稱') } },
+        dictionary: { type: 'object', properties: { id: str('既有字典 id'), name: str('字典名稱'), comment: str('新字典的一行說明（desc）'), memo: { type: 'object', description: '新字典的補述（meaning／type／unit／range／asr／calx／llm／scope）' } } },
         dicrole: str('nohis | tohis | fromhis | puthis', { enum: ['nohis', 'tohis', 'fromhis', 'puthis'] }),
         datavalue: str('預設值（禁止放病人資料）'), required: bool('必填（只在 HIS 端提醒）'),
         tocalc: bool('參與計算（預設 true）'), toSAS: bool('To SAS'),
@@ -503,7 +551,7 @@ export const TOOLS = [
         reference: { type: 'number', description: '資料引用來源 itemid' },
         formula: str('label 計算式（Calx；以 A<itemid> 參照，比較運算子兩側加空白，不能用 &）'),
         hisquery: str('label HIS 參照'), his_query_title: str('HIS 參照標題'),
-        action_script: str('action：巨集步驟；action2：LLM prompt'), action_name: str('按鈕文字（空白＝隱藏）'),
+        action_script: str('action：巨集步驟；action2：LLM prompt（可先留空，引用的欄位建好後再以 form_update_control 補上；空的會在 form_validate 報 E_ACTION_EMPTY）'), action_name: str('按鈕文字（空白＝隱藏）'),
         action_id: { type: ['number', 'string'], description: '結果回傳 ID（action2 必填）' },
         fur_action_id: { type: ['number', 'string'], description: 'textbox：輸入後觸發的巨集按鈕 itemid' } } } } },
     handler({ draft_id, area_itemid, label_text, newline_after = true, control, cell }) {
@@ -635,7 +683,7 @@ export const TOOLS = [
           '只在本機離線呈現；不存檔、不匯入。draft 修改後要重新呼叫本工具並重新整理頁面',
           'LLM／影像 LLM／語音：在目標欄位顯示「將送出的 prompt 與模型」，不實際呼叫',
           'HIS 參照：在欄位顯示查詢字串，不實際查詢；倉儲與 HIS API 請求一律封鎖，頁面底部列出封鎖與模擬紀錄',
-          ...(hasRuntime ? [] : [`找不到 ${path.join(runtimeWeb(ws), 'TempHtml.html')}：HTML 預覽需要平台前端的本機副本（設定 STRUCMED_RUNTIME_WEB）`])
+          ...(hasRuntime ? [] : [`找不到 ${path.join(runtimeWeb(ws), 'TempHtml.html')}：HTML 預覽需要平台前端的本機副本（設定 STRUCMED_RUNTIME_WEB）；編輯器匯出的 .htm 不能代替（引擎與函式庫都向站台載入，預覽會封鎖）`])
         ]
       };
     }

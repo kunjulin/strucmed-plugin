@@ -18,7 +18,7 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
 
 ## 步驟
 
-1. `form_preview`（`format: "html"`）產生預覽資料。回 `runtime_available: false` → 跳過本 skill，告知使用者需設定 `STRUCMED_RUNTIME_WEB`（平台 `web/` 的本機副本）。
+1. `form_preview`（`format: "html"`）產生預覽資料。回 `runtime_available: false` → 跳過本 skill，告知使用者需設定 `STRUCMED_RUNTIME_WEB`（平台 `web/` 的本機副本），G2 只剩離線檢查（`form_validate`、`formula_check` 試算）。編輯器匯出的 `.htm` 不能代替副本：引擎與函式庫都向站台載入，預覽會封鎖。
 2. 啟動或沿用 harness 伺服器並取得連結（它會先檢查 8765，沒開就在背景啟動；不要叫使用者自己啟動）：
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/preview.mjs" <draft_id>

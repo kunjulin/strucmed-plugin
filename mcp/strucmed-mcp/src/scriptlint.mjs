@@ -372,6 +372,12 @@ export function lintHisQuery(q) {
 
 // ── LLM 控制項（action2）：actionScript 整段經 Calx 求值後當作 prompt（TempHtml.js:3923-3928）──
 export function lintPrompt(text, ctx = {}) {
+  // 整段是 LLMQUERY(...)：這是巨集按鈕（action）的腳本，不是 LLM 按鈕的 prompt；用錯檢查種類時只提示改用 kind=macro
+  if (/^\s*LLMQUERY\s*\(/i.test(String(text || ''))) {
+    const m = lintMacro(text, ctx);
+    return { findings: [warn('W_KIND_MISMATCH', '內容以 LLMQUERY( 開頭，是巨集按鈕（action）的腳本：請用 formula_check 的 kind=macro 檢查；LLM 按鈕（action2）的 prompt 只寫要送出的文字運算式'),
+      ...m.findings.filter(f => f.code !== 'W_LLM_NOT_AWAITED')], refs: m.refs, ai: m.ai };
+  }
   const r = lintFormula(text, ctx, { context: 'macro', what: 'LLM 控制項的 prompt' });
   identifierWarning(r.functions, r.findings, 'LLM 控制項');
   promptDesignWarnings(text, r, r.findings, 'LLM 控制項');

@@ -6,6 +6,7 @@
 import { RUNTIME_ROLE, DATATYPES_V02, cellKind } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
+import * as dc from './dictcomment.mjs';
 
 // 由 scriptlint 以更精確的訊息回報的參照種類
 const SCRIPT_REF_KINDS = new Set(['formula', 'actionScript', 'target', 'actionID']);
@@ -23,17 +24,21 @@ export function scriptFindings(c, ctlMap, policy = {}, tableIds = null) {
     if (c.datatype === 'label' && c.format !== 'formula') found.push({ code: 'E_FORMULA_FORMAT', level: 'error', message: `format 是「${c.format || '（空）'}」但 formula 不是空的：runtime 仍會計算它（TempHtml.js:4368）` });
   }
   if (c.datatype === 'label' && c.format === 'hisquery') found.push(...lintHisQuery(c.hisquery).findings);
-  if (c.datatype === 'action') {
+  const emptyAction = (c.datatype === 'action' || c.datatype === 'action2') && !String(c.actionScript || '').trim();
+  if (emptyAction) found.push({ code: 'E_ACTION_EMPTY', level: 'error', message: `${c.datatype === 'action' ? '巨集按鈕' : 'LLM 按鈕'}的腳本是空的：按下去不會有任何動作；請用 form_update_control 補上 action_script` });
+  if (c.datatype === 'action' && !emptyAction) {
     const r = lintMacro(c.actionScript, ctx);
     found.push(...r.findings);
     if (r.refs.length || r.targets.length) macroIds = true;
     r.ai.forEach(x => ai.push({ itemid: Number(c.itemid), name: c.actionName || '', ...x }));
   }
   if (c.datatype === 'action2') {
-    const r = lintPrompt(c.actionScript, ctx);
-    found.push(...r.findings);
-    if (r.refs.length) macroIds = true;
-    r.ai.forEach(x => ai.push({ itemid: Number(c.itemid), name: c.actionName || '', ...x, target: c.actionID }));
+    if (!emptyAction) {
+      const r = lintPrompt(c.actionScript, ctx);
+      found.push(...r.findings);
+      if (r.refs.length) macroIds = true;
+      r.ai.forEach(x => ai.push({ itemid: Number(c.itemid), name: c.actionName || '', ...x, target: c.actionID }));
+    }
     if (!c.actionID) found.push({ code: 'E_MACRO_SYNTAX', level: 'error', message: 'LLM 按鈕沒有設定回覆寫入的 ID（actionID）' });
   }
   if ((c.datatype === 'action' || c.datatype === 'action2') && c.actionID && String(c.actionID) !== '0') {
@@ -92,6 +97,13 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     if (!(a.authwrite || []).includes(RUNTIME_ROLE)) warn('W_AREA_AUTH', `${where}：所有人未勾「編輯」，runtime 會鎖定`, a.itemid);
     if (a.gettext !== true && a.return_text !== false) warn('W_AREA_AUTH', `${where}：未勾「回傳文字」且未宣告 return_text:false，不會帶回 HIS`, a.itemid);
     if (!a.structured && !a.items.some(i => i.itemid !== undefined)) warn('W_EMPTY_AREA', `${where} 沒有控制項`, a.itemid);
+    // 區塊 title 不會出現在 HIS 表單上：有 title 的文字區塊或固定表格，第一行要有可見的文字（說明文字或純文字型 label）
+    if (String(a.title || '').trim() && (!a.structured || a.area.itemtype === 'formtable')) {
+      const stream = a.structured ? ((((a.area.item[0] || {}).item || [])[0] || {}).item || []) : a.items;
+      const first = stream.find(i => i.datatype !== 'newline');
+      const visible = first && (first.datatype === 'text' ? String(first.datavalue || '').trim() : first.datatype === 'label' && (first.format || 'defaultValue') === 'defaultValue');
+      if (!visible) warn('W_AREA_NO_VISIBLE_HEADING', `${where}「${a.title}」：區塊標題不會顯示在表單上，第一行也沒有說明文字，HIS 畫面上這個區塊沒有標題；請用 form_add_area 的 visible_title，或在第一個控制項加說明文字`, a.itemid);
+    }
     if (a.structured) {
       // 表格／頁籤：每一格都要有控制項，否則 HIS 端會出現空白格或空白頁籤
       const cells = a.area.itemtype === 'formtable' ? a.area.item.flatMap((r, ri) => r.item.map((c, ci) => [`第 ${ri} 列第 ${ci} 欄`, c.item]))
@@ -222,7 +234,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   if (macroIds) warn('W_RENUMBER_MACRO', '表單有巨集或 LLM 按鈕：編輯器「重新編號」不會更新巨集內容中的 A<n> 與目標 id，匯入後請勿按「重新編號」');
   if (ai.length) {
     warn('W_AI_DATAFLOW', `有 ${ai.length} 個 AI 步驟會把表單內容送到院內 LLM／語音服務（清單見 manifest「AI 資料流」；交付時必須告知使用者）`);
-    if (!Array.isArray(policy.gateway_models)) warn('W_LLM_WHITELIST_STALE', '模型白名單尚未從 LlmGateway 取得（llmgateway_models），只以內建靜態表檢查模型名稱');
+    if (!Array.isArray(policy.gateway_models) && policy.site_external) warnings.push({ code: 'W_LLM_WHITELIST_STALE', expected: true, message: '院外預期：院外站台沒有 LlmGateway，模型名稱只以內建靜態表檢查；回院內後以 llmgateway_models 更新並實測 AI 巨集' });
+    else if (!Array.isArray(policy.gateway_models)) warn('W_LLM_WHITELIST_STALE', '模型白名單尚未從 LlmGateway 取得（llmgateway_models），只以內建靜態表檢查模型名稱');
     else if (policy.gateway_stale) warn('W_LLM_WHITELIST_STALE', `LlmGateway 白名單快取已 ${policy.gateway_age_days} 天，建議重新 llmgateway_models`);
   }
 
@@ -231,6 +244,11 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   if (draft.source && draft.source.javascript) warn('W_CUSTOM_JS', `保留原表單 JS（${draft.source.javascript.length} 字元），本工具未審查其內容，請人工審查後再使用`);
 
   const nodes = controls.map(x => x.node);
+  // 字典補述與層級（docs/14）：綁定的字典沒有 memo、或只是科部層級（own／sub／dpt）→ 統計供計畫與審查用
+  const dictOf = id => dictIndex ? dc.enrich(dictIndex.entries.find(e => e.id === id), m.dept_no) : null;
+  const boundEntries = nodes.filter(c => c.dicid).map(c => dictOf(c.dicid)).filter(Boolean);
+  const dictMissingMemo = boundEntries.filter(e => !e.memo).length + pending.filter(p => !p.memo).length;
+  const dictDeptLevel = boundEntries.filter(e => ['own', 'sub', 'dpt'].includes(dc.level(e.dicType, m.dept_no))).length;
   return {
     valid: errors.length === 0,
     errors, warnings, ai,
@@ -239,6 +257,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       new_or_modified: controls.filter(x => x.touched).length,
       dict_bound: nodes.filter(c => c.dicid).length,
       dict_new: pending.length,
+      dict_missing_memo: dictMissingMemo,
+      dict_dept_level: dictDeptLevel,
       required: nodes.filter(c => c.required).length,
       formulas: nodes.filter(c => c.formula).length,
       macros: nodes.filter(c => c.datatype === 'action' || c.datatype === 'action2').length,

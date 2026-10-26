@@ -77,7 +77,7 @@ test('antigravity hook: 非寫入 tool 與第一段照原流程（ask），不�
 });
 
 test('antigravity hook: 有計畫但未核准、改過計畫都阻擋；核准後回 ask；沒有計畫交給 MCP 的瀏覽器確認（ask）', () => {
-  for (const tool of ['online_template_create', 'online_template_update', 'online_dictionary_create', 'online_dictionary_batch']) {
+  for (const tool of ['online_template_create', 'online_template_update', 'online_dictionary_create', 'online_dictionary_batch', 'online_dictionary_memo_set']) {
     const d = decision(run(AGY_HOOK, agy(tool, { draft_id: DRAFT, confirm_token: 't' }), { env: { STRUCMED_WORKSPACE: workspace('pending') } }));
     assert.equal(d.decision, 'deny', tool);
     assert.match(d.reason, /尚未核准/);
@@ -122,4 +122,15 @@ test('antigravity hook: 找不到設定時用 MCP 的預設工作目錄（~/Docu
   const d = JSON.parse(r.stdout);
   assert.equal(d.decision, 'deny');
   assert.match(d.reason, /尚未核准/);
+});
+
+test('gate: dictionary memo without draft_id goes to the browser confirmation; with draft_id it needs G3 approval', () => {
+  for (const tool of ['online_dictionary_memo_set']) {
+    const pending = workspace('pending');
+    assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__' + tool, tool_input: { dic_id: 'D1', confirm_token: 't' }, cwd: pending }).status, 0, tool + ' standalone');
+    assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__' + tool, tool_input: { dic_id: 'D1', draft_id: DRAFT, confirm_token: 't' }, cwd: pending }).status, 2, tool + ' in G3 but not approved');
+    assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__' + tool, tool_input: { dic_id: 'D1', draft_id: DRAFT, confirm_token: 't' }, cwd: workspace('approved') }).status, 0, tool + ' in G3 approved');
+  }
+  // 範本與字典新建仍然一定要 draft_id
+  assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__online_dictionary_create', tool_input: { confirm_token: 't' }, cwd: workspace('approved') }).status, 2);
 });

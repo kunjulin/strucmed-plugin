@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch)",
+        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch|dictionary_memo_set)",
         "hooks": [
           {
             "type": "command",
@@ -36,7 +36,7 @@
         ]
       },
       {
-        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch)",
+        "matcher": ".*online_(template_create|template_update|dictionary_create|dictionary_batch|dictionary_memo_set)",
         "hooks": [
           {
             "type": "command",

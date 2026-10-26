@@ -14,6 +14,39 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.6.0（MCP 2.4.0）— 2026-10-26：字典 JSON 說明、補述、FHIR 對應與體系升級
+
+尚未發佈。平台端（`strucmed` 的 `DictComment`、comment／memo／promote／demote／alias 端點、`dictSystem` 權限、字典頁與編輯器 UI）另行合併與部署；**平台上線前不要發佈**。步驟 0（`tools/v0-harness/dict-json-test.mjs`）已於 2026-10-26 在正式倉儲完成。發佈時：未發佈；`npm test` 128 過、1 個略過。
+
+- **字典說明是 JSON 容器**：新增 `dictcomment.mjs`，與平台同一份規格（`{"v":1,"desc":…,"sys":…,"memo":…,"fhir":[…],"alias_of":…}`，壓縮、`v`／`desc` 在最前面、鍵順序固定、空段省略、整段 ≤ 1800 字）。舊純文字字典整段視為 desc；只有 desc 時維持純文字。
+- **新建字典一次寫好說明與補述**：`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo`、`dictionary_create` 的 `comment`／`memo`；`online_dictionary_create`／`batch` 與 `form_export` 的套件用同一個 builder 組 dicComment。沒有說明時回 `W_DICT_NO_DESC`。
+- **綁定優先體系字典**：`resolve` 依層級 體系 → 本科 → 次專 → 科部；不同層級同名時綁體系那本（`W_DICT_PREFER_SYSTEM`），只有同一層級同名才 `E_DICT_AMBIGUOUS`；`alias_of` 自動改綁目標（`W_DICT_ALIAS`）。綁到沒有 memo 或科部層級的字典時回 `W_DICT_NO_MEMO`／`W_DICT_DEPT_LEVEL`。
+- **搜尋**：`online_dictionary_search`、`dictionary_search` 每筆帶 `level`、`desc`、`sys`、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序，fuzzy 也搜 desc 與 memo。站台未升級時回 `W_SERVER_OLD`，由本機解析。離線 CSV 中 JSON 被逗號斷欄時回 `W_DICT_CSV_JSON_BROKEN`。
+- **新工具**：`online_dictionary_memo_set`（補述與 FHIR 對應，If-Match，兩段式＋瀏覽器確認；memo 補充合併；本機先做 FHIR 格式檢查 `E_INVALID_FHIR`／`W_FHIR_TYPE_MISMATCH`；線上已被修改回 `E_CONFLICT` 附目前內容）。
+- **體系標記 `sys: { code, by, at }`，升級不改 id**：體系字典管理者在字典頁一鍵升級（寫入標記）或降回科部（移除標記），id 與 dicType 都不變。`level(dicType, deptNo, sysCode)`：帶標記且 `code` 等於登入者體系代碼（deptNo 第 2–3 碼）時是 sys；比對範圍與綁定（`resolve`、`search`）納入同體系他科帶標記的字典，並優先綁定。`memo_set` 寫入時保留標記。**MCP 沒有升級工具**：AI 只在 G1「### 體系升級建議」提出，交付時轉給管理者。開發中曾有的 `online_dictionary_promote_request`、`online_dictionary_promotions` 已移除；舊的 `promote` 段落讀取時保留。
+- **依正式倉儲實測（步驟 0）**：倉儲不允許同 id 改 dicType，所以升級改為在說明寫入體系標記（見上）；體系內已有同名字典時由管理者設為別名（`alias_of`）；倉儲是 Oracle Big5／CP950：emoji 被存成「？」，上標「²」被換掉還吃掉後面的字元讓整段 JSON 損毀。新增 `cp950.mjs`（與平台 `DictComment.IsStorable` 同一條規則，共 13,622 字），`dictcomment.checkStorable` 在字典名稱、說明、補述、FHIR 只允許這些字，訊息指出字元、碼位與位置；平台另做寫入後讀回比對。中文 1800 字完整保留，上限維持 1800。
+- **flag `dictionaryWrite` 預設改為開**。
+- **G3 hook**：涵蓋補述；帶 `draft_id` 時檢查該 draft 的上架計畫核准，單獨使用時交給瀏覽器確認頁。
+- **form_validate.stats**：新增 `dict_missing_memo`、`dict_dept_level`。
+- **skill 與 agent**：`FormDesignRules.md` 新增〈字典說明、補述與層級〉；`Gates.md` §2 結構表加層級、「待新建字典」加說明與補述欄、新增「### 字典補述」（含 FHIR 與驗證狀態）與「### 體系升級建議」；form-planner／builder／reviewer、publish-form（寫入順序：字典 → 補述 → 範本；體系升級建議交給管理者）、create-form（字典來源以線上為主）、edit-form（建議改綁體系字典、同步 memo）、tune-prompt（欄位描述以 memo 為依據）。
+- **測試**：`unit.test.mjs`（JSON 格式、舊文字相容、FHIR 檢查、層級、體系標記與綁定、alias、CSV 斷欄、套件說明）、`online.test.mjs`（假伺服器加字典 JSON、memo 端點與帶標記的他科字典；flag 預設開；沒有升級工具）、`gate.test.mjs`（補述的閘門）。
+
+### 試用回饋修正（M9R，3.5.0 試用 2026-10-26）
+
+- **update 不再改名或下架**（高）：`online_template_update` 的名稱、捷徑、作業別、Info 預設沿用線上值，只有 draft 明確修改過的欄位（`form_import` 參數、`form_update_meta`）才覆寫；plan 新增 `meta`（線上／draft／寫入值並列），`W_META_RENAME`、`W_UNPUBLISH`（會從 HIS 清單消失）、`W_META_CHANGED`、`W_META_KEPT_ONLINE`。第二次呼叫重讀線上：ETag 不同 → `E_CONFLICT`（不開確認頁）；名稱等在取得計畫後被改 → `E_CONFIRM_MISMATCH`。
+- **`form_import(for_update:true)`**（高，#7）：要更新同一張範本時名稱可省略或與原表單相同，捷徑／作業別／Info 沿用來源；來源沒有 templateID 時拒絕。
+- **update 的差異看得到內容**（高）：新增 `formdiff.mjs`，plan.diff 逐項比對控制項、區塊版面與說明文字、表單 JS、iot（排除編輯器與伺服器每次改寫的欄位），回 `changed_itemids`、`changed_areas`、`js_changed`、`iot_changed`、`summary`；來源是線上套件時另比對 `online_since_source`，線上自來源後被改過回 `W_ONLINE_CHANGED_SINCE_SOURCE`（更新會蓋掉）；完全沒變回 `W_NO_CHANGE`。寫入確認頁把警告、meta、diff 排在前面。
+- **update 保留 iot ID**（#9）：PUT 本文的 iot `templateID`／`sheetid` 帶線上 ID、`d_url` 沿用來源，不依賴伺服器補回。
+- **區塊標題不顯示**（中，#3）：`form_add_area` 說明寫明 title 不會出現在 HIS 表單；新增 `visible_title`（在文字區塊第一行插入可見標題）；`form_validate` 新增 `W_AREA_NO_VISIBLE_HEADING`；form-planner、form-builder、`LayoutPatterns.md` 同步。
+- **`online_template_get(save:true)` 只回摘要**（中，#5）：名稱、捷徑、作業別、rev、區塊與控制項數、JS 字數、存檔路徑；`include_package:true` 才回整包；不存檔且超過 5 萬字元時回 `W_LARGE_RESPONSE`。
+- **runtime 預覽**（中，#4）：實查編輯器匯出的 `.htm` 只是 `TempHtml.html` 外殼加 `<base href=站台>`，引擎（`js/TempHtml.js`）與函式庫都向站台載入，離線預覽會封鎖，不能代替平台 `web/` 副本；README、verify-runtime、`form_preview` 訊息寫明。
+- **巨集腳本可先留空**（低，#6）：`form_add_control` 的 action／action2 可不帶 `action_script`，`form_validate` 回 `E_ACTION_EMPTY` 直到補上；form-builder 不再放佔位 `1`。
+- **文件與實作一致**（低，#8）：update 允許的來源寫明為「derivedFrom.templateID＝線上 ID」，包含 iot 帶線上 ID 的外部 `.htm`；edit-form、publish-form、`PublishWorkflow.md` 同步。
+- **`formula_check` 種類提示**（低，#10）：`kind=prompt` 的內容以 `LLMQUERY(` 開頭時回 `W_KIND_MISMATCH`（請用 `kind=macro`），不再報 `W_LLM_NOT_AWAITED`。
+- **`online_me` 科部空白**（低，#11）：回 `W_NO_DEPT`，說明科部取自登入時填的科部代碼（不是由 HIS 帳號推得）與處理方式。
+- **小地方**（低，#12）：院外站台的 `W_LLM_WHITELIST_STALE` 標成「院外預期」（`expected: true`）；`report-issue.mjs` 在非 git 目錄不再印 `fatal: not a git repository`；G3 hook 的未核准訊息補「用 AskUserQuestion 取得核准，不要自己標 Approved」。
+- **測試**：新增 `trial-feedback.test.mjs`（for_update、formdiff、可見標題、空白巨集、kind 提示）；`online.test.mjs` 加 update 的 meta 沿用／`W_UNPUBLISH`／`W_META_RENAME`／重讀線上、`W_ONLINE_CHANGED_SINCE_SOURCE`、template_get 摘要、`W_NO_DEPT`。
+
 ## 3.5.0（MCP 2.3.0）— 2026-10-26：Antigravity plugin
 
 strucmed-skill#55；發佈：strucmed-plugin `ee5bed5`（由 main `19dc40f` 產生）。發佈時：`release-plugin.mjs` ok、196 個檔案、掃描無發現；`npm test` 104 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）；自 GitHub `git clone` 確認根目錄有 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`。MCP 程式不變。
@@ -21,6 +54,8 @@ strucmed-skill#55；發佈：strucmed-plugin `ee5bed5`（由 main `19dc40f` 產�
 文件更新（版本不變）：strucmed-skill#57 的 README 安裝說明（依工具分節，每個工具都有「用 prompt 安裝」與「自己用指令安裝」）與案例文件的登入說法，另於 strucmed-plugin `f83e0ab`（由 main `5c87f2f` 產生）發佈；`release-plugin.mjs` ok、3 個檔案有變動、掃描無發現；`npm test` 104 過、1 略過。
 
 文件更新（版本不變）：strucmed-skill#59 在 README「第一次使用」加入〈範例：一段 prompt 做出 MMSE／CDR 語音訪談表單〉，另於 strucmed-plugin `baaaceb`（由 main `077f72f` 產生）發佈；`release-plugin.mjs` ok、2 個檔案有變動、掃描無發現；`npm test` 104 過、1 略過。
+
+文件更新（版本不變）：strucmed-skill#61 在 README「安裝」新增〈更新（已經裝過的人）〉（各工具的更新 prompt、指令與確認方式；Antigravity 以前用複製方式安裝時的處理），另於 strucmed-plugin `ce9a2fd`（由 main `f4b6989` 產生）發佈；`release-plugin.mjs` ok、2 個檔案有變動、掃描無發現；`npm test` 104 過、1 略過。
 
 - **Antigravity plugin**：本 repo 根目錄新增 `plugin.json`、`mcp_config.json`、`hooks.json`（Antigravity 格式）、`rules/AGENTS.md`，整個 repo 同時是 Antigravity plugin。安裝：`git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugins/strucmed`；更新：`git pull`。skills、MCP 與 G3 hook 一起載入。
 - **不需要另外安裝 Node.js**：MCP 以 Antigravity 內建的 `agy-node`（Node 24）執行，cwd 是 plugin 資料夾、路徑用相對路徑；hook 以 sh 依序找 `agy-node`、`~/Library/Application Support/Antigravity/bin/agy-node`、`node`，都找不到就阻擋（只支援 macOS／Linux）。

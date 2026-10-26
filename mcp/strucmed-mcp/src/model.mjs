@@ -93,11 +93,11 @@ export function buildControl(itemid, c) {
   }
   if (dt === 'action' || dt === 'action2') {
     // 編輯器巨集面板的三個欄位（平台 web/js/scripts.js:2849-2854）；actionID 存成字串
-    if (!c.action_script || !String(c.action_script).trim()) fail(E.INVALID_INPUT, `${dt} 需要 action_script（${dt === 'action' ? '巨集步驟' : 'LLM prompt'}）`);
+    // action_script 可以先留空：腳本常要引用之後才建的欄位，建好後再 form_update_control 補上；仍是空的由 form_validate 報 E_ACTION_EMPTY
     o.actionName = c.action_name !== undefined ? String(c.action_name) : '';
     o.actionID = c.action_id === undefined || c.action_id === null || c.action_id === '' ? '' : String(parseInt(c.action_id, 10));
     if (o.actionID === 'NaN') fail(E.INVALID_INPUT, 'action_id 必須是 itemid（數字）');
-    o.actionScript = String(c.action_script);
+    o.actionScript = c.action_script === undefined || c.action_script === null ? '' : String(c.action_script);
     if (dt === 'action2' && !o.actionID) fail(E.INVALID_INPUT, 'LLM 按鈕（action2）需要 action_id：回覆要寫入哪個控制項');
   }
   if (c.fur_action_id !== undefined && c.fur_action_id !== '' && c.fur_action_id !== null) {

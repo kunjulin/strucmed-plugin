@@ -9,6 +9,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { buildPackage } from '../src/package.mjs';
+import * as dc from '../src/dictcomment.mjs';
 import { fakeAuthorize, browserLogin, browserApprove } from './fake-login.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +22,18 @@ const templates = new Map();             // 假伺服器保存的範本
 // 完整的範本套件 v2（form_import 會驗證 schema 與 integrity）；ETag 另外給（head sha 與 integrity 不同，與真實伺服器相同）
 const fakePackage = (id, template, form) => buildPackage({ form, meta: { name: template.name, dept_no: 'APP', groups: template.groups || [], shortcut: template.shortcut || '', description: template.description || '', folder_type: 'usr' }, generator: 'fake-v2', templateID: id });
 let tplSeq = 100, dictSeq = 0;
+// 假字典表（docs/14：dicComment 是 JSON 容器）。D5 是體系（PP＝APP 的第 2–3 碼）字典、D6 是其他體系的 5 碼字典、
+// D7 是同體系他科（XPPB0）由管理者升級的字典：dicType 不變，說明帶體系標記 sys.code＝PP
+const seedDicts = () => [{ id: 'D1', dicType: 'APP', dicName: '跌倒史', dicComment: '有無跌倒', createDate: '20260101' },
+  { id: 'D2', dicType: 'APP', dicName: '跌倒史', dicComment: '重複', createDate: '20250101' },
+  { id: 'D3', dicType: 'APP', dicName: '疼痛評估', dicComment: '', createDate: '20240101' },
+  { id: 'D5', dicType: 'PP', dicName: '體重', dicComment: dc.build({ desc: '體重（kg）', memo: { unit: 'kg' } }), createDate: '20230101' },
+  { id: 'D6', dicType: 'XAPP0', dicName: '握力', dicComment: '握力（kg）', createDate: '20220101' },
+  { id: 'D7', dicType: 'XPPB0', dicName: '鬆弛度', dicComment: dc.build({ desc: '關節鬆弛度', sys: { code: 'PP', by: 'ADM01', at: '2026-10-27T01:00:00Z' } }), createDate: '20210101' }];
+let dicts = seedDicts();
+const dictItem = d => { const p = dc.parse(d.dicComment); return { id: d.id, dicType: d.dicType, dicName: d.dicName, dicComment: d.dicComment, createDate: d.createDate,
+  desc: p.desc, sys: p.sys, memo: p.memo, fhir: p.fhir, aliasOf: p.alias_of, level: dc.level(d.dicType, 'APP', p.sys ? p.sys.code : ''), etag: dc.etag(d.dicComment) }; };
+const dictConflict = (res, d) => json(res, 409, { ok: false, error: { code: 'E_CONFLICT', message: '字典已被修改', details: { etag: dc.etag(d.dicComment), current: dictItem(d) } } });
 let notes = [{ dictID: 'T-1', dictVal: '跌倒評估' }];   // struNote 清單   // 新建的範本從 T-101 起，不與預設的 T-1 衝突
 
 // ── 假伺服器 ────────────────────────────────────────────────
@@ -45,7 +58,7 @@ function handler(req, res) {
     const url = new URL(req.url, 'http://x');
     const body = raw ? JSON.parse(raw) : undefined;
     const auth = req.headers.authorization || '';
-    reqs.push({ method: req.method, path: url.pathname, search: url.search, auth, body });
+    reqs.push({ method: req.method, path: url.pathname, search: url.search, auth, body, ifMatch: String(req.headers['if-match'] || '') });
     const p = url.pathname.replace(/^\/strucmed\//, '');
     if (p === 'api/v2/auth/authorize' && req.method === 'GET') return login.authorize(url, res);
     if (p === 'api/v2/auth/token') {
@@ -107,7 +120,7 @@ function handler(req, res) {
     if (req.method === 'GET' && p === 'api/v2/me/notes') return json(res, 200, { ok: true, fillID: 'N1', items: notes });
     if (req.method === 'PUT' && p === 'api/v2/me/notes') { notes = (body.items || []).map(x => ({ dictID: x.dictID, dictVal: x.dictVal })); return json(res, 200, { ok: true, fillID: 'N1', count: notes.length }); }
     if (req.method === 'GET' && p === 'api/v2/me')
-      return json(res, 200, { userId: USER_ID, name: '測試醫師', deptNo: 'APP', folders: { usr: USER_ID, sub: 'APP', dpt: 'APP' }, isAdmin: false, tokenExpiresAt: '2026-10-19T12:00:00Z' });
+      return json(res, 200, { userId: USER_ID, name: '測試醫師', deptNo: behavior.noDept ? '' : 'APP', folders: { usr: USER_ID, sub: 'APP', dpt: 'APP' }, isAdmin: false, tokenExpiresAt: '2026-10-19T12:00:00Z' });
     if (req.method === 'GET' && p === 'api/health') return json(res, 200, { ok: true, ts: '2026-10-19T00:00:00Z' });
     if (req.method === 'GET' && p === 'api/v2/runtime/features')
       return json(res, 200, { ok: true, presets: true, recordDelete: true, save: url.searchParams.get('user') === USER_ID, query: false, queryRoot: 'x' });
@@ -117,11 +130,23 @@ function handler(req, res) {
     }
     if (req.method === 'GET' && p === 'api/v2/dictionaries') {
       const q = url.searchParams.get('q') || '';
-      const all = [{ id: 'D1', dicType: 'APP', dicName: '跌倒史', dicComment: '有無跌倒', createDate: '20260101' },
-        { id: 'D2', dicType: 'APP', dicName: '跌倒史', dicComment: '重複', createDate: '20250101' },
-        { id: 'D3', dicType: 'APP', dicName: '疼痛評估', dicComment: '', createDate: '20240101' }];
-      const items = all.filter(d => !q || d.dicName.includes(q));
+      const items = dicts.filter(d => !q || d.dicName.includes(q)).map(dictItem);
+      if (behavior.oldServer) for (const it of items) for (const k of ['desc', 'sys', 'memo', 'fhir', 'aliasOf', 'level', 'etag']) delete it[k];
       return json(res, 200, { deptNo: 'APP', scope: url.searchParams.get('scope') || 'match', levels: ['APP'], total: items.length, truncated: false, items });
+    }
+    if ((m = p.match(/^api\/v2\/dictionaries\/([A-Za-z0-9-]+)\/(memo)$/))) {
+      const d = dicts.find(x => x.id === m[1]);
+      if (!d) return err(res, 404, 'E_NOT_FOUND', '找不到字典');
+      const tag = String(req.headers['if-match'] || '').replace(/^W\//, '').replace(/"/g, '');
+      if (!tag) return err(res, 428, 'E_PRECONDITION', '缺少 If-Match');
+      if (tag !== dc.etag(d.dicComment)) return dictConflict(res, d);
+      const cur = dc.parse(d.dicComment);
+      if (m[2] === 'memo' && req.method === 'PUT') {
+        d.dicComment = dc.build({ desc: cur.desc, memo: body.memo !== undefined ? body.memo : cur.memo, fhir: body.fhir !== undefined ? body.fhir : cur.fhir,
+          memo_by: USER_ID, memo_at: '2026-10-26T10:00:00Z', sys: cur.sys, promote: cur.promote, alias_of: cur.alias_of }, { forceJson: true });
+      } else return err(res, 405, 'E_METHOD', 'method');
+      const it = dictItem(d);
+      return json(res, 200, { ok: true, ...it, memoBy: dc.parse(d.dicComment).memo_by, memoAt: dc.parse(d.dicComment).memo_at, warnings: [] });
     }
     return err(res, 404, 'E_NOT_FOUND', 'no route');
   });
@@ -171,7 +196,7 @@ after(() => {
     assert.ok(!mcp.stderr.includes(secret), `stderr leaked ${secret.slice(0, 4)}…`);
   }
 });
-beforeEach(() => { reqs = []; revoked = []; login.deny = false; for (const k of Object.keys(behavior)) delete behavior[k]; });
+beforeEach(() => { reqs = []; revoked = []; dicts = seedDicts(); login.deny = false; for (const k of Object.keys(behavior)) delete behavior[k]; });
 
 test('offline by default: online tools hidden and disabled, no network', async () => {
   const off = startMcp({});
@@ -294,9 +319,15 @@ test('folder list and template get send the bearer token', async () => {
   assert.match(reqs[0].auth, /^Bearer acc-/);
 
   const t = await mcp.call('online_template_get', { template_id: 'T-1', save: true });
-  assert.equal(t.data.package.format, 'strucmed.template/v2');
+  assert.equal(t.data.package, undefined, 'save:true returns a summary only (試用回饋 #5)');
+  assert.equal(t.data.summary.name, '跌倒評估');
+  assert.equal(t.data.summary.controls, 1);
+  assert.equal(t.data.summary.areas, 1);
+  assert.deepEqual(t.data.summary.groups, ['門']);
   assert.equal(t.data.saved, '.strucmed/online/T-1.package.json');
-  assert.ok(fs.existsSync(path.join(mcp.ws, t.data.saved)));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(mcp.ws, t.data.saved), 'utf8')).format, 'strucmed.template/v2');
+  const full = await mcp.call('online_template_get', { template_id: 'T-1', save: true, include_package: true });
+  assert.equal(full.data.package.format, 'strucmed.template/v2');
 
   assert.equal((await mcp.call('online_template_get', { template_id: '../etc' })).error.code, 'E_INVALID_INPUT');
   assert.equal((await mcp.call('online_folder_list', { type: 'other' })).error.code, 'E_INVALID_INPUT');
@@ -378,6 +409,15 @@ test('online_me returns identity, folders and admin flag', async () => {
   assert.ok(reqs.some(x => x.path.endsWith('/api/v2/me') && x.auth.startsWith('Bearer ')));
 });
 
+test('online_me explains an empty dept_no (試用回饋 #11)', async () => {
+  await browserLogin(mcp, {});
+  assert.equal((await mcp.call('online_me', {})).data.warnings, undefined);
+  behavior.noDept = true;
+  const r = await mcp.call('online_me', {});
+  assert.equal(r.data.dept_no, '');
+  assert.match(r.data.warnings[0], /^W_NO_DEPT：.*online_login\(dept_no\)/);
+});
+
 test('online_features aggregates health, runtime features and llm-config without the gateway token', async () => {
   await browserLogin(mcp, {});
   const r = await mcp.call('online_features', {});
@@ -415,8 +455,15 @@ test('online_dictionary_search filters by q and can replace the local dictionary
   assert.ok(reqs.some(x => x.path.endsWith('/api/v2/dictionaries') && x.search.includes('scope=exact') && x.search.includes('q=')));
   const idx = await mcp.call('online_dictionary_search', { update_index: true });
   assert.equal(idx.data.index_updated, true);
-  assert.equal(idx.data.index_count, 3);
+  assert.equal(idx.data.index_count, 6);
   assert.deepEqual(idx.warnings, []);
+  // docs/14：體系優先排序、level／desc／memo／etag
+  assert.equal(idx.data.items[0].id, 'D5');
+  assert.equal(idx.data.items[0].level, 'sys');
+  assert.equal(idx.data.items[0].desc, '體重（kg）');
+  assert.deepEqual(idx.data.items[0].memo, { unit: 'kg' });
+  assert.equal(idx.data.items[0].etag, dc.etag(dicts.find(d => d.id === 'D5').dicComment));
+  assert.equal(idx.data.items.find(x => x.id === 'D1').desc, '有無跌倒', 'legacy plain text is desc');
   const local = await mcp.call('dictionary_search', { query: '疼痛', dept_no: 'APP' });
   assert.equal(local.ok, true);
   assert.equal(local.data.results.length, 1, JSON.stringify(local.data));
@@ -577,6 +624,84 @@ test('online_template_update: only derived drafts, If-Match from ETag, 409 → E
   assert.equal(versions.data.items[0].rev, 2);
 });
 
+// 試用回饋（M9R）#1／#2／#9：update 沿用線上名稱／捷徑／作業別、逐項比對內容、iot 保留 ID
+const listedForm = id => ONLINE_FORM.map(x => x.itemtype === 'iot' ? { ...x, sheetid: id, templateID: id } : structuredClone(x));
+const seedListed = (id, form = listedForm(id), sha = 'sha-' + id) =>
+  templates.set(id, { template: { name: '跌倒評估', shortcut: 'fall', groups: ['門', '住'], description: '原說明' }, form, sha256: sha });
+
+test('online_template_update keeps the online name, shortcut and groups unless the draft changed them explicitly', async () => {
+  await browserLogin(mcp, {});
+  seedListed('T-90');
+  // 外部工具產生的舊版 .htm：iot 帶線上 ID，改了一段說明文字
+  const ext = listedForm('T-90');
+  ext[0].item[0].datavalue = '姓名（全名）';
+  fs.writeFileSync(path.join(mcp.ws, 'ext.htm'), `<html><body>engine</body></html><script>var tempdata =${JSON.stringify(ext)}</script>`);
+  const plainImport = await mcp.call('form_import', { source_path: 'ext.htm', name: 'ext', dept_no: 'APP' });
+  assert.equal(plainImport.error.code, 'E_INVALID_INPUT', 'same name as the source still needs for_update');
+  const imp = await mcp.call('form_import', { source_path: 'ext.htm', dept_no: 'APP', for_update: true });
+  assert.equal(imp.ok, true, JSON.stringify(imp));
+  assert.equal(imp.data.derived_from.templateID, 'T-90');
+  const plan = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90' });
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  const p = plan.data.plan;
+  assert.deepEqual(p.meta.name, { online: '跌倒評估', draft: 'ext', will_write: '跌倒評估' });
+  assert.equal(p.meta.shortcut.will_write, 'fall');
+  assert.deepEqual(p.meta.groups.will_write, ['門', '住']);
+  assert.equal(p.name, '跌倒評估');
+  assert.equal(p.publish_on_save, true);
+  const codes = p.warnings.map(w => String(w.code || w).split('：')[0]);
+  assert.ok(codes.includes('W_META_KEPT_ONLINE') && !codes.includes('W_UNPUBLISH') && !codes.includes('W_META_RENAME'), JSON.stringify(p.warnings));
+  assert.deepEqual(p.diff.changed_areas, ['1'], 'the edited caption shows up');
+  assert.deepEqual(p.diff.changed_itemids, []);
+  assert.equal(p.diff.js_changed, false, 'the generated-by marker line is not a change');
+  assert.equal(p.diff.iot_changed, false, 'server-filled iot fields are not a change');
+  assert.match(p.diff.online_since_source, /不是線上範本套件/);
+  const done = await browserApprove(mcp, 'online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90', if_match: p.if_match, confirm_token: plan.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  const put = reqs.find(x => x.method === 'PUT' && x.path.endsWith('/T-90'));
+  assert.deepEqual(put.body.template, { name: '跌倒評估', shortcut: 'fall', groups: ['門', '住'], description: '原說明' });
+  const iot = put.body.form.find(x => x.itemtype === 'iot');
+  assert.equal(iot.templateID, 'T-90');
+  assert.equal(iot.sheetid, 'T-90');
+
+  // 明確清空捷徑 → W_UNPUBLISH；改名 → W_META_RENAME
+  await mcp.call('form_update_meta', { draft_id: imp.data.draft_id, shortcut: '', name: '跌倒評估 v2' });
+  const plan2 = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90' });
+  const codes2 = plan2.data.plan.warnings.map(w => String(w).split('：')[0]);
+  assert.ok(codes2.includes('W_UNPUBLISH') && codes2.includes('W_META_RENAME'), JSON.stringify(plan2.data.plan.warnings));
+  assert.equal(plan2.data.plan.publish_on_save, false);
+  // 取得計畫後線上被改名 → 第二段不開確認頁
+  templates.get('T-90').template.name = '別人改的名字';
+  const stale = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90', if_match: plan2.data.plan.if_match, confirm_token: plan2.data.confirm_token });
+  assert.equal(stale.error.code, 'E_CONFIRM_MISMATCH', JSON.stringify(stale));
+  // ETag 已變 → E_CONFLICT（不開確認頁）
+  const plan3 = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90' });
+  templates.get('T-90').sha256 = 'sha-moved';
+  const moved = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-90', if_match: plan3.data.plan.if_match, confirm_token: plan3.data.confirm_token });
+  assert.equal(moved.error.code, 'E_CONFLICT');
+});
+
+test('online_template_update warns when the online template changed after the package was saved', async () => {
+  await browserLogin(mcp, {});
+  seedListed('T-91');
+  const got = await mcp.call('online_template_get', { template_id: 'T-91', save: true });
+  const imp = await mcp.call('form_import', { source_path: got.data.saved, dept_no: 'APP', for_update: true });
+  assert.equal(imp.ok, true, JSON.stringify(imp));
+  const same = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-91' });
+  assert.equal(same.data.plan.diff.online_since_source, '（沒有變動）');
+  assert.ok(same.data.plan.warnings.some(w => String(w).startsWith('W_NO_CHANGE')), JSON.stringify(same.data.plan.warnings));
+  assert.equal(same.data.plan.meta.shortcut.draft, 'fall', 'for_update carries the package shortcut');
+  // 有人在編輯器改了 #2 的預設值
+  const edited = listedForm('T-91');
+  edited[0].item[1].datavalue = '無';
+  seedListed('T-91', edited, 'sha-T91-edited');
+  const plan = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-91' });
+  const p = plan.data.plan;
+  assert.deepEqual(p.diff.changed_itemids, ['2'], 'writing would revert #2');
+  assert.match(p.diff.online_since_source, /修改控制項 #2/);
+  assert.ok(p.warnings.some(w => String(w).startsWith('W_ONLINE_CHANGED_SINCE_SOURCE')), JSON.stringify(p.warnings));
+});
+
 test('feature flag templateUpdate=false hides online_template_update', async () => {
   const flags = path.join(os.tmpdir(), 'strucmed-flags2-' + process.pid + '.json');
   fs.writeFileSync(flags, JSON.stringify({ templateUpdate: false }));
@@ -585,7 +710,8 @@ test('feature flag templateUpdate=false hides online_template_update', async () 
     const list = await m.rpc('tools/list', {});
     const names = list.result.tools.map(t => t.name);
     assert.ok(names.includes('online_template_create') && !names.includes('online_template_update'));
-    assert.ok(!names.includes('online_dictionary_create'), 'dictionaryWrite defaults to false');
+    assert.ok(names.includes('online_dictionary_create') && names.includes('online_dictionary_memo_set'), 'dictionaryWrite defaults to true (docs/14)');
+    assert.ok(!names.some(n => /promot/.test(n)), 'no promotion tools: system managers promote on the dictionary page');
     await browserLogin(m, {});
     assert.equal((await m.call('online_template_update', { draft_id: 'd-000000000000', template_id: 'T-1' })).error.code, 'E_FEATURE_DISABLED');
   } finally { m.stop(); fs.rmSync(flags, { force: true }); }
@@ -669,4 +795,132 @@ test('online_me_notes_get/set: incremental diff plan, two-step PUT, no-change sh
   assert.deepEqual(put.body, { items: [{ dictID: 'T-2', dictVal: '疼痛評估' }] });
   const bad = await mcp.call('online_me_notes_set', { items: [{ template_id: 'bad id!', name: 'x' }] });
   assert.equal(bad.error.code, 'E_INVALID_INPUT');
+});
+
+// ── docs/14：字典 JSON 說明、補述、體系升級 ─────────────────
+test('online_dictionary_search: old server (no etag) warns W_SERVER_OLD and parses dicComment locally', async () => {
+  await browserLogin(mcp, {});
+  behavior.oldServer = true;
+  const r = await mcp.call('online_dictionary_search', {});
+  assert.ok(r.warnings.some(w => w.startsWith('W_SERVER_OLD')));
+  const d5 = r.data.items.find(x => x.id === 'D5');
+  assert.equal(d5.desc, '體重（kg）');
+  assert.equal(d5.level, 'sys', 'level computed locally');
+});
+
+test('dictionary binding by name prefers the system dictionary and warns about missing memo', async () => {
+  await browserLogin(mcp, {});
+  dicts.push({ id: 'D7', dicType: 'APP', dicName: '體重', dicComment: '本科體重', createDate: '20260202' });
+  await mcp.call('online_dictionary_search', { update_index: true });
+  const c = await mcp.call('form_create', { name: '體系優先', dept_no: 'APP' });
+  const a = await mcp.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
+  const x = await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '體重', control: { datatype: 'numberbox', minval: 0, maxval: 300, dictionary: { name: '體重' } } });
+  assert.equal(x.ok, true, JSON.stringify(x));
+  assert.equal(x.data.dicid, 'D5');
+  assert.ok(x.data.warnings.some(w => w.startsWith('W_DICT_PREFER_SYSTEM')), JSON.stringify(x.data.warnings));
+  const y = await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '疼痛', control: { datatype: 'textbox', dictionary: { name: '疼痛評估' } } });
+  assert.ok(y.data.warnings.some(w => w.startsWith('W_DICT_NO_MEMO')));
+  assert.ok(y.data.warnings.some(w => w.startsWith('W_DICT_DEPT_LEVEL')));
+  const v = await mcp.call('form_validate', { draft_id: c.data.draft_id });
+  assert.equal(v.data.stats.dict_missing_memo, 1);
+  assert.equal(v.data.stats.dict_dept_level, 1);
+});
+
+test('online_dictionary_memo_set: local FHIR check, two-step plan with before/after, If-Match, desc untouched', async () => {
+  await browserLogin(mcp, {});
+  const bad = await mcp.call('online_dictionary_memo_set', { dic_id: 'D3', fhir: [{ res: 'Observation', path: 'Condition.code' }] });
+  assert.equal(bad.error.code, 'E_INVALID_FHIR');
+  const badSys = await mcp.call('online_dictionary_memo_set', { dic_id: 'D3', fhir: [{ res: 'Observation', path: 'Observation.valueQuantity', code: 'http://example.org|1' }] });
+  assert.equal(badSys.error.code, 'E_INVALID_FHIR');
+  assert.equal(reqs.filter(x => x.method === 'PUT').length, 0, 'invalid FHIR never reaches the server');
+  const args = { dic_id: 'D5', memo: { asr: ['體重', 'BW'], type: 'numberbox' }, fhir: [{ res: 'Observation', path: 'Observation.valueQuantity', code: 'http://loinc.org|29463-7', display: 'Body weight', ucum: 'kg' }] };
+  const plan = await mcp.call('online_dictionary_memo_set', args);
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  assert.deepEqual(plan.data.plan.before.memo, { unit: 'kg' });
+  assert.deepEqual(plan.data.plan.after.memo, { unit: 'kg', type: 'numberbox', asr: ['體重', 'BW'] }, 'memo is merged, existing keys kept');
+  assert.equal(plan.data.plan.desc, '體重（kg）');
+  assert.equal(reqs.filter(x => x.method === 'PUT').length, 0, 'plan step does not write');
+  const done = await browserApprove(mcp, 'online_dictionary_memo_set', { ...args, etag: plan.data.plan.etag, confirm_token: plan.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  assert.match(done.approvePage, /補述/);
+  const put = reqs.find(x => x.method === 'PUT' && x.path.endsWith('/api/v2/dictionaries/D5/memo'));
+  assert.equal(put.ifMatch.replace(/"/g, ''), plan.data.plan.etag);
+  assert.deepEqual(put.body.memo, { unit: 'kg', type: 'numberbox', asr: ['體重', 'BW'] });
+  const after = dc.parse(dicts.find(d => d.id === 'D5').dicComment);
+  assert.equal(after.desc, '體重（kg）', 'desc untouched');
+  assert.equal(after.fhir[0].code, 'http://loinc.org|29463-7');
+  assert.equal(done.data.memo_by, USER_ID);
+  assert.notEqual(done.data.etag, plan.data.plan.etag);
+});
+
+test('online_dictionary_memo_set: someone else changed it after the plan → E_CONFLICT with current content', async () => {
+  await browserLogin(mcp, {});
+  const args = { dic_id: 'D3', memo: { meaning: '疼痛分數 0-10' } };
+  const plan = await mcp.call('online_dictionary_memo_set', args);
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  dicts.find(d => d.id === 'D3').dicComment = dc.build({ desc: '', memo: { unit: '分' } });   // 他人搶先寫入
+  const r = await browserApprove(mcp, 'online_dictionary_memo_set', { ...args, etag: plan.data.plan.etag, confirm_token: plan.data.confirm_token });
+  assert.equal(r.error.code, 'E_CONFLICT');
+  assert.deepEqual(r.error.details.current.memo, { unit: '分' });
+});
+
+test('sys mark: a promoted dictionary of another dept in the same system is level sys, bindable by name, and memo_set keeps the mark', async () => {
+  await browserLogin(mcp, {});
+  const idx = await mcp.call('online_dictionary_search', { update_index: true });
+  const d7 = idx.data.items.find(x => x.id === 'D7');
+  assert.equal(d7.level, 'sys');
+  assert.equal(d7.dic_type, 'XPPB0', 'id and dicType unchanged by promotion');
+  assert.deepEqual(d7.sys, { code: 'PP', by: 'ADM01', at: '2026-10-27T01:00:00Z' });
+  assert.equal(idx.data.items.find(x => x.id === 'D6').level, 'other', 'another system without a mark stays other');
+  const local = await mcp.call('dictionary_search', { query: '鬆弛', dept_no: 'APP' });
+  assert.equal(local.data.results[0].id, 'D7');
+  assert.equal(local.data.results[0].level, 'sys');
+  assert.equal(local.data.results[0].sys.code, 'PP');
+  const c = await mcp.call('form_create', { name: '體系標記', dept_no: 'APP' });
+  const a = await mcp.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
+  const x = await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '鬆弛度', control: { datatype: 'textbox', dictionary: { name: '鬆弛度' } } });
+  assert.equal(x.ok, true, JSON.stringify(x));
+  assert.equal(x.data.dicid, 'D7', 'marked dictionary is in the dept match scope');
+  assert.ok(!x.data.warnings.some(w => w.startsWith('W_DICT_DEPT_LEVEL')));
+  const args = { dic_id: 'D7', memo: { meaning: 'joint laxity' } };
+  const plan = await mcp.call('online_dictionary_memo_set', args);
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  const done = await browserApprove(mcp, 'online_dictionary_memo_set', { ...args, etag: plan.data.plan.etag, confirm_token: plan.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  const after = dc.parse(dicts.find(d => d.id === 'D7').dicComment);
+  assert.deepEqual(after.sys, { code: 'PP', by: 'ADM01', at: '2026-10-27T01:00:00Z' }, 'memo write keeps the sys mark');
+  assert.equal(after.memo.meaning, 'joint laxity');
+});
+
+test('online_dictionary_create writes desc+memo as dictionary JSON in one go', async () => {
+  await browserLogin(mcp, {});
+  const c = await mcp.call('form_create', { name: 'JSON 說明', dept_no: 'APP' });
+  const a = await mcp.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
+  const x = await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '身高',
+    control: { datatype: 'numberbox', minval: 30, maxval: 250, dictionary: { name: 'TEST_HEIGHT', comment: '身高（cm）', memo: { unit: 'cm', range: '30-250', asr: ['身高'] } } } });
+  assert.equal(x.ok, true, JSON.stringify(x));
+  const plan = await mcp.call('online_dictionary_create', { draft_id: c.data.draft_id, name: 'TEST_HEIGHT' });
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  const j = JSON.parse(plan.data.plan.dic_comment_json);
+  assert.deepEqual(j, { v: 1, desc: '身高（cm）', memo: { unit: 'cm', range: '30-250', asr: ['身高'] } });
+  const done = await browserApprove(mcp, 'online_dictionary_create', { draft_id: c.data.draft_id, name: 'TEST_HEIGHT', confirm_token: plan.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  const post = reqs.find(r => r.method === 'POST' && r.path.endsWith('/api/v2/dictionaries'));
+  assert.equal(post.body.dicComment, plan.data.plan.dic_comment_json);
+  // 沒有說明的新字典：plan 警告
+  await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '其他', control: { datatype: 'textbox', dictionary: { name: 'TEST_OTHER' } } });
+  const p2 = await mcp.call('online_dictionary_create', { draft_id: c.data.draft_id, name: 'TEST_OTHER' });
+  assert.ok(p2.data.plan.warnings.some(w => w.startsWith('W_DICT_NO_DESC')));
+  assert.equal(p2.data.plan.dic_comment_json, '', 'no desc and no memo → empty plain text, not JSON');
+});
+
+test('emoji in a new dictionary name or memo is rejected before anything is sent', async () => {
+  await browserLogin(mcp, {});
+  const c = await mcp.call('form_create', { name: '字元檢查', dept_no: 'APP' });
+  const a = await mcp.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
+  const bad = await mcp.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: 'x', control: { datatype: 'textbox', dictionary: { name: 'TEST_😀' } } });
+  assert.equal(bad.error.code, 'E_INVALID_INPUT');
+  const memo = await mcp.call('online_dictionary_memo_set', { dic_id: 'D3', memo: { meaning: '疼痛😀' } });
+  assert.equal(memo.error.code, 'E_INVALID_INPUT');
+  assert.equal(reqs.filter(x => x.method !== 'GET' && /dictionaries/.test(x.path)).length, 0, 'nothing written');
 });

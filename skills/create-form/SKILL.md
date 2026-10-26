@@ -21,9 +21,9 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 | 輸入 | 必要 | 備註 |
 |---|---|---|
 | 表單目的 | ✓ | 臨床情境、使用者、要收集什麼、要帶回 HIS 的文字 |
-| 目標科部代碼 `dept_no` | ✓ | 線上模式用 `online_me` 的 `dept_no`；離線時請使用者提供登入編輯器時填的 deptno |
+| 目標科部代碼 `dept_no` | ✓ | 線上模式用 `online_me` 的 `dept_no`（空白並回 `W_NO_DEPT` 時表示登入時沒帶科部，請使用者提供）；離線時請使用者提供登入編輯器時填的 deptno |
 | 作業別 | ✓ | 門／住／急／手術／檢查／助手／All；**測試表單不設** |
-| 字典來源 | 建議 | 線上：`online_dictionary_search`（`update_index: true`，不帶 `q`）；離線：字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id，不能用） |
+| 字典來源 | 建議 | **線上優先**：`online_dictionary_search`（`update_index: true`，不帶 `q`），索引帶層級、desc、memo、fhir；離線才用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | 是否正式上架 | ✓ | 否 → 不設捷徑與作業別 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
 
@@ -49,7 +49,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 - 計畫以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
 
 ### G1：表單計畫
-- 把計畫檔的「## 表單計畫」原樣呈現（表格、計算式與巨集摘要含白話與試算例、AI 資料流、待新建字典），但略去 `<!-- gate: … -->` 註解行（`references/Gates.md` §1）。
+- 把計畫檔的「## 表單計畫」原樣呈現（表格、計算式與巨集摘要含白話與試算例、AI 資料流、待新建字典、字典補述含 FHIR 對應與驗證狀態、體系升級建議），但略去 `<!-- gate: … -->` 註解行（`references/Gates.md` §1）。「待人工確認」的 FHIR 代碼要特別提醒使用者。
 - 選項固定：核准（建議）／要求修改／取消。要求修改 → 改需求、`Revision` +1、重跑 planner。
 - 核准後：
   ```bash
@@ -83,7 +83,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 ## 3. 交付格式
 
 1. 結構預覽（tree）。
-2. 字典：綁定既有（名稱／id 前 8 碼／角色）與待新建清單。
+2. 字典：綁定既有（名稱／id 前 8 碼／層級／角色）與待新建清單（含說明與補述）；補述與升級建議要等上架（publish-form）時才寫入線上，只輸出 `.htm` 時告知使用者新字典的說明與補述已在套件內、既有字典的補述需上架流程或請使用者在字典頁操作，體系升級建議請轉給體系字典管理者。
 3. 驗證警告與處理建議；`W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列。
 4. 輸出檔（`.htm` 內含範本套件 v2、`.package.json`）與 `*.manifest.md`（含匯入步驟與保存前確認清單）的路徑。支援 v2 的編輯器匯入時會預填名稱、捷徑、作業別、Info，**有捷徑＋作業別＝保存後上架**，務必提醒使用者確認。
 5. 提醒：先按「新增表單」並確認 sheetID 空白再匯入；有新字典時**必須**「匯入表單及字典」；匯入後不要按「重新編號」；保存前逐一檢查區塊人形圖示。

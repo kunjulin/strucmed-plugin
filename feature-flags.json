@@ -4,7 +4,7 @@
   "llmgateway": "auto",
   "fmapi": "auto",
   "templateUpdate": true,
-  "dictionaryWrite": false,
+  "dictionaryWrite": true,
   "llmChatTest": false,
   "appBuilderB2": true,
   "playwrightVerify": false,

@@ -29,7 +29,7 @@ allowed-tools: Read, Bash(node *)
    - 回應的 `site.label` 告訴使用者目前是院內或院外站台。token 只存在 MCP 記憶體，30 分鐘自動更新，同一次登入最長 8 小時；開新工作階段或 `/reload-plugins` 後需重新登入。
 3. 選填設定（LlmGateway）：LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `LLMGW_API_KEY` 提供）。院外站台網址不需要設定（內建 `https://cgmh.ddns.net`），只有資訊室公告新網址時才以「院外站台網址」或 `STRUCMED_EXTERNAL_URL` 覆寫。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
 4. 登入後：
-   - `online_me`：記下 `user_id`、`dept_no`、`folders`（usr／sub／dpt 代碼）；之後建表的預設 `dept_no` 就用它。
+   - `online_me`：記下 `user_id`、`dept_no`、`folders`（usr／sub／dpt 代碼）；之後建表的預設 `dept_no` 就用它。回 `W_NO_DEPT`（科部空白）：科部取自登入時填的科部代碼，不是由 HIS 帳號推得；請使用者告知科部代碼，或 `online_logout` 後以 `online_login(dept_no)` 重新登入。
    - `online_features`：回報三項狀態；`W_SITE_EXTERNAL`（院外站台）時告知：上架、`If-Match` 更新、字典與範本讀取都和院內相同，但沒有 LlmGateway、LLM 與語音，AI 巨集回院內再實測。`llm_gateway.enabled: false` 時告知「表單內的 LLM 按鈕仍走院內舊端點，不經閘道」；`runtime.save/query: false` 表示登入者不在 HIS 端存檔／查詢白名單（只影響 B1，不影響設計表單）。
    - 字典來源改用 `online_dictionary_search`（`update_index: true`、不帶 `q`）建立本機索引，取代請使用者匯出 CSV。
 5. LlmGateway（只有院內）：`llmgateway_models` 有列出時呼叫，回報模型數、別名對應與 deprecated 的模型（`references/ModelWhitelist.md`）；否則提醒「模型白名單使用內建靜態表，表單有 AI 巨集時會標 `W_LLM_WHITELIST_STALE`」，並指引：在 LlmGateway「我的帳號」核發伺服器型 token（標籤 strucmed-skill）→ `/plugin configure strucmed@strucmed-marketplace` 填「LlmGateway token」→ `/reload-plugins`。

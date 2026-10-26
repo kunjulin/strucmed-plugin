@@ -10,8 +10,9 @@ import { toFormJson } from './model.mjs';
 import { preview } from './preview.mjs';
 import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
+import * as dc from './dictcomment.mjs';
 
-export const VERSION = '2.3.0';
+export const VERSION = '2.4.0';
 
 export function safeFileName(name) {
   return String(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'form';
@@ -29,7 +30,8 @@ function referencedDictionaries(draft, dictIndex) {
       const e = known.get(n.dicid) || {};
       out.set('id:' + n.dicid, { id: n.dicid, dicName: n.dictionary, dicType: e.dicType || '', dicComment: e.dicComment || '' });
     } else {
-      out.set('new:' + n.dictionary, { id: '', dicName: n.dictionary, dicType: draft.meta.dept_no, dicComment: '' });
+      const p = (draft.pendingDictionaries || []).find(x => x.name === n.dictionary) || {};
+      out.set('new:' + n.dictionary, { id: '', dicName: n.dictionary, dicType: draft.meta.dept_no, dicComment: dc.build({ desc: p.comment || '', memo: p.memo || null }) });
     }
   });
   return [...out.values()];

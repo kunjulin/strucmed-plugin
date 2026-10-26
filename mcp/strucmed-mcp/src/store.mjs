@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { E, fail } from './errors.mjs';
 import { loadCache } from './policy.mjs';
+import * as site from './site.mjs';
 
 const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const unset = v => { const s = String(v || '').trim(); return !s || s.startsWith('${'); };
@@ -98,5 +99,7 @@ export function loadPolicy() {
   }
   const cache = loadCache(ws);
   if (cache) { p.gateway_models = cache.models; p.gateway_fetched_at = cache.fetched_at; p.gateway_stale = cache.stale; p.gateway_age_days = cache.age_days; }
+  // 院外站台沒有 LlmGateway：白名單只能用內建靜態表，W_LLM_WHITELIST_STALE 是預期狀況
+  try { p.site_external = site.profile() === 'external'; } catch { p.site_external = false; }
   return p;
 }

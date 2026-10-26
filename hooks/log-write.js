@@ -33,7 +33,7 @@ process.stdin.on('end', () => {
     fs.mkdirSync(dir, { recursive: true });
     const line = `- ${new Date().toISOString()} ${tool} stage=${stage}` +
       (args.draft_id ? ` draft=${args.draft_id}` : '') + (templateId ? ` template=${templateId}` : '') +
-      (args.name ? ` dict=${String(args.name).slice(0, 40)}` : '') + (args.folder_type ? ` folder=${args.folder_type}` : '') +
+      (args.name ? ` dict=${String(args.name).slice(0, 40)}` : '') + (args.dic_id ? ` dic_id=${String(args.dic_id).slice(0, 64)}` : '') + (args.folder_type ? ` folder=${args.folder_type}` : '') +
       ` ok=${ok === null ? '?' : ok}` + (code ? ` code=${code}` : '') + (rev ? ` rev=${rev}` : '') + '\n';
     fs.appendFileSync(path.join(dir, 'workflow-log.md'), line);
   } catch (e) {

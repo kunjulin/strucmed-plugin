@@ -41,13 +41,15 @@
 <!-- gate: create-form:plan | category=plan | cancel-leaves=draft -->
 Status: Ready            ← Ready | NeedsRevision | Blocked
 Revision: 1              ← 每次修改 +1
-Inputs: dept_no=03F0; groups=門,住; publish=false; dictionary_index=online 2026-10-22
+Inputs: dept_no=33F00; groups=門,住; publish=false; dictionary_index=online 2026-10-26
 
 ### 結構
-| ID | 區塊／控制項 | datatype | 說明文字 | 選項／範圍 | 字典（名稱／id 前 8 碼／角色；或「新建」） | 必填 | 備註（further→C2、row/col、index） |
+| ID | 區塊／控制項 | datatype | 說明文字 | 選項／範圍 | 字典（名稱／id 前 8 碼／層級／角色；或「新建」） | 必填 | 備註（further→C2、row/col、index） |
 |---|---|---|---|---|---|---|---|
 | A1 | 基本評估（form） | — | | | | | |
-| C1 | 跌倒史 | radiobutton | 過去一年是否跌倒 | 是／否 | FALL_HX／3f2a9c1d／tohis | ✓ | further→C2 |
+| C1 | 跌倒史 | radiobutton | 過去一年是否跌倒 | 是／否 | FALL_HX／3f2a9c1d／體系／tohis | ✓ | further→C2 |
+
+- 層級：體系（sys）／本科（own）／次專（sub）／科部（dpt）／全院（system）。綁定順序與理由見 `references/FormDesignRules.md`〈字典說明、補述與層級〉。
 
 ### 計算式與巨集
 | ID | 類型 | 內容 | 白話（欄位名稱） | 試算例 | 模型 | 寫入 |
@@ -70,7 +72,20 @@ A2 身體測量（formtable）
 ```
 
 ### 待新建字典
-| 名稱 | 用於 | 備註 |
+| 名稱 | 用於 | 說明（desc，一行） | 補述（memo 摘要） | 備註 |
+
+### 字典補述
+每本用到的字典（既有＋新建）一列；既有 memo 已完整的寫「沿用」。FHIR 欄位的驗證狀態：`ICD-10 MCP 已驗證`／`待人工確認`（LOINC、SNOMED 沒有查詢工具）／`沿用既有`。
+
+| 字典 | 動作（新建帶入／補充／沿用） | meaning | type／unit／range | asr | calx／llm | FHIR res | path | code | 單位 | 驗證狀態 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| FALL_HX | 補充 | 過去一年跌倒史 | radiobutton | 跌倒、fall | — | Observation | Observation.valueCodeableConcept | http://snomed.info/sct\|… | — | 待人工確認 |
+
+### 體系升級建議
+沒有就寫「無」。這是交給體系字典管理者的建議清單：AI 不升級（沒有工具），交付時請使用者轉給管理者在字典頁一鍵升級；升級只在說明寫入體系標記，id 與 dicType 不變，已綁定的表單不受影響。
+
+| 字典 | 目前層級／類型 | 升級到 | 理由（哪些科、哪些表單共用） |
+|---|---|---|---|
 
 ### 建置對照表（builder 回填）
 | ID | itemid |

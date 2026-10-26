@@ -15,7 +15,7 @@ export const DEFAULTS = {
   llmgateway: 'auto',      // LlmGateway tool（Phase 3）
   fmapi: 'auto',           // FMapi tool（Phase 4）
   templateUpdate: true,    // online_template_update（Phase 2）
-  dictionaryWrite: false,  // online_dictionary_create／batch（Phase 2；字典命名規範未定）
+  dictionaryWrite: true,   // online_dictionary_create／batch／memo_set（docs/14 起預設開：說明與補述存進字典 JSON）
   llmChatTest: false,      // llmgateway_chat_test（Phase 3）
   appBuilderB2: true,      // build-form-app 的 B2 app 產生（Phase 4）
   playwrightVerify: false, // verify-runtime 以 Playwright 驗證（選用）
