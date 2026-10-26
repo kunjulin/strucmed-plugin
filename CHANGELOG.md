@@ -14,7 +14,19 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.2.1（MCP 2.1.1）— 未發佈：Codex app 工作目錄
+## 3.3.0（MCP 2.2.0）— 未發佈：計算式試算、閘門註解不再顯示
+
+Codex app 實測（BMI 測試表單）的兩個問題：BMI 公式的身高、體重參照對調，`formula_check` 只檢查語法沒有抓到；閘門的 `<!-- gate: … -->` 在 Codex 顯示成文字。
+
+- **`formula_check` 標籤化公式**：帶 `draft_id` 時多回傳 `labeled`（`A<itemid>` 換成欄位名稱，例如 `ROUND([體重(kg)] / (([身高(cm)] / 100) * ([身高(cm)] / 100)), 1)`）與 `ref_labels`。欄位名稱取控制項前最近的說明文字（固定表格的說明格、動態表格的欄標題；沒有時用字典名稱）。
+- **`formula_check` 試算**：`kind: formula` 可帶 `samples: [{ values, expect }]` 實際計算；結果與 `expect` 不符回 `E_FORMULA_SAMPLE_MISMATCH`（error）。新模組 `src/formula-explain.mjs` 以既有的 Calx 詞法分析加上計算，運算子優先順序依 Calx 2.2.8 文法；支援四則、`^`、`%`、比較、`IF`／`AND`／`OR`／`NOT`、`ROUND`／`ROUNDUP`／`ROUNDDOWN`／`TRUNC`／`INT`／`ABS`／`SQRT`／`POWER`／`MOD`、`SUM`／`AVERAGE`／`MIN`／`MAX`（含同欄範圍）、`CONCATENATE`。不支援的函數或寫法回 `reason`（無法離線試算），不猜；不需要 runtime 副本。
+- **計畫與審查**：`Gates.md` §2 的「計算式與巨集」表新增「白話（欄位名稱）」與「試算例」欄（planner 依臨床定義手算，有 IF 時每個分支一例）；form-reviewer 以 `samples` 實際計算並對照 `labeled` 與白話，不符列入必須修正；G2 列出每條計算式的欄位名稱版與試算結果；沒有 runtime 時以離線試算為準。
+- **閘門註解**：`<!-- gate: … -->` 只寫在計畫檔，對話中不再輸出（`Gates.md` §1、create-form 呈現 G1 時略去該行）。沒有程式讀取這個註解，Claude Code 的行為不變。
+- **測試**：新增 `test/formula-explain.test.mjs`（5 項）。
+
+## 3.2.1（MCP 2.1.1）— 2026-10-26：Codex app 工作目錄
+
+strucmed-skill#43；發佈：strucmed-plugin `0911993`（由 main `538dc48` 產生）。發佈時：`release-plugin.mjs` ok、185 個檔案、掃描無發現；`npm test` 88 過、1 略過；`claude plugin validate --strict` 通過。
 
 - **工作目錄不再落在 plugin 快取**：Codex app 實測（Windows）時，草稿與匯出檔寫進了 Codex 的 plugin 快取資料夾，使用者找不到，且更新 plugin 時會被清掉。`store.mjs` 在 cwd 是 plugin 目錄、又沒有可用的 `PWD`（未設定、不存在、就是 plugin 目錄，或是磁碟根目錄）時，改用 `~/Documents/StrucMed`（沒有 Documents 時用 `~/StrucMed`）。`STRUCMED_WORKSPACE` 仍最優先；Claude Code 不受影響。Copilot CLI 在 Windows 也一樣受惠。
 - **`form_export` 回傳 `workspace`**：計畫與結果都帶工作目錄的完整路徑，agent 可以直接告訴使用者檔案在哪。

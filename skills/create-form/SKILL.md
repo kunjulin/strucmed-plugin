@@ -49,7 +49,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 - 計畫以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
 
 ### G1：表單計畫
-- 把計畫檔的「## 表單計畫」原樣呈現（表格、計算式與巨集摘要、AI 資料流、待新建字典）。
+- 把計畫檔的「## 表單計畫」原樣呈現（表格、計算式與巨集摘要含白話與試算例、AI 資料流、待新建字典），但略去 `<!-- gate: … -->` 註解行（`references/Gates.md` §1）。
 - 選項固定：核准（建議）／要求修改／取消。要求修改 → 改需求、`Revision` +1、重跑 planner。
 - 核准後：
   ```bash
@@ -63,15 +63,16 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 - itemid 由 MCP 依建立順序分配（區塊與控制項共用、從 1 起），`further`／`A<itemid>`／`action_id` 都依賴順序，所以**不平行**。builder 把每個 `C*` 對應的 itemid 回填計畫「建置對照表」。
 
 ### 階段 4：審查
-- `Task(form-reviewer)`，給它計畫檔與 `draft_id`。它跑 `form_validate`、`formula_check`、`form_preview(tree)`，比對計畫 ↔ draft，檢查模型名稱、AI 資料流、疑似個資，寫 `review.md` 並回 `Status`。
+- `Task(form-reviewer)`，給它計畫檔與 `draft_id`。它跑 `form_validate`、`formula_check`（formula 帶計畫的試算例 `samples`）、`form_preview(tree)`，比對計畫 ↔ draft，檢查模型名稱、AI 資料流、疑似個資，寫 `review.md` 並回 `Status`。
 - `NeedsRevision`：把它列的項目交回 builder 修正；兩輪仍未過就改變假設（例如換控制項型別）並告訴使用者。
 - error 必須修；warning 逐條向使用者說明。prompt 的 `W_PROMPT_*` 要附 `references/PromptPatterns.md` 的改法；使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
 
 ### 階段 5：runtime 驗證
 - 有計算式、HIS 參照、巨集、表格或頁籤時載入 `verify-runtime`。它會把「輸入 → 結果」對照表、LLM prompt 摘要、被封鎖的請求與截圖交給使用者。
-- `runtime_available: false` 時跳過，並明確告知使用者。
+- `runtime_available: false` 時跳過，並明確告知使用者；計算式改以階段 4 的離線試算結果為準（不支援離線試算的計算式要列出，提醒使用者匯入後實際試算）。
 
 ### G2：驗證結果
+- 每條計算式列出 `formula_check` 的 `labeled`（欄位名稱版）與試算例結果（輸入 → 結果 → 是否符合預期），讓使用者一眼確認參照的欄位沒有放錯。
 - 呈現對照表與截圖；使用者要調整 → 修改 draft（`form_update_control`）後重跑階段 4、5；若改動計畫結構 → 回 G1（核准失效，`Revision` +1）。
 
 ### 階段 6：輸出或上架

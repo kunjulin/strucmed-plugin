@@ -8,6 +8,7 @@ import * as dict from './dictionary.mjs';
 import { buildControl, toFormJson, buildStructuredArea, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, DEFERRABLE } from './validate.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
+import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
 import { preview } from './preview.mjs';
 import { writeArtifacts, VERSION } from './export.mjs';
 import * as confirm from './confirm.mjs';
@@ -554,23 +555,40 @@ export const TOOLS = [
     name: 'formula_check',
     description: '【v0.2】檢查一段計算式、巨集、LLM prompt 或 HIS 參照（不修改 draft）。規則依平台 runtime 實際行為：' +
       'Calx 語法（已與真實 Calx 2.2.8 逐條比對）、未知或巨集專用函數、禁用函數、A<itemid> 參照、LLM 模型名稱、巨集步驟切分等。' +
-      '帶 draft_id 時會一併檢查參照對象是否存在、是否勾「參與計算」。',
+      '帶 draft_id 時會一併檢查參照對象是否存在、是否勾「參與計算」，並回傳 labeled（A<itemid> 換成欄位名稱）與 ref_labels：用它確認每個參照都是計畫裡的那個欄位（例如 BMI 的身高、體重沒有對調）。' +
+      'kind=formula 可帶 samples（計畫的試算例）實際計算；有 expect 而結果不符時回 E_FORMULA_SAMPLE_MISMATCH。只支援常用運算與函數，不支援的回報 reason，不猜。',
     inputSchema: { type: 'object', required: ['kind', 'text'], properties: {
       kind: str('formula（label 計算式）| macro（巨集按鈕腳本）| prompt（LLM 按鈕）| hisquery（HIS 參照）', { enum: ['formula', 'macro', 'prompt', 'hisquery'] }),
-      text: str('要檢查的內容'), draft_id: str('draft id（選填）'), self_itemid: { type: 'number', description: '這段內容所屬的控制項（檢查自我參照）' } } },
-    handler({ kind, text, draft_id, self_itemid }) {
-      let controls = null;
+      text: str('要檢查的內容'), draft_id: str('draft id（選填）'), self_itemid: { type: 'number', description: '這段內容所屬的控制項（檢查自我參照）' },
+      samples: { type: 'array', description: '試算例（kind=formula）：[{ "values": { "A2": 170, "A3": 65 }, "expect": 22.5 }]；expect 選填', items: { type: 'object', required: ['values'], properties: {
+        values: { type: 'object', description: '參照 → 試算值（鍵可寫 A3 或 3）' }, expect: { description: '預期結果（數字、文字或 true／false）' } } } } } },
+    handler({ kind, text, draft_id, self_itemid, samples }) {
+      let controls = null, names = null;
       if (draft_id) {
         controls = new Map();
-        walk(store.loadDraft(draft_id), n => { if (isControl(n)) controls.set(String(n.itemid), n); });
+        const d = store.loadDraft(draft_id);
+        walk(d, n => { if (isControl(n)) controls.set(String(n.itemid), n); });
+        names = captions(d);
       }
       const ctx = { controls, policy: store.loadPolicy(), self: self_itemid };
       const r = kind === 'formula' ? lintFormula(text, ctx) : kind === 'macro' ? lintMacro(text, ctx)
         : kind === 'prompt' ? lintPrompt(text, ctx) : lintHisQuery(text);
+      const parsed = kind === 'formula' && r.info;
+      const tried = parsed && Array.isArray(samples) ? samples.map(sm => {
+        const e = evaluate(text, sm && sm.values);
+        const res = { values: sm && sm.values, ...(e.ok ? { value: e.value } : { reason: e.reason }), ...(sm && 'expect' in sm && { expect: sm.expect }) };
+        if (e.ok && sm && 'expect' in sm && !sameValue(e.value, sm.expect)) {
+          res.match = false;
+          r.findings.push({ level: 'error', code: 'E_FORMULA_SAMPLE_MISMATCH', message: `試算 ${JSON.stringify(sm.values)} 得到 ${JSON.stringify(e.value)}，預期 ${JSON.stringify(sm.expect)}：請確認參照的欄位（見 labeled）與運算` });
+        } else if (e.ok && sm && 'expect' in sm) res.match = true;
+        return res;
+      }) : null;
       const errors = r.findings.filter(f => f.level === 'error'), warnings = r.findings.filter(f => f.level === 'warn');
       return {
         ok: errors.length === 0, errors, warnings,
         ...(r.refs && { refs: r.refs.map(id => 'A' + id) }),
+        ...(names && parsed && { labeled: labelFormula(text, names), ref_labels: Object.fromEntries(r.refs.map(id => ['A' + id, names.get(String(id)) || null])) }),
+        ...(tried && { samples: tried }),
         ...(r.functions && { functions: [...new Set(r.functions)] }),
         ...(r.steps && { steps: r.steps }), ...(r.targets && { targets: r.targets }), ...(r.ai && { ai: r.ai })
       };

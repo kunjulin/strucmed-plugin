@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.1.1）
+# strucmed-mcp（v2.2.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -118,6 +118,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 cd mcp/strucmed-mcp && npm test
 ```
 - `test/unit.test.mjs`：各控制項欄位集合與真實編輯器匯入後一致（`test/fixtures/editor-g1-keys.json`，取自 v0 harness）、CSV 解析、字典比對、validator。
+- `test/formula-explain.test.mjs`：`formula_check` 的標籤化公式（`labeled`、`ref_labels`）與試算（`samples`）：運算子優先順序、百分比、常用函數、缺值與不支援時回報不猜、BMI 身高體重對調回 `E_FORMULA_SAMPLE_MISMATCH`、固定表格的說明格。
 - `test/e2e.test.mjs`：以真實 stdio 協定走完 create → export 兩段式流程，驗證套件 v2 與 `.htm` 內嵌套件一致，並以編輯器匯入器相同邏輯擷取 `var tempdata`。
 - `test/v1.test.mjs`：改版流程（合成的既有表單 fixture）：三種來源格式、未修改時逐位元組保真、新增／修改／移除與參照保護、嚴重度分級、`derivedFrom`。
 - `test/online.test.mjs`：線上 tool，以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。

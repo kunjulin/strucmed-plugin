@@ -11,11 +11,10 @@
 | G3 | `## 上架計畫` | `online_template_create`／`update` 第一次呼叫取得 plan 後 | nothing | 線上沒有任何寫入 |
 | G4 | `## 應用程式計畫` | B2 app 產生前（H0／H2；H1 以 `online_me_notes_set` 的 plan 代替） | nothing | 沒有產生任何檔案 |
 
-每個閘門在對話中呈現的固定格式：
+每個閘門在對話中呈現的固定格式（對話中**不輸出** `<!-- gate: … -->` 註解：Codex 等工具會把它顯示成文字；閘門 id 已在 🚦 那一行。註解只寫在計畫檔；從計畫檔呈現內容時略去該行）：
 
 ```markdown
 ## 表單計畫
-<!-- gate: create-form:plan | category=plan | cancel-leaves=draft -->
 > 🚦 **閘門（create-form:plan）**：核准後才會建立 draft。
 > **為什麼問**：itemid 與參照依建立順序分配，建置後改結構成本高。
 > **取消會留下**：沒有 draft。
@@ -51,10 +50,14 @@ Inputs: dept_no=03F0; groups=門,住; publish=false; dictionary_index=online 202
 | C1 | 跌倒史 | radiobutton | 過去一年是否跌倒 | 是／否 | FALL_HX／3f2a9c1d／tohis | ✓ | further→C2 |
 
 ### 計算式與巨集
-| ID | 類型 | 內容 | 模型 | 寫入 |
-|---|---|---|---|---|
-| C9 | formula | `IF(A3 > 25, "過重", "正常")` | — | — |
-| C12 | action LLMQUERY | prompt 摘要… | qwen332b | → C13 |
+| ID | 類型 | 內容 | 白話（欄位名稱） | 試算例 | 模型 | 寫入 |
+|---|---|---|---|---|---|---|
+| C9 | formula | `ROUND(C4 / ((C3 / 100) * (C3 / 100)), 1)` | 體重 ÷（身高 m）² | C3=170、C4=65 → 22.5 | — | — |
+| C10 | formula | `IF(C9 >= 24, "過重", "正常")` | BMI ≥ 24 為過重 | C9=25 → 過重；C9=20 → 正常 | — | — |
+| C12 | action LLMQUERY | prompt 摘要… | | | qwen332b | → C13 |
+
+- 每條 formula 都要有「白話」與至少一個「試算例」（數字用臨床上合理、容易心算的值；有 IF 時每個分支一例）。試算例由 planner 依臨床定義手算，**不能**用 `formula_check` 算出來再抄回來。
+- 試算例在建置後由 reviewer 以 `formula_check` 的 `samples` 實際計算（`C*` 依建置對照表換成 `A<itemid>`）；結果不符＝`E_FORMULA_SAMPLE_MISMATCH`，必須修。
 
 ### AI 資料流（W_AI_DATAFLOW）
 哪些欄位會送到 LLM／語音服務；沒有則寫「無」。
