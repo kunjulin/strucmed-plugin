@@ -12,6 +12,9 @@ import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.m
 import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
 import { preview } from './preview.mjs';
 import { writeArtifacts, VERSION } from './export.mjs';
+import { cardData } from './cards.mjs';
+import * as files from './files.mjs';
+import { publicBase, current as requestCurrent } from './reqctx.mjs';
 import * as confirm from './confirm.mjs';
 import { parseSource, sha256 } from './importer.mjs';
 import { digestForm } from './formdiff.mjs';
@@ -663,6 +666,10 @@ export const TOOLS = [
       'html 需要平台前端的本機副本（STRUCMED_RUNTIME_WEB，或 <workspace>/repo/strucmed/web）與 harness 伺服器（node scripts/preview.mjs 會自動啟動）。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), format: str('tree | markdown | html', { enum: ['tree', 'markdown', 'html'] }) } },
+    card(_data, { draft_id, format }) {
+      if (format === 'html') return null;
+      return cardData(store.loadDraft(draft_id), 'preview');
+    },
     handler({ draft_id, format }) {
       const d = store.loadDraft(draft_id);
       if (format !== 'html') return { content: preview(d, format || 'tree') };
@@ -690,11 +697,20 @@ export const TOOLS = [
   },
   {
     name: 'form_export',
-    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/（相對於回傳的 workspace，請告訴使用者完整路徑）。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。',
+    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/（相對於回傳的 workspace，請告訴使用者完整路徑）。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。' +
+      '伺服器端（HTTP 模式）回傳 download 連結供使用者下載；include_content:true 時另把 .htm 內容放在 htm 欄位回傳（給拿不到伺服器磁碟的平台）。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), out_dir: str('輸出目錄（預設 <workspace>/output）'),
-      overwrite: bool('覆寫同名檔案'), confirm_token: str('第二次呼叫帶入') } },
-    handler({ draft_id, out_dir, overwrite, confirm_token }) {
+      overwrite: bool('覆寫同名檔案'), confirm_token: str('第二次呼叫帶入'),
+      include_content: bool('第二段呼叫時一併回傳 .htm 內容（htm 欄位）') } },
+    card(data, { draft_id }) {
+      const d = store.loadDraft(draft_id);
+      if (data.plan) return cardData(d, 'export_plan', { plan: data.plan, confirm_token: data.confirm_token, import_mode: data.plan.import_mode });
+      const names = { htm: '.htm', json: '.package.json', manifest: '.manifest.md' };
+      const list = Object.entries(data.files || {}).map(([kind, rel]) => ({ kind, name: path.basename(rel), path: rel, url: data.download && data.download[kind], sha256: kind === 'htm' ? data.sha256 && data.sha256.htm : undefined }));
+      return cardData(d, 'exported', { files: list, import_mode: d.pendingDictionaries.length ? '匯入表單及字典' : '匯入表單' });
+    },
+    handler({ draft_id, out_dir, overwrite, confirm_token, include_content }) {
       const d = store.loadDraft(draft_id);
       const v = validateDraft(d, store.loadDictIndex(), store.loadPolicy());
       if (!v.valid) fail(E.INVALID_INPUT, '驗證未通過，不能輸出', { errors: v.errors });
@@ -720,7 +736,12 @@ export const TOOLS = [
       }
       confirm.verify('form_export', h, confirm_token);
       const r = w.write();
-      return { workspace: ws.root, files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker };
+      const out = { workspace: ws.root, files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker };
+      // 下載連結只在 HTTP 模式、檔案寫在預設 output/ 時提供（files.mjs 以 draft 名稱回推檔案）
+      const base = publicBase();
+      if (base && outDir === ws.outDir) out.download = files.links(base, requestCurrent().path || '/mcp', d.draft_id);
+      if (include_content) out.htm = fs.readFileSync(r.files.htm, 'utf8');
+      return out;
     }
   }
 ];

@@ -41,6 +41,15 @@ STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_W
 - 對外曝露請放在 TLS 反向代理之後；token 只放環境變數。
 - stdout 在 HTTP 模式下不輸出任何東西，診斷仍在 stderr。
 
+## MCP App 卡片（form_preview／form_export）
+支援 MCP Apps（SEP-1865）的 host（例如 MaiAgent 的 Web Chat 與後台對話）會把 `form_preview` 與 `form_export` 的結果畫成互動卡片；不支援的 host（Claude Code、Codex、LINE 等文字通道）看到的 JSON 文字結果完全不變。
+
+- `tools/list` 在這兩個 tool 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`；`resources/read` 回傳卡片 HTML（`ui/form-card.html`，單檔、不載入外部資源，符合 host 的封閉 CSP）。
+- tool 結果多一個 `structuredContent`：表單資訊、各區塊的列與控制項、驗證結果、待新建字典，以及狀態 `kind`（`preview`／`export_plan`／`exported`）。`ui_hints.modelContext` 讓 host 把目前狀態塞給模型。
+- 卡片動作：「產生匯出計畫」→ 呼叫 `form_export` 拿 plan；「確認匯出」→ 帶 `confirm_token` 再呼叫一次；完成後列出檔案與「下載」按鈕（`ui/open-link` 開啟簽章下載連結）。「請 AI 修改」把修改指示以 `ui/message` 送回對話。兩段式確認因此不再需要本機瀏覽器確認頁。
+- **下載連結**（HTTP 模式）：`GET <path>/files/<draft_id>/<kind>?t=<token>`，`kind` 為 `htm`／`json`／`manifest`。token 是本行程金鑰簽的 HMAC、綁定 draft 與 kind、24 小時有效，是這條路徑唯一的憑證（瀏覽器下載不帶 bearer）。連結的主機名取自 `STRUCMED_PUBLIC_URL`，未設時用請求的 `X-Forwarded-Proto`／`X-Forwarded-Host`／`Host`。只有輸出到預設 `output/` 的檔案提供連結。
+- `form_export` 第二段可帶 `include_content:true`，回傳欄位 `htm` 直接放 .htm 內容，給沒有下載入口的平台用。
+
 ## 線上 tool（strucmed V2 API）
 呼叫 strucmed 的 token 保護 API。
 

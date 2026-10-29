@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StrucMed 表單卡片</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; --line: #e5e7eb; --panel: #f9fafb;
+    --primary: #3854d8; --primary-fg: #ffffff; --ok: #15803d; --warn: #b45309; --err: #b91c1c;
+    --chip: #eef2ff; --chip-fg: #3730a3; --radius: 10px; font-size: 14px;
+  }
+  :root[data-mode="dark"] {
+    --bg: #18181b; --fg: #f4f4f5; --muted: #a1a1aa; --line: #3f3f46; --panel: #27272a;
+    --chip: #312e81; --chip-fg: #e0e7ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif; }
+  body { padding: 12px 14px 14px; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .head h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .status { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }
+  .status.ok { color: var(--ok); border-color: var(--ok); }
+  .status.warn { color: var(--warn); border-color: var(--warn); }
+  .status.err { color: var(--err); border-color: var(--err); }
+  .body { padding: 12px 14px; display: grid; gap: 12px; }
+  .area { border: 1px solid var(--line); border-radius: 8px; }
+  .area > .title { padding: 7px 10px; font-weight: 600; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .area > .title .tag { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .rows { padding: 6px 10px 10px; display: grid; gap: 8px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .row .txt { font-weight: 600; min-width: 72px; }
+  .ctl { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .ctl label { display: inline-flex; align-items: center; gap: 4px; color: var(--fg); }
+  input, select, textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=radio], input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--primary); margin: 0; }
+  textarea { min-height: 54px; width: min(100%, 360px); resize: vertical; }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--chip); color: var(--chip-fg); white-space: nowrap; }
+  .chip.req { background: #fee2e2; color: #991b1b; }
+  .chip.new { background: #dcfce7; color: #166534; }
+  .md { white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); padding: 8px 10px; }
+  .notes { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+  .notes .err { color: var(--err); }
+  .notes .warn { color: var(--warn); }
+  .plan { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; font-size: 13px; }
+  .plan ul { margin: 0; padding-left: 18px; }
+  .files { display: grid; gap: 6px; }
+  .file { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .file .name { font-family: ui-monospace, Menlo, monospace; font-size: 12px; flex: 1; word-break: break-all; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+  button { font: inherit; border-radius: 8px; padding: 7px 14px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  button:disabled { opacity: .55; cursor: default; }
+  .ask { display: flex; gap: 6px; flex: 1; min-width: 220px; }
+  .ask input { flex: 1; }
+  .busy { font-size: 12px; color: var(--muted); }
+  .error { font-size: 12px; color: var(--err); }
+  .foot { font-size: 11px; color: var(--muted); padding: 0 2px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="app" class="card"><div class="body"><div class="busy">載入中…</div></div></div>
+<div class="foot" id="foot"></div>
+<script>
+(function () {
+  'use strict';
+  // ---- minimal MCP Apps bridge (JSON-RPC over postMessage; host = @modelcontextprotocol/ext-apps AppBridge)
+  var seq = 0, pending = {}, hostContext = {}, data = null, busy = false, lastError = '';
+  function post(msg) { window.parent.postMessage(msg, '*'); }
+  function request(method, params) {
+    return new Promise(function (resolve, reject) {
+      var id = 'c' + (++seq);
+      pending[id] = { resolve: resolve, reject: reject };
+      post({ jsonrpc: '2.0', id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error(method + ' 逾時')); } }, 120000);
+    });
+  }
+  function notify(method, params) { post({ jsonrpc: '2.0', method: method, params: params || {} }); }
+  window.addEventListener('message', function (ev) {
+    var m = ev.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id !== undefined && !m.method) {              // response to our request
+      var p = pending[m.id]; if (!p) return; delete pending[m.id];
+      if (m.error) p.reject(new Error(m.error.message || 'host error')); else p.resolve(m.result);
+      return;
+    }
+    if (m.method === 'ui/notifications/tool-result') { applyResult(m.params); return; }
+    if (m.method === 'ui/notifications/host-context-changed') { applyHost(m.params); return; }
+    if (m.id !== undefined) post({ jsonrpc: '2.0', id: m.id, result: {} });   // e.g. ui/resource-teardown
+  });
+  function applyHost(ctx) {
+    if (!ctx) return;
+    hostContext = Object.assign({}, hostContext, ctx);
+    var theme = hostContext.theme || {};
+    if (theme.mode) document.documentElement.setAttribute('data-mode', theme.mode);
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-mode', 'dark');
+    if (theme.primaryColor) document.documentElement.style.setProperty('--primary', theme.primaryColor);
+  }
+  // host 可能把 structuredContent 的鍵轉成 camelCase（例如 MaiAgent 訊息 payload）；統一轉回 snake_case
+  function snakeKeys(v) {
+    if (Array.isArray(v)) return v.map(snakeKeys);
+    if (!v || typeof v !== 'object') return v;
+    var out = {};
+    Object.keys(v).forEach(function (k) { out[k.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); })] = snakeKeys(v[k]); });
+    return out;
+  }
+  function applyResult(result) {
+    var sc = result && (result.structuredContent || result.structured_content);
+    if (sc && sc.kind) { data = snakeKeys(sc); render(); return; }
+    // text-only result (e.g. a tool error): surface it without dropping the current card
+    var txt = result && result.content && result.content[0] && result.content[0].text;
+    if (txt) { try { var j = JSON.parse(txt); if (j.error) lastError = j.error.message || j.error.code; } catch (e) { lastError = String(txt).slice(0, 200); } render(); }
+  }
+  function reportSize() {
+    var h = document.documentElement.scrollHeight;
+    notify('ui/notifications/size-changed', { height: h + 2 });
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+
+  // ---- rendering
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function chips(c) {
+    var out = [];
+    if (c.required) out.push('<span class="chip req">必填</span>');
+    if (c.dictionary) out.push('<span class="chip' + (c.dictionary_new ? ' new' : '') + '">字典 ' + esc(c.dictionary) + (c.dictionary_new ? '（新建）' : '') + '</span>');
+    if (c.formula) out.push('<span class="chip">公式</span>');
+    if (c.hisquery) out.push('<span class="chip">HIS 參照</span>');
+    return out.join('');
+  }
+  function controlHtml(c) {
+    var n = 'c' + c.itemid, h = '';
+    switch (c.datatype) {
+      case 'radiobutton':
+      case 'checkbox':
+        var t = c.datatype === 'radiobutton' && !c.multiple ? 'radio' : 'checkbox';
+        h = c.options.map(function (o) { return '<label><input type="' + t + '" name="' + n + '" disabled> ' + esc(o) + '</label>'; }).join('');
+        break;
+      case 'selection':
+      case 'combobox':
+      case 'submenu':
+        h = '<select disabled><option>請選擇</option>' + c.options.map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('') + '</select>';
+        break;
+      case 'textarea': h = '<textarea disabled placeholder="' + esc(c.default) + '"></textarea>'; break;
+      case 'numberbox': h = '<input type="number" disabled placeholder="' + esc(c.min || c.max ? (c.min || '') + '～' + (c.max || '') : '') + '" style="width:110px">'; break;
+      case 'calendar': h = '<input type="' + (/time/i.test(c.format) && !/yyyy|日/i.test(c.format) ? 'time' : 'date') + '" disabled>'; break;
+      case 'textbox': h = '<input type="text" disabled placeholder="' + esc(c.default) + '" style="width:160px">'; break;
+      case 'label': h = '<span class="chip">' + esc(c.kind) + (c.formula ? '：' + esc(c.formula.slice(0, 40)) : '') + '</span>'; break;
+      default: h = '<span class="chip">' + esc(c.kind) + '</span>';
+    }
+    return '<span class="ctl" title="#' + c.itemid + ' ' + esc(c.kind) + '">' + h + chips(c) + '</span>';
+  }
+  function areaHtml(a) {
+    var head = '<div class="title">區塊 #' + a.itemid + (a.title ? '：' + esc(a.title) : '') + '<span class="tag">' + esc(a.type) + (a.hidden ? '・隱藏' : '') + '</span></div>';
+    if (a.structured) return '<div class="area">' + head + '<div class="md">（結構化區塊，見下方文字預覽）</div></div>';
+    var rows = a.rows.map(function (r) {
+      return '<div class="row">' + r.map(function (it) { return it.type === 'text' ? '<span class="txt">' + esc(it.text) + '</span>' : controlHtml(it); }).join('') + '</div>';
+    }).join('');
+    return '<div class="area">' + head + '<div class="rows">' + (rows || '<div class="busy">（空白區塊）</div>') + '</div></div>';
+  }
+  function statusHtml() {
+    var v = data.validation, cls = 'ok', txt = '驗證通過';
+    if (data.kind === 'exported') { txt = '已匯出'; }
+    else if (data.kind === 'export_plan') { cls = 'warn'; txt = '待確認匯出'; }
+    else if (!v.valid) { cls = 'err'; txt = '有 ' + v.errors.length + ' 個錯誤'; }
+    else if (v.warnings.length) { cls = 'warn'; txt = '通過，' + v.warnings.length + ' 個提醒'; }
+    return '<span class="status ' + cls + '">' + txt + '</span>';
+  }
+  function notesHtml() {
+    var v = data.validation, out = [];
+    v.errors.forEach(function (e) { out.push('<div class="err">✖ ' + esc(e.code) + '：' + esc(e.message) + '</div>'); });
+    v.warnings.forEach(function (w) { out.push('<div class="warn">⚠ ' + esc(w.message || w.code) + '</div>'); });
+    if (data.pending_dictionaries.length) out.push('<div>待新建字典（' + data.pending_dictionaries.length + '）：' + esc(data.pending_dictionaries.join('、')) + '</div>');
+    return out.length ? '<div class="notes">' + out.join('') + '</div>' : '';
+  }
+  function planHtml() {
+    var p = data.plan; if (!p) return '';
+    return '<div class="plan"><div><strong>匯出計畫</strong>（請確認後按「確認匯出」）</div>' +
+      '<div>輸出檔案：</div><ul>' + (p.files || []).map(function (f) { return '<li><code>' + esc(f) + '</code></li>'; }).join('') + '</ul>' +
+      (p.overwrite && p.overwrite.length ? '<div class="warn">會覆寫：' + esc(p.overwrite.join('、')) + '</div>' : '') +
+      '<div>匯入方式：' + esc(p.import_mode || data.import_mode || '') + '</div>' +
+      (p.stats ? '<div class="notes">區塊 ' + p.stats.areas + '、控制項 ' + p.stats.controls + '、新字典 ' + p.stats.dict_new + '、必填 ' + p.stats.required + '</div>' : '') + '</div>';
+  }
+  function filesHtml() {
+    var fs = data.files; if (!fs || !fs.length) return '';
+    return '<div class="files">' + fs.map(function (f) {
+      return '<div class="file"><span class="name">' + esc(f.name) + '</span>' + (f.sha256 ? '<span class="chip" title="SHA-256">' + esc(f.sha256.slice(0, 12)) + '…</span>' : '') +
+        (f.url ? '<button data-open="' + esc(f.url) + '">下載</button>' : '<span class="busy">在伺服器 ' + esc(f.path || '') + '</span>') + '</div>';
+    }).join('') + '</div>' +
+      '<div class="notes"><div>下一步：登入編輯器，deptno 填 ' + esc(data.form.dept_no) + '，「新增表單」後用「' + esc(data.import_mode || '匯入表單') + '」選 .htm 上傳；不要按「重新編號」。</div></div>';
+  }
+  function actionsHtml() {
+    var a = '';
+    if (data.kind === 'preview') a += '<button class="primary" data-act="plan" ' + (data.validation.valid ? '' : 'disabled') + '>產生匯出計畫</button>';
+    if (data.kind === 'export_plan') a += '<button class="primary" data-act="confirm">確認匯出</button><button data-act="preview">返回預覽</button>';
+    if (data.kind === 'exported') a += '<button data-act="preview">再看一次預覽</button>';
+    // 沙箱 iframe 沒有 allow-forms，不能用 <form>：以 Enter／按鈕送出
+    a += '<div class="ask" data-act="ask"><input type="text" placeholder="修改指示，例如：把備註改成必填" aria-label="修改指示"><button type="button">請 AI 修改</button></div>';
+    if (busy) a += '<span class="busy">處理中…</span>';
+    if (lastError) a += '<span class="error">' + esc(lastError) + '</span>';
+    return '<div class="actions">' + a + '</div>';
+  }
+  function render() {
+    if (!data) return;
+    var f = data.form;
+    var html = '<div class="head"><h1>' + esc(f.name) + '</h1><div class="meta">' +
+      '<span>捷徑 ' + esc(f.shortcut || '（未設）') + '</span><span>作業別 ' + esc((f.groups || []).join('、') || '（未設）') + '</span><span>科部 ' + esc(f.dept_no) + '</span></div>' + statusHtml() + '</div>' +
+      '<div class="body">' + (data.kind === 'exported' ? filesHtml() : '') + (data.kind === 'export_plan' ? planHtml() : '') +
+      data.areas.map(areaHtml).join('') + (data.areas.some(function (a) { return a.structured; }) ? '<div class="md">' + esc(data.preview_markdown) + '</div>' : '') +
+      notesHtml() + '</div>' + actionsHtml();
+    document.getElementById('app').innerHTML = html;
+    document.getElementById('foot').textContent = (data.generator || '') + '・draft ' + data.draft_id;
+    bind();
+    setTimeout(reportSize, 0);
+  }
+  function bind() {
+    document.querySelectorAll('[data-act]').forEach(function (el) {
+      if (el.getAttribute('data-act') === 'ask') {
+        var inp = el.querySelector('input'), btn = el.querySelector('button');
+        var send = function () {
+          var text = (inp.value || '').trim();
+          if (!text) return;
+          request('ui/message', { role: 'user', content: [{ type: 'text', text: '針對表單「' + data.form.name + '」（draft ' + data.draft_id + '）：' + text + '。改完請重新呼叫 form_preview 讓我看結果。' }] })
+            .then(function () { inp.value = ''; }).catch(function (e) { lastError = e.message; render(); });
+        };
+        btn.addEventListener('click', send);
+        inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); send(); } });
+        return;
+      }
+      el.addEventListener('click', function () { act(el.getAttribute('data-act')); });
+    });
+    document.querySelectorAll('[data-open]').forEach(function (el) {
+      el.addEventListener('click', function () { request('ui/open-link', { url: el.getAttribute('data-open') }).catch(function (e) { lastError = e.message; render(); }); });
+    });
+  }
+  function call(name, args) {
+    busy = true; lastError = ''; render();
+    return request('tools/call', { name: name, arguments: args }).then(function (res) {
+      busy = false;
+      if (res && res.isError) { var t = res.content && res.content[0] && res.content[0].text; try { lastError = JSON.parse(t).error.message; } catch (e) { lastError = t || '工具回傳錯誤'; } render(); return; }
+      applyResult(res);
+    }).catch(function (e) { busy = false; lastError = e.message || String(e); render(); });
+  }
+  function act(kind) {
+    if (busy) return;
+    if (kind === 'plan') call('form_export', { draft_id: data.draft_id });
+    if (kind === 'confirm') call('form_export', { draft_id: data.draft_id, confirm_token: data.confirm_token });
+    if (kind === 'preview') call('form_preview', { draft_id: data.draft_id, format: 'markdown' });
+  }
+
+  // ---- boot: initial data injected by the host, then the handshake for live updates
+  if (window.__MCP_INITIAL_RENDER_DATA__) applyResult(window.__MCP_INITIAL_RENDER_DATA__);
+  applyHost({});
+  request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'strucmed-form-card', version: '1.0.0' }, appCapabilities: {} })
+    .then(function (res) { applyHost(res && res.hostContext); notify('ui/notifications/initialized', {}); reportSize(); })
+    .catch(function () { /* host without the bridge: the injected data already rendered */ });
+})();
+</script>
+</body>
+</html>

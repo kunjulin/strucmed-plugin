@@ -12,6 +12,7 @@
 //     call back to 127.0.0.1 of the machine running this process, which a remote user's browser cannot reach
 import readline from 'node:readline';
 import { httpConfig, startHttp } from './http.mjs';
+import { CARD_TOOLS, uiMeta, listResources, readResource } from './cards.mjs';
 import { TOOLS } from './tools.mjs';
 import { ONLINE_TOOLS as ONLINE_READ_TOOLS } from './online-tools.mjs';
 import { ONLINE_WRITE_TOOLS } from './online-write-tools.mjs';
@@ -78,7 +79,13 @@ async function callTool(name, args) {
     }
     const data = await tool.handler(args || {});
     const warnings = Array.isArray(data && data.warnings) ? data.warnings : [];
-    return { content: [{ type: 'text', text: JSON.stringify({ ok: true, data, warnings }, null, 2) }] };
+    const result = { content: [{ type: 'text', text: JSON.stringify({ ok: true, data, warnings }, null, 2) }] };
+    if (typeof tool.card === 'function') {
+      // MCP Apps：卡片資料走 structuredContent，_meta.ui 指到卡片資源；文字結果維持不變
+      const card = tool.card(data, args || {});
+      if (card) { result.structuredContent = card; result._meta = uiMeta(); }
+    }
+    return result;
   } catch (e) {
     const error = e instanceof ToolError
       ? { code: e.code, message: e.message, details: e.details }
@@ -102,7 +109,7 @@ async function respond(msg) {
       await site.ready();
       return { jsonrpc: '2.0', id, result: {
         protocolVersion: (params && params.protocolVersion) || '2025-06-18',
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
         serverInfo: SERVER_INFO, instructions: INSTRUCTIONS + (online.configured() ? ONLINE_INSTRUCTIONS : '') + (llmgw.configured() ? LLMGW_INSTRUCTIONS : '') } };
     case 'ping':
       return isRequest ? { jsonrpc: '2.0', id, result: {} } : undefined;
@@ -110,10 +117,19 @@ async function respond(msg) {
       if (!isRequest) return undefined;
       await site.ready();
       return { jsonrpc: '2.0', id, result: {
-        tools: listed().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } };
+        tools: listed().map(({ name, description, inputSchema }) => (CARD_TOOLS.has(name) ? { name, description, inputSchema, _meta: uiMeta() } : { name, description, inputSchema })) } };
     case 'tools/call':
       if (!isRequest) return undefined;
       return { jsonrpc: '2.0', id, result: await callTool(params && params.name, params && params.arguments) };
+    case 'resources/list':
+      return isRequest ? { jsonrpc: '2.0', id, result: { resources: listResources() } } : undefined;
+    case 'resources/templates/list':
+      return isRequest ? { jsonrpc: '2.0', id, result: { resourceTemplates: [] } } : undefined;
+    case 'resources/read': {
+      if (!isRequest) return undefined;
+      const found = readResource(params && params.uri);
+      return found ? { jsonrpc: '2.0', id, result: found } : { jsonrpc: '2.0', id, error: { code: -32002, message: `Resource not found: ${params && params.uri}` } };
+    }
     default:
       if (method && method.startsWith('notifications/')) return undefined;   // no response to notifications
       return isRequest ? { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } } : undefined;

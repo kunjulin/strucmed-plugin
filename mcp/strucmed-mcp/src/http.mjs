@@ -7,8 +7,13 @@
 //   - STRUCMED_HTTP_TOKEN (when set) is checked on every request as `Authorization: Bearer <token>`, constant-time
 //   - requests carrying an Origin header are refused (browser pages must not drive this endpoint; DNS-rebinding guard)
 //   - body limit 1 MiB; only POST on the configured path; stdout stays free (diagnostics go to stderr)
+//   - GET <path>/files/<draft_id>/<kind>?t=<token> serves an exported artifact to a browser; the signed token
+//     (files.mjs) is the only credential on that route, since a browser download carries no bearer header
 import http from 'node:http';
+import fs from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
+import { requestContext } from './reqctx.mjs';
+import * as files from './files.mjs';
 
 export const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_PATH = '/mcp';
@@ -68,9 +73,33 @@ function readBody(req) {
  * Start the HTTP listener. `respond(msg)` resolves to the JSON-RPC response for one message, or undefined for a
  * notification. `onRequest(promise)` lets the caller track in-flight work for graceful shutdown.
  */
+/** The origin a browser would use to reach this server, honouring a reverse proxy's forwarded headers. */
+function requestOrigin(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || 'http';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return host ? `${proto}://${host}` : '';
+}
+
+function serveFile(req, res, config, url) {
+  const m = new RegExp(`^${config.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/files/([^/]+)/([a-z]+)$`).exec(url.pathname);
+  if (!m) return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') { reply(res, 405, { error: 'method not allowed' }, { Allow: 'GET' }); return true; }
+  const found = files.resolve(m[1], m[2], url.searchParams.get('t'));
+  if (!found) { reply(res, 404, { error: 'not found' }); return true; }
+  const body = fs.readFileSync(found.file);
+  res.writeHead(200, {
+    'Content-Type': found.mime, 'Content-Length': body.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(found.name)}`,
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : body);
+  return true;
+}
+
 export function startHttp(config, respond, { log = () => {}, onRequest = () => {} } = {}) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (serveFile(req, res, config, url)) return;
     if (url.pathname !== config.path) return reply(res, 404, { error: 'not found' });
     if (req.headers.origin !== undefined) return reply(res, 403, { error: 'Origin not allowed' });
     if (!bearerOk(req, config.token)) return reply(res, 401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
@@ -87,7 +116,8 @@ export function startHttp(config, respond, { log = () => {}, onRequest = () => {
     if (msgs.length === 0 || msgs.some(m => !m || typeof m !== 'object' || m.jsonrpc !== '2.0')) {
       return reply(res, 400, rpcError(null, -32600, 'Invalid Request'));
     }
-    const job = Promise.all(msgs.map(m => respond(m)));
+    const ctx = { origin: requestOrigin(req), path: config.path };
+    const job = requestContext.run(ctx, () => Promise.all(msgs.map(m => respond(m))));
     onRequest(job);
     let results;
     try { results = (await job).filter(r => r !== undefined); } catch (e) {
