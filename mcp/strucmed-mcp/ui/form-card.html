@@ -244,8 +244,9 @@
   }
   function act(kind) {
     if (busy) return;
-    if (kind === 'plan') call('form_export', { draft_id: data.draft_id });
-    if (kind === 'confirm') call('form_export', { draft_id: data.draft_id, confirm_token: data.confirm_token });
+    // 卡片上的匯出是使用者明確要求：同名舊檔直接覆寫（plan 會列出會覆寫的檔案）
+    if (kind === 'plan') call('form_export', { draft_id: data.draft_id, overwrite: true });
+    if (kind === 'confirm') call('form_export', { draft_id: data.draft_id, overwrite: true, confirm_token: data.confirm_token });
     if (kind === 'preview') call('form_preview', { draft_id: data.draft_id, format: 'markdown' });
   }
 
