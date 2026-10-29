@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// strucmed-mcp — offline stdio MCP server (zero dependencies).
-// Protocol: JSON-RPC 2.0, one message per line on stdin/stdout (MCP stdio transport).
+// strucmed-mcp — offline MCP server (zero dependencies).
+// Transport: stdio by default (JSON-RPC 2.0, one message per line on stdin/stdout); with STRUCMED_HTTP_PORT set,
+// Streamable HTTP instead (http.mjs: POST <path> → JSON response) for server-side agent platforms.
 // Security posture :
 //   - offline by default: no network access, no credentials. Online tools (online-tools.mjs) exist only when a
 //     strucmed site is available (site.mjs: 院內／院外自動判斷, or STRUCMED_ONLINE_BASE_URL); login goes through the
 //     system browser (the HIS password never reaches this process), never through tool args
 //   - writes only under <workspace>/.strucmed and <workspace>/output
 //   - stdout carries protocol messages only; diagnostics go to stderr
+//   - HTTP mode runs offline unless STRUCMED_SITE says otherwise: the browser login and the write-confirmation page
+//     call back to 127.0.0.1 of the machine running this process, which a remote user's browser cannot reach
 import readline from 'node:readline';
+import { httpConfig, startHttp } from './http.mjs';
 import { TOOLS } from './tools.mjs';
 import { ONLINE_TOOLS as ONLINE_READ_TOOLS } from './online-tools.mjs';
 import { ONLINE_WRITE_TOOLS } from './online-write-tools.mjs';
@@ -49,7 +53,6 @@ function listed() {
   return out;
 }
 
-const send = msg => process.stdout.write(JSON.stringify(msg) + '\n');
 const log = (...a) => process.stderr.write('[strucmed-mcp] ' + a.join(' ') + '\n');
 
 async function callTool(name, args) {
@@ -85,41 +88,69 @@ async function callTool(name, args) {
   }
 }
 
-const inflight = new Set();   // 線上 tool 與站台偵測是非同步的：stdin 關閉時等它們回完再結束
-const track = job => { inflight.add(job); job.finally(() => inflight.delete(job)); };
+const inflight = new Set();   // 線上 tool 與站台偵測是非同步的：結束時等它們回完再退出
+const track = job => { inflight.add(job); job.finally(() => inflight.delete(job)); return job; };
 
-function handle(msg) {
+// 一則 JSON-RPC 訊息 → 一則回應（通知沒有回應，回 undefined）。兩種傳輸共用。
+async function respond(msg) {
   const { id, method, params } = msg;
   const isRequest = id !== undefined && id !== null;
   switch (method) {
     case 'initialize':
       // 先等站台偵測（最多約 3 秒），instructions 與 tools/list 才反映院內／院外
-      return isRequest && track(site.ready().then(() => send({ jsonrpc: '2.0', id, result: {
+      if (!isRequest) return undefined;
+      await site.ready();
+      return { jsonrpc: '2.0', id, result: {
         protocolVersion: (params && params.protocolVersion) || '2025-06-18',
         capabilities: { tools: { listChanged: false } },
-        serverInfo: SERVER_INFO, instructions: INSTRUCTIONS + (online.configured() ? ONLINE_INSTRUCTIONS : '') + (llmgw.configured() ? LLMGW_INSTRUCTIONS : '') } })));
+        serverInfo: SERVER_INFO, instructions: INSTRUCTIONS + (online.configured() ? ONLINE_INSTRUCTIONS : '') + (llmgw.configured() ? LLMGW_INSTRUCTIONS : '') } };
     case 'ping':
-      return isRequest && send({ jsonrpc: '2.0', id, result: {} });
+      return isRequest ? { jsonrpc: '2.0', id, result: {} } : undefined;
     case 'tools/list':
-      return isRequest && track(site.ready().then(() => send({ jsonrpc: '2.0', id, result: {
-        tools: listed().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } })));
+      if (!isRequest) return undefined;
+      await site.ready();
+      return { jsonrpc: '2.0', id, result: {
+        tools: listed().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } };
     case 'tools/call':
-      if (!isRequest) return;
-      return track(callTool(params && params.name, params && params.arguments).then(result => send({ jsonrpc: '2.0', id, result })));
+      if (!isRequest) return undefined;
+      return { jsonrpc: '2.0', id, result: await callTool(params && params.name, params && params.arguments) };
     default:
-      if (method && method.startsWith('notifications/')) return;   // no response to notifications
-      if (isRequest) send({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
+      if (method && method.startsWith('notifications/')) return undefined;   // no response to notifications
+      return isRequest ? { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } } : undefined;
   }
 }
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on('line', line => {
-  if (!line.trim()) return;
-  let msg;
-  try { msg = JSON.parse(line); } catch {
-    return send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
-  }
-  (Array.isArray(msg) ? msg : [msg]).forEach(handle);
-});
-rl.on('close', () => Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0)));   // 結束前作廢 refresh token
-site.ready().then(() => log(`v${VERSION} ready (workspace: ${workspaceRoot()}; site: ${site.describe().label}; online: ${online.configured() ? 'on' : 'off'}; llmgateway: ${llmgw.configured() ? 'on' : 'off'}; fmapi: ${fmapi.configured() ? 'on' : 'off'})`));
+const banner = () => `v${VERSION} ready (workspace: ${workspaceRoot()}; site: ${site.describe().label}; online: ${online.configured() ? 'on' : 'off'}; llmgateway: ${llmgw.configured() ? 'on' : 'off'}; fmapi: ${fmapi.configured() ? 'on' : 'off'})`;
+
+function startStdio() {
+  const send = msg => process.stdout.write(JSON.stringify(msg) + '\n');
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  rl.on('line', line => {
+    if (!line.trim()) return;
+    let msg;
+    try { msg = JSON.parse(line); } catch {
+      return send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+    }
+    (Array.isArray(msg) ? msg : [msg]).forEach(m => track(respond(m).then(r => { if (r !== undefined) send(r); })));
+  });
+  rl.on('close', () => Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0)));   // 結束前作廢 refresh token
+  site.ready().then(() => log(banner()));
+}
+
+async function startHttpMode(config) {
+  if (!process.env.STRUCMED_SITE || !String(process.env.STRUCMED_SITE).trim()) process.env.STRUCMED_SITE = 'offline';
+  const { server, url } = await startHttp(config, respond, { log, onRequest: track });
+  const stop = () => {
+    server.close();
+    Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0));
+  };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+  await site.ready();
+  log(`${banner()}; http: ${url}${config.token ? ' (bearer)' : ''}`);
+}
+
+let config;
+try { config = httpConfig(); } catch (e) { log(String(e.message || e)); process.exit(2); }
+if (config) startHttpMode(config).catch(e => { log('http listen failed:', String(e.message || e)); process.exit(2); });
+else startStdio();
