@@ -18,6 +18,8 @@ import { publicBase, current as requestCurrent } from './reqctx.mjs';
 import * as confirm from './confirm.mjs';
 import { parseSource, sha256 } from './importer.mjs';
 import { digestForm } from './formdiff.mjs';
+import { fieldMap, checkMemo, unitOf } from './fieldmap.mjs';
+import { suggest } from './dictsuggest.mjs';
 import { editableItems, findControl, refsTo, maxItemId, walk, isControl } from './formtree.mjs';
 
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
@@ -177,6 +179,84 @@ export const TOOLS = [
       addPending(d, name, comment, memo);
       store.saveDraft(d);
       return { pending: d.pendingDictionaries, collision_other_types: collision, warnings: (comment || '').trim() ? [] : [`W_DICT_NO_DESC：新字典「${name}」沒有說明（comment）；請補一行語意`] };
+    }
+  },
+  {
+    name: 'form_fields',
+    description: '（離線，唯讀；字典助手）把 draft 解析成逐欄的事實：說明文字、datatype、選項、min／max、單位、所在區塊、字典（id、層級、說明、目前補述）、dicrole、' +
+      '它參照誰（refs_out）與誰參照它（refs_in：計算式、巨集、LLM prompt、選項連動）、AI 資料流角色（ai）。derived 是依這些事實推得的補述草稿（func 表單功能、type、range、unit），' +
+      '寫 memo 時以它為底改寫成給人看的句子。只看 itemids 時帶 itemids；only:"dictionary" 只回有綁字典的欄位。',
+    inputSchema: { type: 'object', required: ['draft_id'], properties: {
+      draft_id: str('draft id'), itemids: { type: 'array', items: { type: 'number' }, description: '只回這些欄位（選填）' },
+      only: str('dictionary＝只回有綁字典（或待新建）的欄位', { enum: ['dictionary'] }) } },
+    handler({ draft_id, itemids, only }) {
+      const r = fieldMap(store.loadDraft(draft_id), store.loadDictIndex(), store.loadPolicy());
+      let fields = r.fields;
+      if (Array.isArray(itemids) && itemids.length) { const want = new Set(itemids.map(Number)); fields = fields.filter(f => want.has(f.itemid)); }
+      if (only === 'dictionary') fields = fields.filter(f => f.dictionary);
+      const warnings = [];
+      if (!store.loadDictIndex()) warnings.push('W_NO_DICT_INDEX：沒有本機字典索引，字典的層級與補述都是空的；請先 online_dictionary_search(update_index:true) 或 dictionary_load');
+      if (r.stats.unknown_dictionary) warnings.push(`W_DICT_NOT_IN_INDEX：${r.stats.unknown_dictionary} 個欄位綁的字典不在本機索引（可能是他科字典），請以 online_dictionary_search(scope:"all", q:名稱, update_index:true) 補進索引`);
+      return { stats: r.stats, fields, warnings };
+    }
+  },
+  {
+    name: 'dictionary_suggest',
+    description: '（離線，唯讀；字典助手）為一個欄位找合適的字典：帶 draft_id＋itemid（用 form_fields 的事實），或 field:{ caption, datatype, unit, options, intent }。' +
+      '從本機字典索引計分排序（名稱、說明與補述命中、控制項型別、單位、選項、層級體系優先、使用表單數），每筆附 reasons（為什麼推薦）與 cite（引用方式：綁定用的 dictionary.id、' +
+      '寫 LLM prompt 可用的欄位描述 memo.llm、計算式說明 memo.calx、計算式與巨集用的 A<itemid>）。要找別科的字典：先 online_dictionary_search(scope:"all", q, update_index:true)，再帶 include_other:true。' +
+      '使用表單數來自 online_dictionary_usage（不帶 dic_id）寫進索引的計數。',
+    inputSchema: { type: 'object', properties: {
+      draft_id: str('draft id（與 itemid 一起用）'), itemid: { type: 'number', description: '欄位 itemid' },
+      field: { type: 'object', description: '不用 draft 時直接描述欄位', properties: { caption: str('欄位說明文字'), datatype: str('控制項類型'), unit: str('單位'),
+        options: { type: 'array', items: { type: 'string' } }, intent: str('用途或要存的語意（例：門診初診體重，供 BMI 計算）') } },
+      intent: str('補充用途（與 draft 一起用時）'), include_other: bool('也列出他科、他體系的字典（level=other）'), limit: { type: 'number', description: '最多幾筆（預設 8，最多 30）' } } },
+    handler({ draft_id, itemid, field, intent, include_other, limit }) {
+      const idx = store.loadDictIndex();
+      if (!idx) fail(E.INVALID_INPUT, '沒有本機字典索引：請先 online_dictionary_search(update_index:true) 或 dictionary_load');
+      let f = field ? { ...field, unit: field.unit || unitOf(field.caption) } : null, current = null;
+      if (draft_id !== undefined) {
+        if (itemid === undefined) fail(E.INVALID_INPUT, '帶 draft_id 時要帶 itemid');
+        const fm = fieldMap(store.loadDraft(draft_id), idx, store.loadPolicy());
+        const x = fm.fields.find(y => y.itemid === Number(itemid));
+        if (!x) fail(E.NOT_FOUND, `draft 中找不到 #${itemid}`);
+        f = { caption: x.caption, datatype: x.datatype, unit: x.unit || '', options: x.options || [], intent: [intent, x.derived.func].filter(Boolean).join(' '), itemid: x.itemid };
+        current = x.dictionary;
+      }
+      if (!f || !String(f.caption || f.intent || '').trim()) fail(E.INVALID_INPUT, '請帶 draft_id＋itemid，或 field.caption／field.intent');
+      const candidates = suggest(idx, f, { deptNo: idx.deptNo, usage: idx.usage, include_other: !!include_other, limit });
+      const warnings = [];
+      if (!idx.usage) warnings.push('W_NO_USAGE：索引沒有使用表單數（online_dictionary_usage 不帶 dic_id 可寫入）；排序未考慮多少表單在用');
+      if (!candidates.length) warnings.push('W_NO_CANDIDATE：本機索引沒有相關字典；可試 online_dictionary_search(scope:"all", q:關鍵字, update_index:true) 找別科，或規劃新建字典');
+      return { field: f, current, candidates, warnings };
+    }
+  },
+  {
+    name: 'dictionary_memo_check',
+    description: '（離線，唯讀；字典助手）檢查一份補述草稿（memo 11 個鍵＋選填 fhir）：鍵與長度、Big5 字元、FHIR 格式、整段 1800 字上限、疑似個資；' +
+      '帶 dic_id 時先與本機索引中的既有補述做補充合併（既有鍵保留）；帶 draft_id＋itemid 時再比對欄位：控制項型別、單位、範圍與 min／max、選項，並提示缺的角度（表單功能、使用情境、交換引用）。' +
+      '新字典（待新建）帶 draft_id＋itemid、不帶 dic_id。回 ok、errors、warnings、合併後的 merged 與字數。',
+    inputSchema: { type: 'object', required: ['memo'], properties: {
+      memo: { type: 'object', description: 'meaning／type／unit／range／func／usecase／interop／asr／calx／llm／scope' },
+      fhir: { type: 'array', items: { type: 'object' }, description: 'FHIR 對應（選填，整組）' },
+      dic_id: str('既有字典 id（選填：與目前補述合併後檢查）'), draft_id: str('draft id（選填）'), itemid: { type: 'number', description: '欄位 itemid（與 draft_id 一起用）' } } },
+    handler({ memo, fhir, dic_id, draft_id, itemid }) {
+      const idx = store.loadDictIndex();
+      let existing = null, field = null;
+      if (dic_id) {
+        const e = idx && idx.entries.find(x => x.id === dic_id);
+        if (!e) fail(E.NOT_FOUND, `本機索引沒有字典 ${dic_id}；請先 online_dictionary_search(update_index:true)`);
+        existing = dc.enrich(e, idx.deptNo);
+      }
+      if (draft_id !== undefined) {
+        if (itemid === undefined) fail(E.INVALID_INPUT, '帶 draft_id 時要帶 itemid');
+        field = fieldMap(store.loadDraft(draft_id), idx, store.loadPolicy()).fields.find(y => y.itemid === Number(itemid)) || null;
+        if (!field) fail(E.NOT_FOUND, `draft 中找不到 #${itemid}`);
+      }
+      const r = checkMemo({ memo, fhir, existing, field });
+      const keys = store.serverMemoKeys();
+      if (r.merged && keys) { const lost = Object.keys(r.merged).filter(k => !keys.includes(k)); if (lost.length) r.warnings.push({ code: 'W_SERVER_OLD_MEMO_KEYS', message: `站台還不支援 ${lost.join('、')}，寫入時會略過` }); }
+      return r;
     }
   },
   {

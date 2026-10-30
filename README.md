@@ -517,6 +517,7 @@ MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `to
 | `/strucmed:edit-form` | 以既有 `.htm`／`.json`／線上範本為範本改版，原結構原封保留 | `<來源> <要改什麼>` |
 | `/strucmed:verify-runtime` | 以 HIS 端 runtime 的本機離線副本實跑計算式、巨集、表格頁籤，交出「輸入 → 結果」對照表 | `<draft_id>` |
 | `/strucmed:tune-prompt` | 調校單一 LLM 按鈕的提示詞：依 PromptPatterns 改寫、formula_check、選用去識別化樣本試跑比較模型，再寫回 draft | `<draft_id> <itemid> [模型別名]` |
+| `/strucmed:dictionary-assist` | 欄位字典助手：為欄位、計算式、巨集、LLM prompt 找合適的字典並給引用方式；為新字典寫完整補述（表單功能、使用情境、交換引用）；解析既有表單、補齊它用到的字典補述 | `find <draft_id> <itemid>`／`new <draft_id>`／`annotate <template_id\|.htm\|draft_id>` |
 | `/strucmed:publish-form` | 經 API v2 上架（新建或 If-Match 更新；G3），字典先建後綁；線上未設定時改走 `.htm` 匯入 | `<draft_id> [--folder usr\|sub\|dpt] [--update <templateID>]` |
 | `/strucmed:build-form-app` | B1 執行條件檢核清單；B2 表單 APP 產生（G4；H0 本機 Docker／H1 既有 struNote／H2 站台 `/apps/`） | `<範本 ID> [b1\|b2]` |
 | `/strucmed:report-issue` | 收集 workflow-log、版本與遮蔽後的錯誤，產生 issue 草稿（由你自己送出） | `[一句話描述問題]` |

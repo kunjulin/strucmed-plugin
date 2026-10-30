@@ -81,6 +81,20 @@ export function saveDictIndex(idx) {
   fs.writeFileSync(workspace().dictFile, JSON.stringify(idx, null, 2));
 }
 
+// 站台接受的補述欄位（GET api/v2/dictionaries 的 memoKeys）：本行程記住最近一次的回應，並寫進本機索引；都沒有時回 null（呼叫端當舊站台）
+let memoKeysSeen = null;
+export function rememberMemoKeys(keys) {
+  if (!Array.isArray(keys) || !keys.length) return;
+  memoKeysSeen = keys.map(String);
+  const idx = loadDictIndex();
+  if (idx && JSON.stringify(idx.memoKeys) !== JSON.stringify(memoKeysSeen)) saveDictIndex({ ...idx, memoKeys: memoKeysSeen });
+}
+export function serverMemoKeys() {
+  if (memoKeysSeen) return memoKeysSeen;
+  const idx = loadDictIndex();
+  return idx && Array.isArray(idx.memoKeys) ? idx.memoKeys : null;
+}
+
 // 本院政策（院方決議後由使用者設定）：<root>/.strucmed/policy.json
 //   { "llm_models": ["", "qwen332b", ...] }   // 允許的 LLMQUERY 模型（'' = 預設模型）；未設定＝平台清單內都允許
 // 另合併 LlmGateway 白名單快取（llmgateway_models 寫入的 .strucmed/llm-models.json）：policy.gateway_models／gateway_fetched_at／gateway_stale

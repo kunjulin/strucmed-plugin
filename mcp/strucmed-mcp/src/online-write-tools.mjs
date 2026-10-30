@@ -4,7 +4,7 @@
 //   - 第二次呼叫還要使用者在瀏覽器確認頁按「確認寫入」（approve.mjs，2.3.0）；確認只能用一次，還沒按時回 pending、不寫入
 //   - 寫入不重試（伺服器端也不重試；502 pending 時提示不要重複保存）
 //   - 不提供 trash／字典刪除／硬刪除；update 只允許「來源就是該範本」的 draft，且帶 If-Match；名稱／捷徑／作業別預設沿用線上值
-//   - feature flags：templateUpdate（online_template_update）、dictionaryWrite（online_dictionary_create／batch／memo_set）
+//   - feature flags：templateUpdate（online_template_update）、dictionaryWrite（online_dictionary_create／batch／memo_set／memo_batch）
 //   - 字典說明是 JSON 容器（dictcomment.mjs，docs/14）：新建時一次寫好 desc＋memo；memo_set 帶 If-Match（etag），409 回目前內容讓 AI 合併後重來；體系升級／降級只由體系字典管理者在字典頁操作（寫入 sys 標記，id 不變），不提供 MCP 工具
 import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
@@ -23,6 +23,8 @@ const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 const WRITE_FOLDERS = ['usr', 'sub', 'dpt'];           // sys 需 V2:SystemListAdmins，本工具一律不寫
 const MAX_BODY_CHARS = 2 * 1024 * 1024;                 // TemplateWriteService.MaxContentBytes
 const BATCH_MAX = 500;                                  // V2:DictionaryBatchMax 預設
+const MEMO_BATCH_MAX = 100;                             // V2:MemoBatchMax 預設
+const MEMO_FALLBACK_MAX = 15;                           // 舊站台逐本寫入：寫入頻率每分鐘 20 次
 
 const draftHash = d => { const { updated, created, exported, ...rest } = d; return confirm.hashPayload(rest); };   // exported：匯出紀錄，不算表單內容
 const stripEtag = v => String(v || '').replace(/^W\//, '').replace(/^"|"$/g, '').trim();
@@ -243,14 +245,15 @@ export const ONLINE_WRITE_TOOLS = [
       const pend = (d.pendingDictionaries || []).find(p => p.name === name);
       if (!pend) fail(E.INVALID_INPUT, `「${name}」不在 draft 的待新建字典清單中`, { pending: (d.pendingDictionaries || []).map(p => p.name) });
       const desc = String(comment !== undefined ? comment : (pend.comment || ''));
-      const memoObj = memo !== undefined ? (memo ? dc.validateMemo(memo) : null) : (pend.memo || null);
+      const wanted = memo !== undefined ? (memo ? dc.validateMemo(memo) : null) : (pend.memo || null);
+      const { memo: memoObj, warnings: keyWarnings } = forServer(wanted, name);
       const dicComment = dc.build({ desc, memo: memoObj });
       const usedBy = [];
       walk(d, n => { if (isControl(n) && n.dictionary === name && !n.dicid) usedBy.push(n.itemid); });
       const h = confirm.hashPayload({ action: 'dict-create', base, user: user.userId, draft_id, name, dicComment, force: !!force });
       if (!confirm_token) {
         const plan = { action: '新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', name, comment: desc, memo: memoObj, dic_comment_json: dicComment, force: !!force, used_by_itemids: usedBy,
-          note: '同名未刪除字典存在時會沿用既有（reused），不會重複建立', warnings: desc ? [] : ['W_DICT_NO_DESC：沒有一行說明，字典建立後別人看不懂用途'] };
+          note: '同名未刪除字典存在時會沿用既有（reused），不會重複建立', warnings: [...(desc ? [] : ['W_DICT_NO_DESC：沒有一行說明，字典建立後別人看不懂用途']), ...keyWarnings] };
         approve.offer('online_dictionary_create', h, '新增字典', plan);
         return {
           plan,
@@ -286,14 +289,19 @@ export const ONLINE_WRITE_TOOLS = [
       const user = online.currentUser();
       const base = online.baseUrl();
       const d = store.loadDraft(draft_id);
-      const rows = (d.pendingDictionaries || []).map(p => ({ dicName: p.name, dicComment: dc.build({ desc: p.comment || '', memo: p.memo || null }) }));
+      const keyWarnings = [];
+      const rows = (d.pendingDictionaries || []).map(p => {
+        const r = forServer(p.memo || null, p.name);
+        keyWarnings.push(...r.warnings);
+        return { dicName: p.name, dicComment: dc.build({ desc: p.comment || '', memo: r.memo }) };
+      });
       if (!rows.length) fail(E.INVALID_INPUT, 'draft 沒有待新建字典');
       if (rows.length > BATCH_MAX) fail(E.LIMIT, `待新建字典 ${rows.length} 筆超過批次上限 ${BATCH_MAX}`);
       const h = confirm.hashPayload({ action: 'dict-batch', base, user: user.userId, draft_id, rows });
       if (!confirm_token) {
         const plan = { action: '批次新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept',
           rows: (d.pendingDictionaries || []).map(p => ({ name: p.name, comment: p.comment || '', memo: p.memo || null })),
-          warnings: (d.pendingDictionaries || []).filter(p => !(p.comment || '').trim()).map(p => `W_DICT_NO_DESC：「${p.name}」沒有一行說明`) };
+          warnings: [...(d.pendingDictionaries || []).filter(p => !(p.comment || '').trim()).map(p => `W_DICT_NO_DESC：「${p.name}」沒有一行說明`), ...keyWarnings] };
         approve.offer('online_dictionary_batch', h, '批次新增字典', plan);
         return { plan, confirm_token: confirm.issue('online_dictionary_batch', h),
           next: '請把 plan 給使用者確認，同意後帶 confirm_token 再呼叫一次' };
@@ -332,13 +340,8 @@ export const ONLINE_WRITE_TOOLS = [
       const base = online.baseUrl();
       const cur = await fetchDictionary(id, user);
       if (cur.dicName.startsWith('__')) fail(E.CONFLICT, `字典「${cur.dicName.slice(2)}」已刪除，不能寫補述`);
-      const after = { memo: memo !== undefined ? dc.mergeMemo(cur.memo, memo) : cur.memo, fhir: fhir !== undefined ? (fhir ? fhir : []) : cur.fhir };
-      const fv = dc.validateFhir(after.fhir || [], after.memo && after.memo.type);
-      after.fhir = fv.fhir;
-      const warnings = [...fv.warnings];
+      const { after, warnings } = planMemo(cur, memo, fhir, user);
       if (!confirm_token) {
-        const nextRaw = dc.build({ desc: cur.desc, memo: after.memo, fhir: after.fhir, memo_by: user.userId, memo_at: new Date().toISOString(), sys: cur.sys, promote: cur.promote, alias_of: cur.alias_of }, { forceJson: true });
-        warnings.push(...(dc.checkLength(nextRaw) > dc.MAX_CHARS * 0.9 ? ['W_DICT_COMMENT_NEAR_LIMIT：寫入後接近長度上限'] : []));
         const h = confirm.hashPayload({ action: 'dict-memo', base, user: user.userId, dic_id: id, etag: cur.etag, memo: memo ?? null, fhir: fhir ?? null });
         const plan = { action: `更新字典補述 ${cur.dicName}`, site: base, user_id: user.userId, dic_id: id, name: cur.dicName, dic_type: cur.dicType, level: dc.LEVEL_LABEL[cur.level] || cur.level,
           desc: cur.desc, before: { memo: cur.memo, fhir: cur.fhir }, after, etag: cur.etag, warnings };
@@ -364,6 +367,83 @@ export const ONLINE_WRITE_TOOLS = [
     }
   }
 ,
+  {
+    name: 'online_dictionary_memo_batch',
+    flag: 'dictionaryWrite',
+    description: '（online，寫入字典補述，flag dictionaryWrite）一次補多本字典的補述 memo 與 FHIR 對應（PUT api/v2/dictionaries/memo/batch，最多 100 本；逐本 If-Match）。' +
+      'dictionary-assist 的「既有表單補述」用：合併規則與 online_dictionary_memo_set 相同（memo 保留既有鍵、只覆寫有給的鍵，值給 "" 清除；fhir 有給就整組取代）。' +
+      '兩段式：第一次呼叫讀線上目前內容，plan 逐本列改前／改後與 etag（內容沒變的列在 no_change、不寫）；**plan 必須給使用者確認**，同意後帶 confirm_token 與 plan 的 etags 再呼叫一次。' +
+      '第二次呼叫若有字典在取得計畫後被改 → E_CONFLICT（details.stale 附目前內容，不開確認頁），請合併後重取計畫；否則開瀏覽器寫入確認頁，使用者按「確認寫入」才寫入，逐本回報成功或衝突。' +
+      '站台沒有批次端點時改為逐本寫入（最多 15 本，W_SERVER_OLD）。站台不支援 func／usecase／interop 時會略過並回 W_SERVER_OLD_MEMO_KEYS。',
+    inputSchema: { type: 'object', required: ['items'], properties: {
+      items: { type: 'array', description: '[{ dic_id, memo?, fhir? }]，1–100 本', items: { type: 'object', required: ['dic_id'], properties: {
+        dic_id: str('字典 id'), memo: { type: 'object', description: '要補充的鍵：meaning／type／unit／range／func／usecase／interop／asr／calx／llm／scope' },
+        fhir: { type: 'array', items: { type: 'object' }, description: 'FHIR 對應（整組取代）' } } } },
+      draft_id: str('選填：補述計畫對應的 draft（hooks 會檢查 .strucmed/plans/<draft_id>/memo-plan.md 或 publish-plan.md 的核准）'),
+      etags: { type: 'object', description: '第二次呼叫帶入 plan 的 etags（{ dic_id: etag }）' }, confirm_token: str('第二次呼叫帶入') } },
+    async handler({ items, etags, confirm_token }) {
+      if (!Array.isArray(items) || !items.length) fail(E.INVALID_INPUT, 'items 至少一本');
+      if (items.length > MEMO_BATCH_MAX) fail(E.LIMIT, `一次最多 ${MEMO_BATCH_MAX} 本`);
+      const ids = items.map(x => checkId(x && x.dic_id, 'items[].dic_id'));
+      if (new Set(ids).size !== ids.length) fail(E.INVALID_INPUT, '同一本字典在 items 中出現多次');
+      for (const x of items) if (x.memo === undefined && x.fhir === undefined) fail(E.INVALID_INPUT, `${x.dic_id}：memo 與 fhir 至少要給一個`);
+      const user = online.currentUser();
+      const base = online.baseUrl();
+      const curs = await fetchDictionaries(ids, user);
+      const rows = [], noChange = [], warnings = [];
+      items.forEach((x, i) => {
+        const cur = curs[i];
+        if (cur.dicName.startsWith('__')) fail(E.CONFLICT, `字典「${cur.dicName.slice(2)}」已刪除，不能寫補述`);
+        const { after, warnings: w } = planMemo(cur, x.memo, x.fhir, user);
+        const same = JSON.stringify(after.memo || null) === JSON.stringify(cur.memo || null) && JSON.stringify(after.fhir || []) === JSON.stringify(cur.fhir || []);
+        if (same) { noChange.push({ dic_id: cur.id, name: cur.dicName }); return; }
+        rows.push({ cur, given: x, after, warnings: w });
+      });
+      if (!rows.length) return { plan: null, no_change: noChange, next: '補述都與線上相同，不需要寫入' };
+      const payload = rows.map(r => ({ id: r.cur.id, etag: r.cur.etag, ...(r.given.memo !== undefined && { memo: r.after.memo || {} }), ...(r.given.fhir !== undefined && { fhir: r.after.fhir }) }));
+      const h = confirm.hashPayload({ action: 'dict-memo-batch', base, user: user.userId, items: payload });
+      if (!confirm_token) {
+        for (const r of rows) warnings.push(...r.warnings.map(w => `${r.cur.dicName}：${w}`));
+        const plan = { action: `批次更新字典補述（${rows.length} 本）`, site: base, user_id: user.userId,
+          rows: rows.map(r => ({ dic_id: r.cur.id, name: r.cur.dicName, dic_type: r.cur.dicType, level: dc.LEVEL_LABEL[r.cur.level] || r.cur.level, desc: r.cur.desc,
+            memo_by: r.cur.memo_by || '', memo_at: r.cur.memo_at || '', before: { memo: r.cur.memo, fhir: r.cur.fhir }, after: r.after })),
+          etags: Object.fromEntries(rows.map(r => [r.cur.id, r.cur.etag])), no_change: noChange, warnings };
+        approve.offer('online_dictionary_memo_batch', h, `批次更新字典補述（${rows.length} 本）`, plan);
+        return { plan, etags: plan.etags, confirm_token: confirm.issue('online_dictionary_memo_batch', h),
+          next: '請把 plan（逐本改前／改後）給使用者確認，同意後帶 confirm_token 與 etags 再呼叫一次' };
+      }
+      // 第二次呼叫：取得計畫後被改的字典先擋下（不開確認頁），附目前內容讓 AI 合併後重取計畫
+      const planned = etags && typeof etags === 'object' ? etags : {};
+      const stale = rows.filter(r => stripEtag(planned[r.cur.id]) !== r.cur.etag);
+      if (stale.length) fail(E.CONFLICT, `有 ${stale.length} 本字典在取得計畫後已被修改（或沒有帶 plan 的 etags）；請以 details.stale 合併後重新取得計畫`,
+        { stale: stale.map(r => ({ dic_id: r.cur.id, name: r.cur.dicName, etag: r.cur.etag, current: { desc: r.cur.desc, memo: r.cur.memo, fhir: r.cur.fhir } })) });
+      confirm.verify('online_dictionary_memo_batch', h, confirm_token);
+      const ok = await approve.awaitApproval('online_dictionary_memo_batch', h);
+      if (ok.pending) return ok;
+      const r = await online.callRaw('PUT', 'api/v2/dictionaries/memo/batch', { body: { items: payload } }, '批次更新字典補述');
+      const results = [];
+      if (r.status === 404 || (r.status === 403 && r.json && r.json.error && r.json.error.code === 'E_FORBIDDEN')) {
+        // 舊站台沒有批次端點：逐本寫入（寫入頻率每分鐘 20 次，最多 15 本）
+        if (payload.length > MEMO_FALLBACK_MAX) fail(E.UPSTREAM, `W_SERVER_OLD：站台沒有補述批次端點；逐本寫入一次最多 ${MEMO_FALLBACK_MAX} 本，請分批（這次 ${payload.length} 本）`);
+        for (const x of payload) {
+          const one = await online.callRaw('PUT', `api/v2/dictionaries/${x.id}/memo`, { body: { ...(x.memo !== undefined && { memo: x.memo }), ...(x.fhir !== undefined && { fhir: x.fhir }) }, headers: { 'If-Match': `"${x.etag}"` } }, '更新字典補述');
+          const err = (one.json && one.json.error) || {};
+          if (one.status === 200) { const e = updateIndexFromResponse(x.id, one.json || {}, user); results.push({ dic_id: x.id, name: e.dicName, ok: true, etag: e.etag }); }
+          else results.push({ dic_id: x.id, ok: false, code: err.code || `HTTP ${one.status}`, message: String(err.message || '').slice(0, 200), current: err.details && err.details.current });
+        }
+        warnings.push('W_SERVER_OLD：站台沒有補述批次端點，已改為逐本寫入');
+      } else {
+        if (r.status !== 200) mapDictError(r, '批次更新字典補述');
+        for (const x of (Array.isArray(r.json && r.json.results) ? r.json.results : [])) {
+          if (x && x.ok && x.item) { const e = updateIndexFromResponse(String(x.id), x.item, user); results.push({ dic_id: String(x.id), name: e.dicName, ok: true, etag: e.etag }); }
+          else results.push({ dic_id: String(x && x.id || ''), ok: false, code: x && x.code, message: String(x && x.message || '').slice(0, 200), current: x && x.details && x.details.current });
+        }
+      }
+      const failed = results.filter(x => !x.ok);
+      if (failed.some(x => x.code === 'E_CONFLICT')) warnings.push('W_PARTIAL_CONFLICT：有字典在寫入前被他人修改（results 的 current 是目前內容）；請合併後只對這些字典重新取得計畫');
+      return { total: payload.length, succeeded: results.length - failed.length, results, no_change: noChange, warnings };
+    }
+  },
   {
     name: 'online_me_notes_get',
     description: '（online，唯讀）登入者在 struNote（行動紀錄 APP，/strucmed/note/）的表單清單（GET api/v2/me/notes）：items[{ template_id, name }]。擁有者一律是 token 的使用者。',
@@ -424,22 +504,51 @@ export const ONLINE_WRITE_TOOLS = [
   }
 ];
 
-// 讀一本字典的目前內容：先線上 GET api/v2/dictionaries（scope match，含 etag／level），找不到再退回本機索引。回 dictcomment.fromItem 形狀。
-async function fetchDictionary(id, user) {
+// 讀字典的目前內容：先線上 GET api/v2/dictionaries（scope match，含 etag／level）；不在比對範圍內的（他科、他體系）以本機索引的名稱查 scope=all。
+// 都找不到時，單本退回本機索引（舊行為），批次則回 E_NOT_FOUND。回 dictcomment.fromItem 形狀（與 ids 同順序）。
+async function fetchDictionaries(ids, user, { allowLocal = false } = {}) {
   const r = await online.call('GET', 'api/v2/dictionaries', { query: { scope: 'match' } }, '讀取字典');
-  const items = Array.isArray(r && r.items) ? r.items : [];
+  store.rememberMemoKeys(Array.isArray(r && r.memoKeys) ? r.memoKeys : dc.LEGACY_MEMO_KEYS);
   const deptNo = String((r && r.deptNo) || user.deptNo);
-  const hit = items.find(d => String(d.id) === id);
-  if (hit) {
-    if (hit.etag === undefined) fail(E.UPSTREAM, 'W_SERVER_OLD：站台尚未支援字典 JSON 說明（回應沒有 etag），無法寫補述或申請升級');
-    const e = dc.fromItem(hit, deptNo);
-    upsertIndex(e, deptNo);
-    return e;
-  }
+  const byId = new Map((Array.isArray(r && r.items) ? r.items : []).map(d => [String(d.id), d]));
   const idx = store.loadDictIndex();
-  const local = idx && idx.entries.find(x => x.id === id);
-  if (!local) fail(E.NOT_FOUND, `找不到字典 ${id}：不在登入科部的比對範圍內，或 id 不正確`);
-  return dc.enrich(local, deptNo);
+  const local = id => idx && idx.entries.find(x => x.id === id);
+  for (const id of ids) {
+    if (byId.has(id) || !local(id) || !local(id).dicName) continue;
+    const q = local(id).dicName.slice(0, 50);
+    const a = await online.callRaw('GET', 'api/v2/dictionaries', { query: { scope: 'all', q } }, '讀取字典');
+    if (a.status === 200) for (const d of (Array.isArray(a.json && a.json.items) ? a.json.items : [])) if (!byId.has(String(d.id))) byId.set(String(d.id), d);
+  }
+  return ids.map(id => {
+    const hit = byId.get(id);
+    if (hit) {
+      if (hit.etag === undefined) fail(E.UPSTREAM, 'W_SERVER_OLD：站台尚未支援字典 JSON 說明（回應沒有 etag），無法寫補述');
+      const e = dc.fromItem(hit, deptNo);
+      upsertIndex(e, deptNo);
+      return e;
+    }
+    if (allowLocal && local(id)) return dc.enrich(local(id), deptNo);
+    fail(E.NOT_FOUND, `找不到字典 ${id}：線上查不到（id 不正確，或不在登入科部的比對範圍內且本機索引沒有它的名稱）`);
+  });
+}
+async function fetchDictionary(id, user) { return (await fetchDictionaries([id], user, { allowLocal: true }))[0]; }
+
+// 站台接受的補述欄位：最近一次 GET api/v2/dictionaries 回報的 memoKeys；沒有回報＝舊站台（8 個鍵）
+function forServer(memo, name) {
+  const { memo: kept, dropped } = dc.restrictMemo(memo, store.serverMemoKeys() || dc.LEGACY_MEMO_KEYS);
+  return { memo: kept, warnings: dropped.length ? [`W_SERVER_OLD_MEMO_KEYS：站台還不支援補述欄位 ${dropped.map(k => `${k}（${dc.MEMO_LABEL[k] || k}）`).join('、')}，「${name}」的這些內容不會寫入`] : [] };
+}
+// 補述的改後內容（memo 補充合併、fhir 整組取代、只留站台接受的鍵、長度檢查）：memo_set 與批次共用
+function planMemo(cur, memo, fhir, user) {
+  const merged = memo !== undefined ? dc.mergeMemo(cur.memo, memo) : cur.memo;
+  const { memo: kept, warnings } = forServer(merged, cur.dicName);
+  const after = { memo: kept, fhir: fhir !== undefined ? (fhir ? fhir : []) : cur.fhir };
+  const fv = dc.validateFhir(after.fhir || [], after.memo && after.memo.type);
+  after.fhir = fv.fhir;
+  warnings.push(...fv.warnings);
+  const nextRaw = dc.build({ desc: cur.desc, memo: after.memo, fhir: after.fhir, memo_by: user.userId, memo_at: new Date().toISOString(), sys: cur.sys, promote: cur.promote, alias_of: cur.alias_of }, { forceJson: true });
+  if (dc.checkLength(nextRaw) > dc.MAX_CHARS * 0.9) warnings.push('W_DICT_COMMENT_NEAR_LIMIT：寫入後接近長度上限');
+  return { after, warnings };
 }
 function upsertIndex(e, deptNo) {
   let idx = store.loadDictIndex();

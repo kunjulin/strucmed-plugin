@@ -12,7 +12,7 @@ import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
 import * as dc from './dictcomment.mjs';
 
-export const VERSION = '2.4.1';
+export const VERSION = '2.5.0';
 
 export function safeFileName(name) {
   return String(name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'form';

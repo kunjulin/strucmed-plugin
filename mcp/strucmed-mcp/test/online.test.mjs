@@ -32,7 +32,10 @@ const seedDicts = () => [{ id: 'D1', dicType: 'APP', dicName: '跌倒史', dicCo
   { id: 'D7', dicType: 'XPPB0', dicName: '鬆弛度', dicComment: dc.build({ desc: '關節鬆弛度', sys: { code: 'PP', by: 'ADM01', at: '2026-10-27T01:00:00Z' } }), createDate: '20210101' }];
 let dicts = seedDicts();
 const dictItem = d => { const p = dc.parse(d.dicComment); return { id: d.id, dicType: d.dicType, dicName: d.dicName, dicComment: d.dicComment, createDate: d.createDate,
-  desc: p.desc, sys: p.sys, memo: p.memo, fhir: p.fhir, aliasOf: p.alias_of, level: dc.level(d.dicType, 'APP', p.sys ? p.sys.code : ''), etag: dc.etag(d.dicComment) }; };
+  desc: p.desc, sys: p.sys, memo: p.memo, fhir: p.fhir, aliasOf: p.alias_of, level: dc.level(d.dicType, 'APP', p.sys ? p.sys.code : ''), etag: dc.etag(d.dicComment),
+  memoBy: p.memo_by, memoAt: p.memo_at }; };
+// 字典使用索引（平台每日掃描）：D1 被兩張範本用、D5 一張
+let usage = { scannedAt: '2026-10-27T02:00:00Z', uses: [{ dic: 'D1', templateID: 'T-1', templatename: '跌倒評估', folder: 'APP', itemIds: '2' }, { dic: 'D1', templateID: 'T-7', templatename: '住院跌倒', folder: 'APP', itemIds: '5,6' }, { dic: 'D5', templateID: 'T-8', templatename: 'BMI', folder: 'U123', itemIds: '3' }] };
 const dictConflict = (res, d) => json(res, 409, { ok: false, error: { code: 'E_CONFLICT', message: '字典已被修改', details: { etag: dc.etag(d.dicComment), current: dictItem(d) } } });
 let notes = [{ dictID: 'T-1', dictVal: '跌倒評估' }];   // struNote 清單   // 新建的範本從 T-101 起，不與預設的 T-1 衝突
 
@@ -130,9 +133,38 @@ function handler(req, res) {
     }
     if (req.method === 'GET' && p === 'api/v2/dictionaries') {
       const q = url.searchParams.get('q') || '';
-      const items = dicts.filter(d => !q || d.dicName.includes(q)).map(dictItem);
-      if (behavior.oldServer) for (const it of items) for (const k of ['desc', 'sys', 'memo', 'fhir', 'aliasOf', 'level', 'etag']) delete it[k];
-      return json(res, 200, { deptNo: 'APP', scope: url.searchParams.get('scope') || 'match', levels: ['APP'], total: items.length, truncated: false, items });
+      const scope = url.searchParams.get('scope') || 'match';
+      // 假伺服器不分 scope 都回全部（既有測試依賴）；all 時把他體系的 D6（XAPP0）標成 other
+      let items = dicts.filter(d => !q || d.dicName.includes(q) || (scope === 'all' && String(d.dicComment).includes(q))).map(dictItem);
+      if (scope === 'all') items = items.map(it => ({ ...it, level: it.id === 'D6' ? 'other' : it.level }));
+      if (behavior.oldServer) for (const it of items) for (const k of ['desc', 'sys', 'memo', 'fhir', 'aliasOf', 'level', 'etag', 'memoBy', 'memoAt']) delete it[k];
+      const total = items.length, page = Number(url.searchParams.get('page') || 0), size = Number(url.searchParams.get('pageSize') || 100);
+      if (page) items = items.slice((page - 1) * size, page * size);
+      return json(res, 200, { deptNo: 'APP', scope, levels: scope === 'all' ? [] : ['APP'], total, truncated: false, items,
+        ...(page && { page, pageSize: size, hasMore: page * size < total }), ...(!(behavior.oldServer || behavior.oldMemoKeys) && { memoKeys: dc.MEMO_KEYS }) });
+    }
+    if (req.method === 'GET' && p === 'api/v2/dictionaries/usage') {
+      if (behavior.noUsageApi) return err(res, 403, 'E_FORBIDDEN', 'not allowed');
+      const counts = {};
+      for (const u of usage.uses) counts[u.dic] = (counts[u.dic] || 0) + 1;
+      return json(res, 200, { scannedAt: usage.scannedAt, counts });
+    }
+    if (req.method === 'GET' && (m = p.match(/^api\/v2\/dictionaries\/([A-Za-z0-9-]+)\/usage$/))) {
+      const uses = usage.uses.filter(u => u.dic === m[1]);
+      return json(res, 200, { id: m[1], scannedAt: usage.scannedAt, count: uses.length, templates: uses.map(({ dic, ...t }) => t) });
+    }
+    if (req.method === 'PUT' && p === 'api/v2/dictionaries/memo/batch') {
+      if (behavior.noMemoBatch) return err(res, 403, 'E_FORBIDDEN', 'not allowed');
+      const results = (body.items || []).map((x, i) => {
+        const d = dicts.find(y => y.id === x.id);
+        if (!d) return { row: i + 1, ok: false, id: x.id, code: 'E_NOT_FOUND', message: '找不到字典' };
+        if (x.etag !== dc.etag(d.dicComment)) return { row: i + 1, ok: false, id: x.id, code: 'E_CONFLICT', message: '字典已被修改', details: { etag: dc.etag(d.dicComment), current: dictItem(d) } };
+        const cur = dc.parse(d.dicComment);
+        d.dicComment = dc.build({ desc: cur.desc, memo: x.memo !== undefined ? x.memo : cur.memo, fhir: x.fhir !== undefined ? x.fhir : cur.fhir,
+          memo_by: USER_ID, memo_at: '2026-10-27T10:00:00Z', sys: cur.sys, promote: cur.promote, alias_of: cur.alias_of }, { forceJson: true });
+        return { row: i + 1, ok: true, id: x.id, item: dictItem(d) };
+      });
+      return json(res, 200, { ok: true, total: results.length, succeeded: results.filter(r => r.ok).length, results });
     }
     if ((m = p.match(/^api\/v2\/dictionaries\/([A-Za-z0-9-]+)\/(memo)$/))) {
       const d = dicts.find(x => x.id === m[1]);
@@ -923,4 +955,93 @@ test('emoji in a new dictionary name or memo is rejected before anything is sent
   const memo = await mcp.call('online_dictionary_memo_set', { dic_id: 'D3', memo: { meaning: '疼痛😀' } });
   assert.equal(memo.error.code, 'E_INVALID_INPUT');
   assert.equal(reqs.filter(x => x.method !== 'GET' && /dictionaries/.test(x.path)).length, 0, 'nothing written');
+});
+
+// ── 字典助手（plugin 3.7.0）：全院搜尋、補述新欄位與舊站台、補述批次、使用索引 ─────────────
+test('online_dictionary_search scope=all merges other-system dictionaries into the index and reports memo_keys', async () => {
+  await browserLogin(mcp, {});
+  const base = await mcp.call('online_dictionary_search', { update_index: true });
+  assert.ok(base.data.memo_keys.includes('interop'));
+  const all = await mcp.call('online_dictionary_search', { scope: 'all', q: '握力', update_index: true });
+  assert.equal(all.ok, true, JSON.stringify(all));
+  assert.deepEqual(all.data.items.map(x => [x.id, x.level]), [['D6', 'other']]);
+  assert.equal(all.data.index_count, base.data.index_count, 'merged, not replaced (D6 was already in the full list)');
+  const paged = await mcp.call('online_dictionary_search', { scope: 'all', page: 1, page_size: 2 });
+  assert.equal(paged.data.has_more, true);
+  assert.equal(paged.data.items.length, 2);
+  assert.equal((await mcp.call('online_dictionary_search', { scope: 'all', page: 1, page_size: 501 })).error.code, 'E_INVALID_INPUT');
+});
+
+test('memo writes drop func／usecase／interop on a site that does not report memoKeys', async () => {
+  await browserLogin(mcp, {});
+  behavior.oldMemoKeys = true;
+  const s = await mcp.call('online_dictionary_search', { update_index: true });
+  assert.ok(s.warnings.some(w => w.startsWith('W_SERVER_OLD_MEMO_KEYS')), JSON.stringify(s.warnings));
+  const plan = await mcp.call('online_dictionary_memo_set', { dic_id: 'D1', memo: { meaning: '過去一年跌倒', func: '使用者輸入' } });
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  assert.deepEqual(plan.data.plan.after.memo, { meaning: '過去一年跌倒' });
+  assert.ok(plan.data.plan.warnings.some(w => w.startsWith('W_SERVER_OLD_MEMO_KEYS')));
+  delete behavior.oldMemoKeys;
+  const plan2 = await mcp.call('online_dictionary_memo_set', { dic_id: 'D1', memo: { func: '使用者輸入' } });
+  assert.equal(plan2.data.plan.after.memo.func, '使用者輸入', 'new site keeps the new keys');
+});
+
+test('online_dictionary_memo_batch: per-dictionary plan, stale check before the page, batch PUT, fallback on old sites', async () => {
+  await browserLogin(mcp, {});
+  await mcp.call('online_dictionary_search', { update_index: true });
+  const items = [{ dic_id: 'D1', memo: { func: '跌倒風險分數的輸入', usecase: '住院入院評估' } }, { dic_id: 'D3', memo: { interop: '0-10 分' } }, { dic_id: 'D5', memo: { unit: 'kg' } }];
+  const plan = await mcp.call('online_dictionary_memo_batch', { items });
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  assert.deepEqual(plan.data.plan.rows.map(r => r.dic_id), ['D1', 'D3']);
+  assert.deepEqual(plan.data.plan.no_change.map(r => r.dic_id), ['D5'], 'D5 already has unit kg');
+  assert.equal(plan.data.plan.rows[0].after.memo.func, '跌倒風險分數的輸入');
+  // 取得計畫後 D3 被別人改了 → 不開確認頁，回目前內容
+  const d3 = dicts.find(d => d.id === 'D3');
+  d3.dicComment = dc.build({ desc: '疼痛', memo: { meaning: '別人先寫' } });
+  const stale = await mcp.call('online_dictionary_memo_batch', { items, etags: plan.data.etags, confirm_token: plan.data.confirm_token });
+  assert.equal(stale.error.code, 'E_CONFLICT');
+  assert.equal(stale.error.details.stale[0].dic_id, 'D3');
+  assert.equal(stale.error.details.stale[0].current.memo.meaning, '別人先寫');
+  assert.equal(reqs.filter(x => x.path.endsWith('/memo/batch')).length, 0);
+  // 重取計畫 → 確認頁 → 批次寫入
+  const plan2 = await mcp.call('online_dictionary_memo_batch', { items });
+  assert.equal(plan2.data.plan.rows[1].after.memo.meaning, '別人先寫', 'merge keeps the other person\'s text');
+  const done = await browserApprove(mcp, 'online_dictionary_memo_batch', { items, etags: plan2.data.etags, confirm_token: plan2.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  assert.equal(done.data.succeeded, 2);
+  const put = reqs.find(x => x.method === 'PUT' && x.path.endsWith('/api/v2/dictionaries/memo/batch'));
+  assert.deepEqual(put.body.items.map(x => x.id), ['D1', 'D3']);
+  assert.equal(dc.parse(dicts.find(d => d.id === 'D1').dicComment).memo.usecase, '住院入院評估');
+  // 舊站台沒有批次端點：逐本 PUT {id}/memo
+  behavior.noMemoBatch = true;
+  const items2 = [{ dic_id: 'D2', memo: { meaning: '重複的跌倒史' } }];
+  const plan3 = await mcp.call('online_dictionary_memo_batch', { items: items2 });
+  const done3 = await browserApprove(mcp, 'online_dictionary_memo_batch', { items: items2, etags: plan3.data.etags, confirm_token: plan3.data.confirm_token });
+  assert.equal(done3.ok, true, JSON.stringify(done3));
+  assert.ok(done3.data.warnings.some(w => w.startsWith('W_SERVER_OLD')));
+  assert.ok(reqs.some(x => x.method === 'PUT' && x.path.endsWith('/api/v2/dictionaries/D2/memo')));
+  // 輸入檢查
+  assert.equal((await mcp.call('online_dictionary_memo_batch', { items: [{ dic_id: 'D1', memo: {} }, { dic_id: 'D1', memo: {} }] })).error.code, 'E_INVALID_INPUT');
+  assert.equal((await mcp.call('online_dictionary_memo_batch', { items: [{ dic_id: 'D1' }] })).error.code, 'E_INVALID_INPUT');
+});
+
+test('online_dictionary_usage: where-used per dictionary, counts into the index, old sites refused', async () => {
+  await browserLogin(mcp, {});
+  await mcp.call('online_dictionary_search', { update_index: true });
+  const one = await mcp.call('online_dictionary_usage', { dic_id: 'D1' });
+  assert.equal(one.ok, true, JSON.stringify(one));
+  assert.deepEqual(one.data.templates.map(x => [x.name, x.itemids]), [['跌倒評估', ['2']], ['住院跌倒', ['5', '6']]]);
+  const all = await mcp.call('online_dictionary_usage', {});
+  assert.equal(all.data.index_updated, true);
+  assert.deepEqual(all.data.top[0], { dic_id: 'D1', count: 2, name: '跌倒史' });
+  const s = await mcp.call('dictionary_suggest', { field: { caption: '跌倒史' } });
+  assert.ok(s.data.candidates[0].reasons.some(x => /2 張表單在用/.test(x)), JSON.stringify(s.data.candidates[0]));
+  const scanned = usage.scannedAt;
+  usage.scannedAt = null;
+  assert.ok((await mcp.call('online_dictionary_usage', { dic_id: 'D5' })).warnings.some(w => w.startsWith('W_USAGE_NOT_SCANNED')));
+  usage.scannedAt = scanned;
+  behavior.noUsageApi = true;
+  const old = await mcp.call('online_dictionary_usage', {});
+  assert.equal(old.error.code, 'E_UPSTREAM');
+  assert.match(old.error.message, /W_SERVER_OLD/);
 });

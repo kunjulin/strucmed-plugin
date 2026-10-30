@@ -21,7 +21,7 @@
   - 新建：`online_dictionary_batch`（全部）或 `online_dictionary_create`（逐一）。dicComment 由 MCP 以字典 JSON 一次寫好（G1 核准的 desc＋memo；plan 的 `dic_comment_json` 是實際寫入的內容）。
   - `reused`：同名字典已存在，沿用既有 id（告知使用者）。
   - `E_DELETED_EXISTS`：有已刪除的同名字典。**不自動 force**：請使用者選「還原」（在字典頁垃圾桶操作後，用 `online_dictionary_search(update_index:true)` 重建索引、`form_update_control` 綁 id）或「建立新的」（`online_dictionary_create` 帶 `force:true`，重新取得 plan）。
-  - 補述：G1「### 字典補述」中動作為「補充」的既有字典，用 `online_dictionary_memo_set`（`dic_id`、`memo`、`fhir`，並帶 `draft_id` 讓 hook 檢查 G3）。plan 有改前／改後與 `etag`；第二次呼叫帶同一個 `etag`。回 `E_CONFLICT`（他人先改了）：以 `details.current` 合併（保留對方內容再補充）後重新取得 plan，**改過的內容要重新給使用者看**。`E_INVALID_FHIR`：修正 path／code 後重取。
+  - 補述：G1「### 字典補述」中動作為「補充」的既有字典，用 `online_dictionary_memo_set`（`dic_id`、`memo`、`fhir`，並帶 `draft_id` 讓 hook 檢查 G3）；超過 3 本時改用 `online_dictionary_memo_batch`（`items`、`draft_id`；第二次呼叫帶 plan 的 `etags`），一次 ≤ 100 本、逐本回報。站台不支援 func／usecase／interop 時回 `W_SERVER_OLD_MEMO_KEYS`（這三格不寫入，告知使用者）。plan 有改前／改後與 `etag`；第二次呼叫帶同一個 `etag`。回 `E_CONFLICT`（他人先改了）：以 `details.current` 合併（保留對方內容再補充）後重新取得 plan，**改過的內容要重新給使用者看**。`E_INVALID_FHIR`：修正 path／code 後重取。
   - 體系升級建議：**沒有寫入工具**。G1「### 體系升級建議」原樣列進 G3 計畫與交付清單，請使用者轉給體系字典管理者在字典頁升級（只寫入體系標記，id 與 dicType 不變）。
 - flag **關**：不能經 API 建字典或寫補述。改走 `form_export` 輸出 `.htm`，請使用者「匯入表單及字典」（套件內新字典的說明同樣是 JSON）；或請使用者先在字典頁建好，再 `online_dictionary_search(update_index:true)` 後綁定。
 

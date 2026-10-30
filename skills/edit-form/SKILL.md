@@ -27,7 +27,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 2. `form_preview`（tree）給使用者看原表單結構與 itemid，確認要改哪些地方。改動範圍小（只改文字、預設值、選項）時可以直接做，不需 planner；要新增區塊、控制項、計算式或巨集時走 `create-form` 的階段 2～G1（planner 的計畫只描述**新增與修改**的部分，並標註對應的原 itemid）。
 3. 依核准的計畫修改（由 `form-builder` 或本 skill 直接呼叫）：
    - `form_update_meta`：名稱、捷徑、作業別、Info
-   - `form_update_control`：說明文字、預設值、必填、選項、字典（改版時先 `online_dictionary_search(update_index:true)`；原表單綁的是科部字典而體系有同名時，在計畫中**建議改綁體系字典**，使用者同意才改；改了 datatype、單位、選項或計算式的欄位，在計畫「### 字典補述」同步修改該字典的 memo）；計算式、HIS 參照、巨集腳本（`references/FormulaMacroRules.md`；多步驟配方 `MacroRecipes.md`；prompt 寫法 `PromptPatterns.md`，只調 prompt 可改用 `tune-prompt`）
+   - `form_update_control`：說明文字、預設值、必填、選項、字典（改版時先 `online_dictionary_search(update_index:true)`；原表單綁的是科部字典而體系有同名時，在計畫中**建議改綁體系字典**，使用者同意才改；改了 datatype、單位、選項或計算式的欄位，在計畫「### 字典補述」同步修改該字典的 memo；要換字典時用 `dictionary-assist` 模式 1 找候選；只想把原表單的字典補述補齊而不改表單時，改用 `dictionary-assist` 模式 3）；計算式、HIS 參照、巨集腳本（`references/FormulaMacroRules.md`；多步驟配方 `MacroRecipes.md`；prompt 寫法 `PromptPatterns.md`，只調 prompt 可改用 `tune-prompt`）
    - `form_add_control`：只能加在文字區塊與表格／頁籤的格子；itemid 自動接續原表單最大值
    - `form_add_area`：新增文字、表格、頁籤區塊（`references/TablesTabsRules.md`）
    - `form_remove_control`：兩段式確認；仍被參照的控制項會被拒絕，須先改參照方

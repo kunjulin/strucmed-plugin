@@ -14,9 +14,22 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.7.0（MCP 2.5.0）— 2026-10-27：字典助手（找字典引用、AI 完整補述、既有表單補述）
+
+需要平台端（`kunjulin/strucmed`：補述三個新欄位、`scope=all`、`memo/batch`、使用索引開放給 MCP）先上線；舊站台時 MCP 會略過新欄位、補述批次改逐本，不會出錯。發佈（2026-10-30）：strucmed-plugin tag `v3.7.0`（由 strucmed-skill tag `v3.7.0-src` 產生；main 已含 3.6.1 的 forward-port，所以這一版也包含 HTTP 模式與 MCP App 卡片）。發佈前確認院外站台 `cgmh.ddns.net` 已部署平台端：`PUT api/v2/dictionaries/memo/batch` 與 `GET api/v2/dictionaries/usage` 端點存在（不帶憑證回 401，不存在的路徑回 404），線上 `js/v2-editor.js`、`js/v2-dictionary.js` 與平台 repo main 逐位元相同（含 10-28 的編輯器修正）；`V2:ScanEnabled` 無法從外部確認，使用索引若回 `W_SERVER_OLD` 請檢查該設定。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 146 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。
+
+- **補述新增 3 個欄位**：`func`（表單功能）、`usecase`（使用情境）、`interop`（交換引用），正規順序插在 `range` 之後（與平台相同；既有補述的鍵順序與 etag 不變）。站台是否支援以 `GET dictionaries` 回的 `memoKeys` 判斷；不支援時寫入前移除並回 `W_SERVER_OLD_MEMO_KEYS`（`online_dictionary_create`／`batch`／`memo_set`／`memo_batch`）。
+- **新 skill `dictionary-assist`**：模式 1 找字典引用（候選、理由、綁定與引用片段）、模式 2 新字典完整補述（寫進 G1）、模式 3 既有表單補述（補述計畫 `memo-plan.md` → 核准 → 批次寫入）。新 agent `dictionary-annotator`（headless 起草補述）、新 reference `DictionaryMemo.md`（11 個欄位與三個角度的寫法）。
+- **新離線工具**：`form_fields`（逐欄事實：說明文字、型別、選項、範圍、單位、字典與補述、誰參照誰、AI 資料流，`derived` 推得 func／type／range／unit）、`dictionary_suggest`（計分排序候選字典，附 `reasons` 與 `cite`）、`dictionary_memo_check`（補述草稿檢查：鍵、長度、Big5、FHIR、疑似個資、與控制項是否一致、缺哪個角度）。
+- **新線上工具**：`online_dictionary_usage`（字典使用索引：哪些範本與欄位在用；不帶 id 時把使用表單數寫進索引供排序）、`online_dictionary_memo_batch`（一次 ≤ 100 本、逐本 If-Match；取得計畫後被改的字典在開確認頁前擋下；舊站台退回逐本 ≤ 15 本）。
+- **`online_dictionary_search`**：`scope: "all"`（全院含他體系，`level=other`；必須帶 `q` 或 `page`）、`page`／`page_size`；`update_index` 搭配 `scope: "all"` 時合併進索引（不取代），他科字典可以 id 綁定與被推薦；每筆帶 `memo_by`／`memo_at`，回應帶 `memo_keys`。單本與批次補述在登入科部範圍外的字典以名稱查 `scope=all` 取得目前內容。
+- **G3 hook**：涵蓋 `online_dictionary_memo_batch`；補述工具帶 `draft_id` 時，有 `memo-plan.md` 就檢查它的核准，否則檢查上架計畫。
+- **skill 與 agent**：`strucmed-form` 分流表加字典助手；create-form、edit-form、tune-prompt 引用；form-planner 用 `dictionary_suggest` 與 `dictionary_memo_check`、補述寫三個角度；form-reviewer 以 `dictionary_memo_check` 檢查補述與控制項一致；`Gates.md`「### 字典補述」加三欄；`FormDesignRules.md`、`PublishWorkflow.md`（多本補述用批次）、`SecurityInvariants.md`（補述不放病人資料、使用索引不含病歷）。
+- **測試**：新增 `dictionary-assist.test.mjs`（新欄位順序與舊站台、form_fields、suggest、memo_check）；`online.test.mjs` 假伺服器加 `scope=all`、分頁、`memoKeys`、usage、`memo/batch`（全院合併、舊站台略過新欄位、批次的過期檢查與逐本退回、使用索引）；`gate.test.mjs`（`memo_batch` 與 `memo-plan.md`）。
+
 ## 3.6.1（MCP 2.4.1）— 2026-10-30：伺服器端 agent 平台（MaiAgent）：Streamable HTTP 模式與 MCP App 卡片
 
-來源：MaiAgent（GitHub `playma`）對 strucmed-plugin 的 PR #1（Streamable HTTP）與 PR #2（MCP App 卡片），以 3.6.0 為基底 cherry-pick 到 `release/3.6.1`，加上維護者修正；字典助手（main 的 3.7.0）不在此版，等平台上線再發。發佈：strucmed-plugin tag `v3.6.1`（由 strucmed-skill tag `v3.6.1-src` 產生）。發佈時：`release-plugin.mjs` ok、207 個檔案、掃描無發現；`npm test` 137 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。stdio 模式、既有 16 個離線 tool 的文字結果、線上 tool、hooks、skill 都不變；Claude Code 等不畫卡片的 host 看到的結果與 3.6.0 相同。
+來源：MaiAgent（GitHub `playma`）對 strucmed-plugin 的 PR #1（Streamable HTTP）與 PR #2（MCP App 卡片），以 3.6.0 為基底 cherry-pick 到 `release/3.6.1`，加上維護者修正；字典助手（main 的 3.7.0）不在此版，等平台上線再發。發佈：strucmed-plugin `2f117d7`（tag `v3.6.1`，由 strucmed-skill tag `v3.6.1-src`＝`5e0429c` 產生，分支 `release/3.6.1` 未併回）。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 137 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。stdio 模式、既有 16 個離線 tool 的文字結果、線上 tool、hooks、skill 都不變；Claude Code 等不畫卡片的 host 看到的結果與 3.6.0 相同。
 
 - **Streamable HTTP 模式**（`src/http.mjs`）：設 `STRUCMED_HTTP_PORT` 後以 HTTP 提供同一組離線 tool（`POST <path>` 一則 JSON-RPC 回一則 JSON；只有通知回 202；無 session；GET／DELETE 回 405），給跑在伺服器上、只能連 HTTP MCP 的 agent 平台（MaiAgent 等）。`STRUCMED_HTTP_TOKEN` 設了就要求 `Authorization: Bearer`（定長比較）；`STRUCMED_HTTP_HOST` 綁非本機位址時沒設 token 拒絕啟動；帶 `Origin` 的請求一律 403；本文上限 1 MiB。HTTP 模式下 `STRUCMED_SITE` 未設視為 `offline`（線上登入與寫入確認頁開在執行 MCP 那台機器的 127.0.0.1，遠端使用者到不了）。`server.mjs` 的分派改為回傳回應物件的 `respond()`，stdio 與 HTTP 共用。
 - **MCP App 卡片**（`src/cards.mjs`、`ui/form-card.html`）：支援 MCP Apps（SEP-1865）的 host 把 `form_preview` 與 `form_export` 畫成互動卡片（`tools/list` 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`，結果多 `structuredContent`；`initialize` 宣告 `resources`，`resources/list`／`read` 回卡片 HTML）。卡片上可「產生匯出計畫 → 確認匯出 → 下載 .htm」，「請 AI 修改」以 `ui/message` 把指示送回對話。單檔、不載入外部資源、明暗主題跟 host；卡片發起的匯出帶 `overwrite:true`。

@@ -75,11 +75,11 @@ A2 身體測量（formtable）
 | 名稱 | 用於 | 說明（desc，一行） | 補述（memo 摘要） | 備註 |
 
 ### 字典補述
-每本用到的字典（既有＋新建）一列；既有 memo 已完整的寫「沿用」。FHIR 欄位的驗證狀態：`ICD-10 MCP 已驗證`／`待人工確認`（LOINC、SNOMED 沒有查詢工具）／`沿用既有`。
+每本用到的字典（既有＋新建）一列；既有 memo 已完整的寫「沿用」。補述寫法見 `references/DictionaryMemo.md`（func／usecase／interop 三個角度），每本先過 `dictionary_memo_check`。FHIR 欄位的驗證狀態：`ICD-10 MCP 已驗證`／`待人工確認`（LOINC、SNOMED 沒有查詢工具）／`沿用既有`。
 
-| 字典 | 動作（新建帶入／補充／沿用） | meaning | type／unit／range | asr | calx／llm | FHIR res | path | code | 單位 | 驗證狀態 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| FALL_HX | 補充 | 過去一年跌倒史 | radiobutton | 跌倒、fall | — | Observation | Observation.valueCodeableConcept | http://snomed.info/sct\|… | — | 待人工確認 |
+| 字典 | 動作（新建帶入／補充／沿用） | meaning | type／unit／range | func（表單功能） | usecase（使用情境） | interop（交換引用） | asr | calx／llm | FHIR res | path | code | 單位 | 驗證狀態 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FALL_HX | 補充 | 過去一年跌倒史 | radiobutton | 使用者輸入；跌倒風險總分的計算式輸入 | 住院入院評估，護理師詢問後填寫 | 有／無；與「跌倒次數」不同，不可互代 | 跌倒、fall | — | Observation | Observation.valueCodeableConcept | http://snomed.info/sct\|… | — | 待人工確認 |
 
 ### 體系升級建議
 沒有就寫「無」。這是交給體系字典管理者的建議清單：AI 不升級（沒有工具），交付時請使用者轉給管理者在字典頁一鍵升級；升級只在說明寫入體系標記，id 與 dicType 不變，已綁定的表單不受影響。

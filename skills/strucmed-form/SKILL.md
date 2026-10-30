@@ -35,6 +35,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/check-env.mjs"
 | 設計一張新表單 | `create-form` | 需求訪談 → 計畫（G1）→ 建置 → 審查 → runtime 驗證（G2）→ 輸出 |
 | 以既有表單為範本改版、加欄位 | `edit-form` | 來源可以是使用者提供的 `.htm`／`.json`，或線上範本（`online_template_get`） |
 | 只要看計算式／巨集算得對不對 | `verify-runtime` | 需要 draft 已存在 |
+| 這個欄位要綁哪個字典、別科有沒有現成的字典、幫字典寫補述、整理既有表單的字典讓別的表單引用 | `dictionary-assist` | 模式 1 找字典引用、2 新字典完整補述、3 既有表單補述；寫入既有字典的補述要線上模式 |
 | 改某一顆 LLM 按鈕的提示詞、AI 回覆不好、想試跑或比較模型 | `tune-prompt` | 需要 draft 與 itemid；試跑要 flag `llmChatTest` 與去識別化樣本 |
 | 上架到編輯器／範本庫、更新線上範本 | `publish-form` | 需線上模式；唯一寫入線上的流程，閘門 G3；離線時改走 `create-form`／`edit-form` 的輸出由使用者匯入 |
 | 上線前檢查、AI 走閘道、做成 app／平板用 | `build-form-app` | B1：HIS 內執行的執行清單；B2：獨立 PWA（H0 本機 Docker 預設、H1 既有 struNote、H2 站台） |

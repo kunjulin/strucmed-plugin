@@ -44,6 +44,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 ```
 
 ### 階段 2：規劃
+- 字典：選字典與寫補述的做法照 `dictionary-assist`（模式 1、2）；planner 用 `dictionary_suggest` 選字典，補述依 `references/DictionaryMemo.md` 寫三個角度。
 - 用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、字典索引是否已載入、工作目錄。
 - 它回傳計畫檔路徑與 `Status`。`Blocked` → 把它列的問題問使用者後重跑；`NeedsRevision` → 依它的建議補需求。
 - 計畫以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。

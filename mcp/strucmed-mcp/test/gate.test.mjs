@@ -134,3 +134,22 @@ test('gate: dictionary memo without draft_id goes to the browser confirmation; w
   // 範本與字典新建仍然一定要 draft_id
   assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__online_dictionary_create', tool_input: { confirm_token: 't' }, cwd: workspace('approved') }).status, 2);
 });
+
+// 字典助手（3.7.0）：補述批次也是 DRAFT_OPTIONAL；帶 draft_id 時優先檢查 memo-plan.md（dictionary-assist 的補述計畫）
+test('gate: online_dictionary_memo_batch checks memo-plan.md when present, otherwise the publish plan', () => {
+  const tool = 'mcp__plugin_strucmed_strucmed__online_dictionary_memo_batch';
+  const input = extra => ({ tool_name: tool, tool_input: { items: [{ dic_id: 'D1', memo: {} }], confirm_token: 't', ...extra } });
+  assert.equal(run(CLAUDE_HOOK, { ...input({}), cwd: workspace('none') }).status, 0, 'standalone → browser confirmation');
+  assert.equal(run(CLAUDE_HOOK, { ...input({ draft_id: DRAFT }), cwd: workspace('approved') }).status, 0, 'publish plan approved');
+  // memo-plan.md 存在但未核准：即使上架計畫已核准也阻擋
+  const ws = workspace('approved');
+  const memoPlan = path.join(ws, '.strucmed', 'plans', DRAFT, 'memo-plan.md');
+  fs.writeFileSync(memoPlan, PLAN.replace('上架計畫', '補述計畫'));
+  const blocked = run(CLAUDE_HOOK, { ...input({ draft_id: DRAFT }), cwd: ws });
+  assert.equal(blocked.status, 2);
+  assert.match(blocked.stderr, /memo-plan\.md/);
+  assert.equal(spawnSync(process.execPath, [VERIFY, 'prepare', memoPlan, '--by', 'test']).status, 0);
+  assert.equal(run(CLAUDE_HOOK, { ...input({ draft_id: DRAFT }), cwd: ws }).status, 0, 'memo plan approved');
+  // Antigravity 格式也涵蓋
+  assert.equal(decision(run(AGY_HOOK, agy('online_dictionary_memo_batch', { items: [], confirm_token: 't', draft_id: DRAFT }), { env: { STRUCMED_WORKSPACE: workspace('pending') } })).decision, 'deny');
+});

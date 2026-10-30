@@ -41,7 +41,7 @@
 | 段落 | 內容 | 誰能改 | 怎麼寫入 |
 |---|---|---|---|
 | `desc` | 一行語意（≤ 300 字、不可換行） | 原作者；體系字典（2 碼，或帶體系標記）另含該體系的字典管理者 | 新建時 `dictionary.comment`；既有的**不動** |
-| `memo` | 補述：`meaning` 語意、`type` 建議 datatype、`unit` 單位、`range` 合理範圍、`asr` 語音別名（陣列）、`calx` 計算式用途白話、`llm` 給 prompt 的欄位描述、`scope` 適用範圍 | 所有登入者與 AI | 新建時 `dictionary.memo`；既有字典用 `online_dictionary_memo_set` |
+| `memo` | 補述：`meaning` 語意、`type` 建議 datatype、`unit` 單位、`range` 合理範圍、`func` 表單功能、`usecase` 使用情境、`interop` 交換引用、`asr` 語音別名（陣列）、`calx` 計算式用途白話、`llm` 給 prompt 的欄位描述、`scope` 適用範圍（寫法見 `DictionaryMemo.md`） | 所有登入者與 AI | 新建時 `dictionary.memo`；既有字典用 `online_dictionary_memo_set`，一張表單多本用 `online_dictionary_memo_batch` |
 | `fhir` | FHIR 對應（陣列）：`res`、`path`、`code`（`system\|code`）、`display`、`ucum` | 所有登入者與 AI，寫入前檢查格式 | `online_dictionary_memo_set` |
 | `sys` | 體系標記 `{ code, by, at }`：升級為體系字典時寫入，id 與 dicType 都不變 | 只有該體系的字典管理者（字典頁一鍵升級／降回科部） | 不由 AI 寫入，沒有工具 |
 | `alias_of` | 已併入另一本字典 | 只有體系管理者（升級時體系內已有同名，在字典頁設定） | 不由 AI 寫入 |
@@ -58,12 +58,17 @@
 
 ### memo 怎麼寫
 
+完整寫法（11 個欄位、表單功能／使用情境／交換引用三個角度、範例）見 `references/DictionaryMemo.md`；寫完用 `dictionary_memo_check` 檢查。重點：
+
 - **保留既有內容再補充**：`online_dictionary_memo_set` 的 memo 只覆寫給的鍵，其他鍵保留；要清除某鍵才給 `""`。不要因為「寫得不好」就整段改寫別人的 memo。
 - `meaning`：一句臨床語意（「病人自述過去一年內跌倒次數」），不是重複名稱。
 - `type`／`unit`／`range`：與表單實際控制項相同（numberbox 的 minval／maxval 就是 range）。
 - `asr`：語音輸入時醫師會說的叫法（中文、英文縮寫、口語），給語音巨集對欄位用。
 - `calx`：這個欄位參與的計算式白話（「BMI＝體重 ÷（身高 m）²」）；不寫 Calx 原文。
 - `llm`：寫 prompt 時描述這個欄位的那句話（tune-prompt 與 LLM 按鈕直接引用），不放病人資料。
+- `func`：在表單中的角色（使用者輸入、計算式輸入、計算結果、巨集寫入目標、LLM 輸入或回覆、HIS 帶入、存檔回寫），以 `form_fields` 的 `derived.func` 為底改寫；不寫 itemid。
+- `usecase`：哪種表單、什麼時間點、誰填、臨床目的。
+- `interop`：別的表單引用時要知道的：值的格式與精度、與哪些字典同義或不可混用、單位換算。
 - `scope`：適用科別或情境；跨科共用時寫出來，作為升級理由。
 - `fhir`：`path` 必須以 `res` 開頭；`code` 的 system 只能是 LOINC（`http://loinc.org`）、SNOMED CT（`http://snomed.info/sct`）、ICD-10-CM（`http://hl7.org/fhir/sid/icd-10-cm`）、UCUM 或院內 CodeSystem。ICD-10-CM 以已連線的 ICD-10 MCP（`lookup_code`、`validate_code`）驗證；LOINC、SNOMED 沒有查詢工具，由 planner 提建議並在 G1 標「待人工確認」。datatype 與 FHIR 型別不一致只警告（`W_FHIR_TYPE_MISMATCH`）。
 

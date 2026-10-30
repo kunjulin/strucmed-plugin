@@ -14,7 +14,20 @@ import { firstUnstorable } from './cp950.mjs';
 
 export const MAX_CHARS = 1800;                 // 平台 V2:DictionaryCommentMax 預設值；正式倉儲實測中文 1800 字完整保留
 export const DESC_MAX = 300;
-export const MEMO_KEYS = ['meaning', 'type', 'unit', 'range', 'asr', 'calx', 'llm', 'scope'];
+// func（表單功能）／usecase（使用情境）／interop（交換引用）：plugin 3.7.0 起，插在 range 之後（與平台相同，既有補述的鍵順序與 etag 不變）
+export const MEMO_KEYS = ['meaning', 'type', 'unit', 'range', 'func', 'usecase', 'interop', 'asr', 'calx', 'llm', 'scope'];
+// 舊站台（GET api/v2/dictionaries 沒有回 memoKeys）只接受這 8 個鍵
+export const LEGACY_MEMO_KEYS = ['meaning', 'type', 'unit', 'range', 'asr', 'calx', 'llm', 'scope'];
+export const MEMO_LABEL = { meaning: '語意', type: '控制項', unit: '單位', range: '範圍', func: '表單功能', usecase: '使用情境', interop: '交換引用',
+  asr: '語音別名', calx: '計算式說明', llm: 'LLM 提示', scope: '適用範圍' };
+// 只留站台接受的鍵：回 { memo, dropped }（dropped 是被拿掉的鍵；呼叫端回 W_SERVER_OLD_MEMO_KEYS）
+export function restrictMemo(memo, keys) {
+  if (!memo || typeof memo !== 'object' || Array.isArray(memo)) return { memo: memo || null, dropped: [] };
+  const ok = new Set(Array.isArray(keys) && keys.length ? keys : LEGACY_MEMO_KEYS);
+  const out = {}, dropped = [];
+  for (const [k, v] of Object.entries(memo)) { if (ok.has(k)) out[k] = v; else dropped.push(k); }
+  return { memo: Object.keys(out).length ? out : null, dropped };
+}
 export const FHIR_KEYS = ['res', 'path', 'code', 'display', 'ucum', 'component', 'note'];
 export const FHIR_SYSTEMS = ['http://loinc.org', 'http://snomed.info/sct', 'http://hl7.org/fhir/sid/icd-10-cm', 'http://hl7.org/fhir/sid/icd-10', 'http://unitsofmeasure.org'];
 export const FHIR_SYSTEM_PREFIXES = ['http://cgmh.org.tw/fhir/CodeSystem/'];   // 院內 CodeSystem（平台 V2:FhirCodeSystemPrefixes）
@@ -231,6 +244,7 @@ export function fromItem(d, deptNo) {
     promote: isObj(d.promote) && d.promote.status ? d.promote : p.promote,
     alias_of: d.aliasOf !== undefined && d.aliasOf !== null ? s(d.aliasOf) : p.alias_of,
     etag: s(d.etag) || etag(raw),
+    memo_by: d.memoBy !== undefined && d.memoBy !== null ? s(d.memoBy) : p.memo_by, memo_at: d.memoAt !== undefined && d.memoAt !== null ? s(d.memoAt) : p.memo_at,
     level: s(d.level) || level(dicType, deptNo, (d.sys !== undefined ? pickSys(d.sys) : p.sys || {})?.code || '')
   };
 }

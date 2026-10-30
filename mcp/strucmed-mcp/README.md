@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.3.0）
+# strucmed-mcp（v2.5.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.4.1 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.5.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -99,12 +99,14 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 | `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
 | `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
-| `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact&q=` | 唯讀；每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |
+| `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact\|all&q=&page=&pageSize=` | 唯讀；每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |
 | `online_template_create` | `POST api/v2/folders/{usr\|sub\|dpt}/templates` | **寫入範本**，兩段式（plan＝閘門 G3）；前置驗證無 error、無待新建字典；不寫 sys；寫入不重試 |
 | `online_template_update` | `PUT api/v2/templates/{id}`＋`If-Match` | **寫入範本**（flag `templateUpdate`）；只允許以該範本 import 改版的 draft；第一次呼叫取線上 ETag 與差異；409→`E_CONFLICT` |
 | `online_template_versions` | `GET api/v2/templates/{id}/versions` | 唯讀；版本清單 |
 | `online_dictionary_create`／`online_dictionary_batch` | `POST api/v2/dictionaries`、`/batch` | **寫入字典**（flag `dictionaryWrite`，預設開）；dicComment 以字典 JSON 一次寫好 desc＋memo；同名沿用；已刪除同名回 `E_DELETED_EXISTS` 不自動 force；成功後綁回 draft 與本機索引 |
 | `online_dictionary_memo_set` | `PUT api/v2/dictionaries/{id}/memo`＋`If-Match: etag` | **寫入字典補述**（flag `dictionaryWrite`）；任何登入者可寫、不動 desc；memo 補充合併、fhir 整組取代；送出前本機檢查 FHIR（`E_INVALID_FHIR`、`W_FHIR_TYPE_MISMATCH`）；plan 有改前／改後；線上已被修改 → `E_CONFLICT`（`details.current`）。選填 `draft_id`：hooks 檢查該 draft 的 G3 |
+| `online_dictionary_memo_batch` | `PUT api/v2/dictionaries/memo/batch`（舊站台退回逐本 `PUT {id}/memo`，≤ 15 本） | **寫入字典補述**（flag `dictionaryWrite`）；一次 ≤ 100 本、逐本 If-Match（第二次呼叫帶 plan 的 `etags`）；取得計畫後被改的字典 → `E_CONFLICT`（`details.stale`，不開確認頁）；逐本回報，部分衝突 `W_PARTIAL_CONFLICT`。選填 `draft_id`：hooks 檢查 `memo-plan.md`（或上架計畫）的核准 |
+| `online_dictionary_usage` | `GET api/v2/dictionaries/usage`、`/{id}/usage` | 唯讀；字典使用索引（平台每日掃描範本，只有範本名稱、資料夾、欄位 id）；不帶 id 時把各字典使用表單數寫進本機索引供 `dictionary_suggest` 排序；沒掃描過 `W_USAGE_NOT_SCANNED` |
 | `online_me_notes_get`／`online_me_notes_set` | `GET/PUT api/v2/me/notes` | struNote 表單清單；set 整份取代（`add`／`remove` 增量），兩段式 plan 顯示新增／移除／改名 |
 
 token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）換新並重試一次；refresh 也失敗時清除 session，回 `E_AUTH` 要求重新 `online_login`。錯誤碼：`E_ONLINE_DISABLED`（`STRUCMED_SITE=offline`、兩個站台都連不到或網址不合規定）、`E_AUTH`（未登入、登入頁按了拒絕、token 失效或登入超過 8 小時）、`E_UPSTREAM`（伺服器或倉儲錯誤、連不到、轉址；`details.status` 為 HTTP 狀態）。
@@ -133,6 +135,9 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | tool | 說明 |
 |---|---|
 | `dictionary_load` / `dictionary_search` | 載入字典頁 Export 的 CSV、搜尋（編輯器相同的科部比對規則；同範圍內體系 → 本科 → 次專 → 科部；fuzzy 也搜 desc 與 memo）。CSV 中 JSON 說明被逗號斷欄時回 `W_DICT_CSV_JSON_BROKEN` |
+| `form_fields` | 字典助手：把 draft 解析成逐欄事實（說明文字、datatype、選項、範圍、單位、字典與目前補述、誰參照誰、AI 資料流），`derived` 是推得的補述草稿（func／type／range／unit） |
+| `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `reasons` 與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；`include_other` 列出他科字典 |
+| `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度 |
 | `dictionary_create` | 規劃新字典（不寫入）；`comment`＝desc、`memo`＝補述，建立時寫進字典 JSON（`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo` 相同） |
 | `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2 |
 | `form_import` | **v1**：載入既有表單（套件 v2 `.htm`／`.package.json`、舊版 `.htm`、`.json`）為新 draft；所有區塊、計算式、巨集、JS 原封保留；輸出為新表單（不沿用 templateID，捷徑與作業別預設不沿用） |

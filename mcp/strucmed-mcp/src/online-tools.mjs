@@ -137,37 +137,86 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_dictionary_search',
-    description: '（online，唯讀）以登入者科部搜尋線上字典（GET api/v2/dictionaries?scope=match|exact&q=）：match＝4 層科部比對（與編輯器相同），exact＝只比對 token 的科部。' +
+    description: '（online，唯讀）搜尋線上字典（GET api/v2/dictionaries?scope=match|exact|all&q=）：match＝登入者科部 4 層比對（與編輯器相同），exact＝只比對 token 的科部，' +
+      'all＝全院（含他體系，level=other；必須帶 q 或 page），找別科已有的字典做交換引用時用。page／page_size 分頁（has_more 表示還有下一頁）。' +
+      '每筆另回 memo_by／memo_at（補述最後由誰、何時寫）；回應的 memo_keys 是站台接受的補述欄位（舊站台沒有 func／usecase／interop）。' +
       '每筆回 level（sys／own／sub／dpt／system）、desc（一行說明）、sys（體系標記：體系管理者升級時寫入，id 與 dic_type 不變；同體系他科也看得到）、memo（補述）、fhir、alias_of、etag（寫 memo 時要帶）；清單體系優先。' +
       'update_index:true 時把結果寫成本機字典索引（取代 dictionary_load 的 CSV），之後 dictionary_search 與 form_add_control 的字典比對、dicid 驗證都依此索引；要完整索引請不帶 q。',
     inputSchema: { type: 'object', properties: {
-      q: str('名稱關鍵字（選填，最多 50 字）'), scope: str('match（預設）或 exact', { enum: ['match', 'exact'] }),
-      update_index: { type: 'boolean', description: '把結果寫入本機字典索引（.strucmed/dictionaries.json）' } } },
-    async handler({ q, scope, update_index }) {
+      q: str('名稱、說明或補述的關鍵字（選填，最多 50 字；scope=all 時必須帶 q 或 page）'), scope: str('match（預設）、exact 或 all', { enum: ['match', 'exact', 'all'] }),
+      page: { type: 'number', description: '分頁頁次（從 1 起，選填）' }, page_size: { type: 'number', description: '每頁筆數（預設 100，最多 500）' },
+      update_index: { type: 'boolean', description: '把結果寫入本機字典索引（.strucmed/dictionaries.json）；scope=all 時是合併加入（不取代），讓他科字典也能以 id 綁定與推薦' } } },
+    async handler({ q, scope, page, page_size, update_index }) {
       if (q !== undefined && q !== null && String(q).length > 50) fail(E.INVALID_INPUT, 'q 最多 50 字');
-      if (scope !== undefined && !['match', 'exact'].includes(scope)) fail(E.INVALID_INPUT, 'scope 必須是 match 或 exact');
+      if (scope !== undefined && !['match', 'exact', 'all'].includes(scope)) fail(E.INVALID_INPUT, 'scope 必須是 match、exact 或 all');
+      if (scope === 'all' && !String(q || '').trim() && page === undefined) fail(E.INVALID_INPUT, 'scope=all 必須帶 q 或 page（全院字典很多）');
+      if (page !== undefined && !(Number.isInteger(page) && page >= 1)) fail(E.INVALID_INPUT, 'page 從 1 起');
+      if (page_size !== undefined && !(Number.isInteger(page_size) && page_size >= 1 && page_size <= 500)) fail(E.INVALID_INPUT, 'page_size 必須是 1–500');
       const user = online.currentUser();
-      const r = await online.call('GET', 'api/v2/dictionaries', { query: { scope, q } }, '搜尋字典');
+      const r = await online.call('GET', 'api/v2/dictionaries', { query: { scope, q, page, pageSize: page_size } }, '搜尋字典');
       const items = Array.isArray(r && r.items) ? r.items : [];
       const deptNo = String((r && r.deptNo) || user.deptNo);
       const entries = items.map(d => dc.fromItem(d, deptNo)).filter(e => e.dicName)
         .sort((a, b) => dc.levelRank(a.level) - dc.levelRank(b.level) || String(b.createDate).localeCompare(String(a.createDate)));
       const result = { dept_no: deptNo, scope: String((r && r.scope) || scope || 'match'), levels: (r && r.levels) || [],
         total: Number.isFinite(r && r.total) ? r.total : entries.length, truncated: !!(r && r.truncated),
+        ...(page !== undefined && { page: r && r.page, page_size: r && r.pageSize, has_more: !!(r && r.hasMore) }),
+        memo_keys: Array.isArray(r && r.memoKeys) ? r.memoKeys.map(String) : dc.LEGACY_MEMO_KEYS,
         items: entries.map(e => ({ id: e.id, dic_type: e.dicType, level: e.level, name: e.dicName, desc: e.desc, sys: e.sys || null, memo: e.memo || null, fhir: e.fhir || [],
-          alias_of: e.alias_of || '', etag: e.etag, comment: e.dicComment, create_date: e.createDate })), warnings: [] };
+          alias_of: e.alias_of || '', etag: e.etag, memo_by: e.memo_by || '', memo_at: e.memo_at || '', comment: e.dicComment, create_date: e.createDate })), warnings: [] };
+      if (!Array.isArray(r && r.memoKeys)) result.warnings.push('W_SERVER_OLD_MEMO_KEYS：站台沒有回報支援的補述欄位，視為舊站台：寫入時會略過 func／usecase／interop');
+      store.rememberMemoKeys(result.memo_keys);
       if (items.length && !items.some(d => d.etag !== undefined)) result.warnings.push('W_SERVER_OLD：站台尚未升級字典 JSON 說明（回應沒有 etag／level）；memo 與升級申請工具會失敗，desc／memo 由本機解析 dicComment 推得');
-      if (update_index) {
+      if (update_index && result.scope === 'all') {
+        // 全院結果合併進索引（不取代本科部的比對範圍）：他科字典 level=other，名稱比對不會自動綁它，只能以 id 綁定
+        const idx = store.loadDictIndex() || { loadedAt: new Date().toISOString(), source: 'online api/v2/dictionaries scope=all', deptNo, hasIds: true, entries: [], deleted: 0, warnings: [], duplicates: [] };
+        let added = 0;
+        for (const e of entries) {
+          const i = idx.entries.findIndex(x => x.id === e.id);
+          if (i >= 0) idx.entries[i] = { ...idx.entries[i], ...e, level: idx.entries[i].level || e.level }; else { idx.entries.push(e); added++; }
+        }
+        store.saveDictIndex(idx);
+        result.index_updated = true;
+        result.index_added = added;
+        result.index_count = idx.entries.length;
+      } else if (update_index) {
         if (q) result.warnings.push('W_INDEX_PARTIAL：索引只包含符合關鍵字的字典；要完整索引請不帶 q 再呼叫一次');
+        if (page !== undefined) result.warnings.push('W_INDEX_PARTIAL：索引只包含這一頁；要完整索引請不帶 page 再呼叫一次');
         if (result.truncated) result.warnings.push('W_INDEX_TRUNCATED：伺服器截斷了清單，索引不完整');
         const byName = {};
         for (const e of entries) (byName[e.dicName] ||= []).push(e);
-        store.saveDictIndex({ loadedAt: new Date().toISOString(), source: `online api/v2/dictionaries scope=${result.scope}`, deptNo: result.dept_no, hasIds: true,
+        store.saveDictIndex({ loadedAt: new Date().toISOString(), source: `online api/v2/dictionaries scope=${result.scope}`, deptNo: result.dept_no, hasIds: true, memoKeys: result.memo_keys,
           entries, deleted: 0, warnings: [], duplicates: Object.entries(byName).filter(([, v]) => v.length > 1).map(([name, v]) => ({ name, ids: v.map(x => x.id) })) });
         result.index_updated = true;
         result.index_count = entries.length;
       }
       return result;
+    }
+  },
+  {
+    name: 'online_dictionary_usage',
+    description: '（online，唯讀）字典使用索引（平台每日掃描全院範本內容得到；只有範本名稱、資料夾與欄位 id，不含病人資料）。' +
+      '帶 dic_id：GET api/v2/dictionaries/{id}/usage → 用到這本字典的範本與欄位；不帶：GET api/v2/dictionaries/usage → 各字典的使用表單數，並記進本機索引供 dictionary_suggest 排序。' +
+      '索引沒有掃描過（站台未開 V2:ScanEnabled）回 W_USAGE_NOT_SCANNED。',
+    inputSchema: { type: 'object', properties: { dic_id: str('字典 id（選填）') } },
+    async handler({ dic_id }) {
+      const id = dic_id !== undefined && dic_id !== null && dic_id !== '' ? checkId(dic_id, 'dic_id') : '';
+      const r = await online.callRaw('GET', id ? `api/v2/dictionaries/${id}/usage` : 'api/v2/dictionaries/usage', {}, '讀取字典使用索引');
+      if (r.status === 403 || r.status === 404) fail(E.UPSTREAM, `W_SERVER_OLD：站台尚未開放字典使用索引給 strucmed-mcp（HTTP ${r.status}）`);
+      if (r.status === 401) fail(E.AUTH, '登入已過期，請重新 online_login');
+      if (r.status !== 200) fail(E.UPSTREAM, `讀取字典使用索引失敗（HTTP ${r.status}）`);
+      const j = r.json || {};
+      const warnings = j.scannedAt ? [] : ['W_USAGE_NOT_SCANNED：字典使用索引還沒有掃描結果（請平台負責人開啟 V2:ScanEnabled）；使用表單數一律為 0'];
+      if (id) {
+        const templates = (Array.isArray(j.templates) ? j.templates : []).map(t => ({ template_id: String(t.templateID || ''), name: String(t.templatename || ''), folder: String(t.folder || ''),
+          itemids: String(t.itemIds || '').split(',').map(x => x.trim()).filter(Boolean) }));
+        return { dic_id: id, scanned_at: j.scannedAt || null, count: Number(j.count) || templates.length, templates, warnings };
+      }
+      const counts = j.counts && typeof j.counts === 'object' ? Object.fromEntries(Object.entries(j.counts).map(([k, v]) => [k, Number(v) || 0])) : {};
+      const idx = store.loadDictIndex();
+      if (idx) store.saveDictIndex({ ...idx, usage: { scannedAt: j.scannedAt || null, counts } });
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => ({ dic_id: k, count: v, name: (idx && (idx.entries.find(e => e.id === k) || {}).dicName) || '' }));
+      return { scanned_at: j.scannedAt || null, dictionaries: Object.keys(counts).length, top, index_updated: !!idx, warnings };
     }
   }
 ];
