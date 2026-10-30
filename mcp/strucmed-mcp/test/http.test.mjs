@@ -121,6 +121,68 @@ test('http: dictionary_load and form_import take content, since the caller canno
   assert.equal((await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/call', params: { name: 'dictionary_load', arguments: { csv_text: 'x'.repeat(1024 * 1024), dept_no: 'TEST0' } } })).status, 413);
 });
 
+test('http: after_itemid inserts next to the anchor, whatever order the platform called in', async () => {
+  const { draft_id } = (await call('form_create', { name: '順序', dept_no: 'TEST0' })).data;
+  const { area_itemid } = (await call('form_add_area', { draft_id, title: '評估' })).data;
+  const add = (label_text, extra = {}) => call('form_add_control', { draft_id, area_itemid, label_text, control: { datatype: 'textbox' }, ...extra });
+  const a = (await add('甲')).data.itemid, c = (await add('丙')).data.itemid;
+  const b = (await add('乙', { after_itemid: a })).data.itemid;
+  const d2 = (await add('丁', { after_itemid: c })).data.itemid;
+  assert.ok(b > c, 'itemid still follows creation order');
+  const read = () => JSON.parse(fs.readFileSync(path.join(ws, '.strucmed/drafts', `${draft_id}.json`), 'utf8'));
+  const seq = items => items.map(n => n.datatype === 'newline' ? '/' : n.datatype === 'text' ? n.datavalue : n.itemid);
+  assert.deepEqual(seq(read().areas[0].items), ['甲', a, '/', '乙', b, '/', '丙', c, '/', '丁', d2, '/']);
+
+  const before = read().nextItemId;
+  const missing = await add('戊', { after_itemid: 999 });
+  assert.equal(missing.error.code, 'E_NOT_FOUND');
+  assert.equal(read().nextItemId, before, 'a refused insert consumes no itemid');
+  assert.equal((await add('己', { after_itemid: area_itemid })).error.code, 'E_NOT_FOUND', 'the anchor must be a control');
+
+  const form = fs.readFileSync(path.join(HERE, 'fixtures/existing-form.json'), 'utf8');
+  const imported = (await call('form_import', { source_text: form, name: '既有區塊插入', dept_no: 'TEST0' })).data;
+  const importedPath = path.join(ws, '.strucmed/drafts', `${imported.draft_id}.json`);
+  const stored = () => JSON.parse(fs.readFileSync(importedPath, 'utf8')).areas.find(x => x.area.itemtype === 'form').area;
+  const area = stored().itemid;
+  const controls = stored().item.filter(n => n.itemid !== undefined && n.datatype !== 'text' && n.datatype !== 'newline');
+  const put = (after_itemid) => call('form_add_control', { draft_id: imported.draft_id, area_itemid: area, label_text: '插入', after_itemid, control: { datatype: 'textbox' } });
+  const lastId = controls[controls.length - 1].itemid;
+  const tail = (await put(lastId)).data.itemid;
+  assert.deepEqual(seq(stored().item).slice(-4), [lastId, '/', '插入', tail], 'imported stream keeps no trailing newline');
+  assert.ok(controls.length > 1);
+  const mid = (await put(controls[0].itemid)).data.itemid;
+  const items = seq(stored().item);
+  assert.ok(items.indexOf(mid) > items.indexOf(controls[0].itemid) && items.indexOf(mid) < items.indexOf(lastId));
+  assert.equal((await call('form_validate', { draft_id: imported.draft_id })).data.errors.length, 0);
+});
+
+test('http: form_validate reports when the draft changed, without affecting the export token', async () => {
+  const { draft_id } = (await call('form_create', { name: '版本', dept_no: 'TEST0' })).data;
+  const { area_itemid } = (await call('form_add_area', { draft_id, title: '評估' })).data;
+  const first = (await call('form_validate', { draft_id })).data;
+  assert.match(first.updated_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal((await call('form_validate', { draft_id, updated_at: first.updated_at })).data.updated_at, first.updated_at, 'validating changes nothing');
+  await new Promise(r => setTimeout(r, 5));
+  await call('form_add_control', { draft_id, area_itemid, label_text: '欄位', control: { datatype: 'textbox' } });
+  assert.notEqual((await call('form_validate', { draft_id, updated_at: first.updated_at })).data.updated_at, first.updated_at);
+  const plan = (await call('form_export', { draft_id })).data;
+  await call('form_validate', { draft_id });
+  assert.equal((await call('form_export', { draft_id, confirm_token: plan.confirm_token })).ok, true);
+});
+
+test('http: shortcut is stored lowercase, as the platform requires, and says so', async () => {
+  const created = (await call('form_create', { name: '捷徑', dept_no: 'TEST0', shortcut: 'FallRisk' })).data;
+  assert.equal(created.shortcut, 'fallrisk');
+  assert.match(created.shortcut_note, /FallRisk → fallrisk/);
+  assert.equal((await call('form_create', { name: '捷徑二', dept_no: 'TEST0', shortcut: 'fall' })).data.shortcut_note, undefined);
+  assert.equal((await call('form_create', { name: '捷徑三', dept_no: 'TEST0' })).data.shortcut_note, undefined);
+  const updated = (await call('form_update_meta', { draft_id: created.draft_id, shortcut: 'ParTest' })).data;
+  assert.equal(updated.meta.shortcut, 'partest');
+  assert.match(updated.shortcut_note, /ParTest → partest/);
+  const form = fs.readFileSync(path.join(HERE, 'fixtures/existing-form.json'), 'utf8');
+  assert.match((await call('form_import', { source_text: form, name: '捷徑四', shortcut: 'ImpTest', dept_no: 'TEST0' })).data.shortcut_note, /ImpTest → imptest/);
+});
+
 test('http: protocol edge cases (notification → 202, batch, unknown method, parse error)', async () => {
   const n = await post({ jsonrpc: '2.0', method: 'notifications/initialized' });
   assert.equal(n.status, 202);

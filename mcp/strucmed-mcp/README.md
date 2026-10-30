@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.5.1 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.5.2 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -37,6 +37,7 @@ STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_W
 行為與限制：
 - **預設離線**：HTTP 模式下 `STRUCMED_SITE` 未設時視為 `offline`，只列離線 tool。原因是 `online_login` 的瀏覽器回呼與寫入確認頁都開在**執行 MCP 那台機器**的 127.0.0.1，遠端使用者的瀏覽器到不了；要用線上 tool 需明確設定 `STRUCMED_SITE`，並自行處理回呼（目前不支援）。
 - **工作目錄只有一份**：`.strucmed/`、`output/` 是整個行程共用，多位使用者同時透過平台操作會看到彼此的 draft。單人測試或一個 agent 一個行程時沒有問題；多租戶隔離是後續工作。
+- **平台會平行呼叫、也可能把同參數的呼叫去重**：要控制欄位順序請依序呼叫 `form_add_control` 並帶 `after_itemid`；重新驗證時帶上一次 `form_validate` 回傳的 `updated_at`，讓參數不同。
 - 帶 `Origin` 標頭的請求一律 403（這個端點不給瀏覽器頁面直接呼叫，也避免 DNS rebinding）；本文上限 1 MiB；`Content-Type` 必須是 `application/json`。
 - **檔案要直接傳內容**：呼叫端讀不到伺服器的檔案系統，`dictionary_load` 用 `csv_text`、`form_import` 用 `source_text`，不要傳路徑。內容由模型寫進 tool 參數，受模型輸出長度與本文上限限制，大型字典 CSV 請先篩到本科部需要的列。
 - 對外曝露請放在 TLS 反向代理之後；token 只放環境變數。
@@ -145,7 +146,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字、預設值、必填、選項、字典 |
 | `form_remove_control` | **v1**：兩段式移除控制項（仍被參照時拒絕；子項一併移除） |
 | `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字 |
-| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference） |
+| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後 |
 | `form_validate` | 遞迴檢查巢狀結構：itemid 重複、參照（further、reference、公式與巨集中的 A<n>）、dicid 存在性、區塊權限、疑似個資；**依修改類別分級**：本次改到的面向為 error，原表單既有問題為 warning |
 | `form_preview` | tree / markdown |
 | `form_export` | 兩段式輸出 `.htm`（舊版 tempdata＋範本套件 v2）／`.package.json`（範本套件 v2）／`.manifest.md` |

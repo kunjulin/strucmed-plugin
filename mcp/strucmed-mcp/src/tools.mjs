@@ -39,6 +39,11 @@ function draftHash(d) {
   return confirm.hashPayload(rest);
 }
 function nextId(d) { return d.nextItemId++; }
+// 捷徑一律小寫：編輯器與平台寫入時都會轉（TemplateWriteService.cs、v2-editor.js），這裡保留大小寫也存不下來。有轉換時明講，免得被當成疑點
+function shortcutNote(given) {
+  const s = String(given ?? '');
+  return s === s.toLowerCase() ? {} : { shortcut: s.toLowerCase(), shortcut_note: `捷徑一律存成小寫（平台規則）：${s} → ${s.toLowerCase()}` };
+}
 function findArea(d, areaId) {
   const a = d.areas.find(x => Number(x.imported ? x.area.itemid : x.itemid) === Number(areaId));
   if (!a) fail(E.NOT_FOUND, `找不到區塊 #${areaId}`);
@@ -284,7 +289,7 @@ export const TOOLS = [
     description: '建立新的表單 draft（離線）。捷徑、作業別、Info 會寫進匯入說明，由使用者在編輯器畫面填寫（它們不在定義檔內）。',
     inputSchema: { type: 'object', required: ['name', 'dept_no'], properties: {
       name: str('表單名稱（≤36 字；也會是 .htm 檔名）'), dept_no: str('目標科部代碼'),
-      shortcut: str('捷徑名稱（選填；測試表單請勿設定）'),
+      shortcut: str('捷徑名稱（選填；一律存成小寫；測試表單請勿設定）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別' },
       description: str('Info 說明'),
       folder_type: str('建議資料夾：usr / sub / dpt / sys（寫入套件 v2 供參考；實際存放於使用者開啟的資料夾）', { enum: ['usr', 'sub', 'dpt', 'sys'] }),
@@ -305,7 +310,7 @@ export const TOOLS = [
         areas: [], pendingDictionaries: [], nextItemId: 1
       };
       store.saveDraft(d);
-      return { draft_id: d.draft_id };
+      return { draft_id: d.draft_id, ...shortcutNote(a.shortcut) };
     }
   },
   {
@@ -321,7 +326,7 @@ export const TOOLS = [
       source_text: str('來源檔內容（.htm 或 JSON 文字；與 source_path 擇一，上限 10MB）'),
       source_name: str('source_text 的原始檔名（選填；來源是舊版 .htm 或 .json 時作為原表單名稱）'),
       name: str('新表單名稱（≤36 字；必須與原表單區分；for_update:true 時選填，可與原表單相同）'), dept_no: str('目標科部代碼'),
-      shortcut: str('新捷徑（選填；預設空白＝不上架；for_update:true 時預設沿用來源）'),
+      shortcut: str('新捷徑（選填；一律存成小寫；預設空白＝不上架；for_update:true 時預設沿用來源）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別（選填；預設不勾；for_update:true 時預設沿用來源）' },
       description: str('Info（選填；預設沿用原表單）'),
       folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys'] }),
@@ -382,7 +387,7 @@ export const TOOLS = [
       const types = {};
       d.areas.forEach(x => { types[x.area.itemtype] = (types[x.area.itemtype] || 0) + 1; });
       return {
-        draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom,
+        draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom, ...shortcutNote(a.shortcut),
         area_types: types, controls: v.stats.controls, next_itemid: d.nextItemId,
         js_chars: js.length, presets: d.source.presets.length,
         notes: forUpdate
@@ -396,7 +401,7 @@ export const TOOLS = [
     name: 'form_update_meta',
     description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部（離線）。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
-      draft_id: str('draft id'), name: str('表單名稱（≤36 字）'), shortcut: str('捷徑（空字串＝不上架）'),
+      draft_id: str('draft id'), name: str('表單名稱（≤36 字）'), shortcut: str('捷徑（一律存成小寫；空字串＝不上架）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS } }, description: str('Info'),
       folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys', ''] }), dept_no: str('科部代碼') } },
     handler(a) {
@@ -414,7 +419,7 @@ export const TOOLS = [
       if (a.dept_no !== undefined) d.meta.dept_no = String(a.dept_no);
       d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
-      return { meta: d.meta };
+      return { meta: d.meta, ...shortcutNote(a.shortcut) };
     }
   },
   {
@@ -644,12 +649,14 @@ export const TOOLS = [
     name: 'form_add_control',
     description: `在區塊末端加入「說明文字＋控制項（＋換行）」。支援的 datatype：${DATATYPES_V02.join(', ')}。` +
       'label 可用 format=formula（計算式）或 hisquery（HIS 參照）；action 為巨集按鈕、action2 為 LLM 按鈕。公式與腳本寫入前會先檢查。' +
+      'after_itemid 指定插在同一區塊（或同一格）的哪個控制項之後，不帶則加在末端；平台平行呼叫時順序不保證，要控制順序請依序呼叫並帶 after_itemid。' +
       '綁定字典時用 dictionary.id（須存在於字典索引）或 dictionary.name（本科部比對範圍內體系優先、同層級唯一才自動綁 id；有 alias_of 改綁目標；查無則列為待新建，匯入後角色一律為 tohis）。新字典請帶 dictionary.comment（一行說明）與 dictionary.memo（補述），會寫進字典 JSON。',
     inputSchema: { type: 'object', required: ['draft_id', 'area_itemid', 'control'], properties: {
       draft_id: str('draft id'), area_itemid: { type: 'number' },
       cell: { type: 'object', description: '表格／頁籤區塊內的位置：formtable 用 {row, col}；tab1/tab2/table1/table2 用 {index}（皆從 0 起算）。文字區塊不用帶',
         properties: { row: { type: 'number' }, col: { type: 'number' }, index: { type: 'number' } } },
       label_text: str('控制項前的說明文字（不可含換行）'),
+      after_itemid: { type: 'number', description: '插在這個控制項之後（須在同一區塊，或 cell 指定的同一格）；不帶則加在末端' },
       newline_after: bool('控制項後換行（預設 true；只用於本工具新建的文字區塊）'),
       control: { type: 'object', required: ['datatype'], properties: {
         datatype: str('控制項類型', { enum: DATATYPES_V02 }),
@@ -669,7 +676,7 @@ export const TOOLS = [
         action_script: str('action：巨集步驟；action2：LLM prompt（可先留空，引用的欄位建好後再以 form_update_control 補上；空的會在 form_validate 報 E_ACTION_EMPTY）'), action_name: str('按鈕文字（空白＝隱藏）'),
         action_id: { type: ['number', 'string'], description: '結果回傳 ID（action2 必填）' },
         fur_action_id: { type: ['number', 'string'], description: 'textbox：輸入後觸發的巨集按鈕 itemid' } } } } },
-    handler({ draft_id, area_itemid, label_text, newline_after = true, control, cell }) {
+    handler({ draft_id, area_itemid, label_text, after_itemid, newline_after = true, control, cell }) {
       const d = store.loadDraft(draft_id);
       const area = findArea(d, area_itemid);
       checkText(label_text, 'label_text');
@@ -678,6 +685,8 @@ export const TOOLS = [
       const items = target.items;
       const kind = cellKind(target.type);
       control = control || {};
+      const anchor = after_itemid === undefined || after_itemid === null ? -1 : items.findIndex(n => isControl(n) && Number(n.itemid) === Number(after_itemid));
+      if (after_itemid !== undefined && after_itemid !== null && anchor < 0) fail(E.NOT_FOUND, `${target.where} 沒有控制項 #${after_itemid}`);
       // 頁籤／動態表格的格子：載入時字典角色一律變 nohis、執行時不上傳 HIS（SetData2，scripts.js:4418-4466；TempHtml.js:6035-6039）
       if (kind === 'tab' || kind === 'table') {
         if ((control.dictionary && (control.dictionary.id || control.dictionary.name)) || (control.dicrole && control.dicrole !== 'nohis')) {
@@ -698,7 +707,12 @@ export const TOOLS = [
       const warnings = [];
       applyDictionary(d, obj, control.dictionary, control.dicrole, warnings);
       d.nextItemId++;
-      if (target.tail) {
+      if (anchor >= 0) {
+        const line = [...(label_text ? [{ datatype: 'text', datavalue: label_text }] : []), obj];
+        const next = anchor + 1;
+        if (target.tail && next === items.length) items.push({ datatype: 'newline' }, ...line);
+        else items.splice(items[next]?.datatype === 'newline' ? next + 1 : next, 0, ...line, ...(target.tail || newline_after ? [{ datatype: 'newline' }] : []));
+      } else if (target.tail) {
         // 既有區塊與表格／頁籤格子：沿用編輯器的串流格式（結尾沒有換行），在前面補換行
         if (items.length && items[items.length - 1].datatype !== 'newline') items.push({ datatype: 'newline' });
         if (label_text) items.push({ datatype: 'text', datavalue: label_text });
@@ -765,10 +779,13 @@ export const TOOLS = [
   },
   {
     name: 'form_validate',
-    description: '驗證 draft：itemid 重複、參照、字典 id 是否存在、區塊權限、疑似個資等（這些檢查編輯器都不做）。',
-    inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id') } },
+    description: '驗證 draft：itemid 重複、參照、字典 id 是否存在、區塊權限、疑似個資等（這些檢查編輯器都不做）。回傳 updated_at（draft 最後修改時間）；' +
+      '平台會把同參數的重複呼叫去重時，重新驗證請帶上一次的 updated_at，讓參數不同。',
+    inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'),
+      updated_at: str('上一次 form_validate 回傳的 updated_at（選填，只用來區分呼叫，不影響驗證結果）') } },
     handler({ draft_id }) {
-      return validateDraft(store.loadDraft(draft_id), store.loadDictIndex(), store.loadPolicy());
+      const d = store.loadDraft(draft_id);
+      return { updated_at: d.updated, ...validateDraft(d, store.loadDictIndex(), store.loadPolicy()) };
     }
   },
   {

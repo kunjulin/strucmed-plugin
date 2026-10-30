@@ -14,9 +14,19 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.7.2（MCP 2.5.2）— 2026-10-31：MaiAgent 平台觀察的三點
+
+MaiAgent 在平台上觀察到平行呼叫、同參數去重與捷徑小寫化。stdio 用法不受影響。
+
+- `form_add_control` 新增選填的 `after_itemid`，插在同一區塊或同一格的指定控制項之後。
+- `form_validate` 回傳 `updated_at`（draft 最後修改時間），並接受同名選填參數，讓平台不會把重新驗證當成重複呼叫。
+- 捷徑維持存成小寫：編輯器與平台寫入時都會轉，MCP 保留大小寫也存不下來。改為在 `form_create`、`form_import`、`form_update_meta` 有轉換時回 `shortcut_note`，參數說明也寫明。
+
 ## 3.7.1（MCP 2.5.1）— 2026-10-31：HTTP 模式可直接傳字典與表單內容
 
 修正 MaiAgent 相容性檢查發現的最大缺口：字典索引載不進去時，表單欄位全部變成待新建字典。stdio 用法不受影響。
+
+發佈（2026-10-31）：strucmed-plugin `2daee47`（tag `v3.7.1`，由 strucmed-skill tag `v3.7.1-src`＝`5c8c46e` 產生）。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 148 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.304 執行，通過。發佈後自 tag 重新 clone，以 HTTP 模式啟動為 MCP 2.5.1，離線 19 個 tool，`csv_text` 載入字典成功。尚未在 MaiAgent 平台實測，也未實測從市集更新。
 
 - `dictionary_load` 新增 `csv_text`（＋選填 `csv_name`）、`form_import` 新增 `source_text`（＋選填 `source_name`），與原本的路徑參數擇一：HTTP 模式（MaiAgent 等伺服器端 agent 平台）的呼叫端讀不到伺服器的檔案，原本無法載入字典或既有表單。`csv_path`、`source_path` 改為選填，既有呼叫不受影響。
 - HTTP 模式：本文超過 1 MiB 時回 413，不再直接斷線（原本先關閉連線，回應送不出去，呼叫端只看到連線失敗）。
