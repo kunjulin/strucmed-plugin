@@ -19,6 +19,37 @@ node mcp/strucmed-mcp/src/server.mjs
 ```
 環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
 
+## HTTP 模式（伺服器端 agent 平台）
+預設是 stdio（上方 `node src/server.mjs`，由 Claude Code 等本機工具以子行程啟動）。設定 `STRUCMED_HTTP_PORT` 後改以 **Streamable HTTP** 提供同一組 tool：`POST <path>` 收一則 JSON-RPC 請求（或批次）、回一則 JSON；只有通知時回 202；無 session、無 GET 串流（GET／DELETE 回 405）。給跑在伺服器上、只能連 HTTP MCP 的 agent 平台（例如 MaiAgent 的 MCP 工具）使用。
+
+```bash
+STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
+# [strucmed-mcp] v2.4.1 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+```
+
+| 變數 | 說明 |
+|---|---|
+| `STRUCMED_HTTP_PORT` | 設了就是 HTTP 模式（0＝隨機 port，實際 port 印在 stderr）；未設＝stdio |
+| `STRUCMED_HTTP_HOST` | 綁定位址，預設 `127.0.0.1`。要綁 `0.0.0.0`（容器、其他主機連入）必須同時設 `STRUCMED_HTTP_TOKEN`，否則拒絕啟動 |
+| `STRUCMED_HTTP_TOKEN` | 設了就要求每個請求帶 `Authorization: Bearer <token>`（定長比較）；不印、不寫檔 |
+| `STRUCMED_HTTP_PATH` | 端點路徑，預設 `/mcp` |
+
+行為與限制：
+- **預設離線**：HTTP 模式下 `STRUCMED_SITE` 未設時視為 `offline`，只列離線 tool。原因是 `online_login` 的瀏覽器回呼與寫入確認頁都開在**執行 MCP 那台機器**的 127.0.0.1，遠端使用者的瀏覽器到不了；要用線上 tool 需明確設定 `STRUCMED_SITE`，並自行處理回呼（目前不支援）。
+- **工作目錄只有一份**：`.strucmed/`、`output/` 是整個行程共用，多位使用者同時透過平台操作會看到彼此的 draft。單人測試或一個 agent 一個行程時沒有問題；多租戶隔離是後續工作。
+- 帶 `Origin` 標頭的請求一律 403（這個端點不給瀏覽器頁面直接呼叫，也避免 DNS rebinding）；本文上限 1 MiB；`Content-Type` 必須是 `application/json`。
+- 對外曝露請放在 TLS 反向代理之後；token 只放環境變數。
+- stdout 在 HTTP 模式下不輸出任何東西，診斷仍在 stderr。
+
+## MCP App 卡片（form_preview／form_export）
+支援 MCP Apps（SEP-1865）的 host（例如 MaiAgent 的 Web Chat 與後台對話）會把 `form_preview` 與 `form_export` 的結果畫成互動卡片；不支援的 host（Claude Code、Codex、LINE 等文字通道）看到的 JSON 文字結果完全不變。
+
+- `tools/list` 在這兩個 tool 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`；`resources/read` 回傳卡片 HTML（`ui/form-card.html`，單檔、不載入外部資源，符合 host 的封閉 CSP）。
+- tool 結果多一個 `structuredContent`：表單資訊、各區塊的列與控制項、驗證結果、待新建字典，以及狀態 `kind`（`preview`／`export_plan`／`exported`）。`ui_hints.modelContext` 讓 host 把目前狀態塞給模型。
+- 卡片動作：「產生匯出計畫」→ 呼叫 `form_export` 拿 plan；「確認匯出」→ 帶 `confirm_token` 再呼叫一次；完成後列出檔案與「下載」按鈕（`ui/open-link` 開啟簽章下載連結）。「請 AI 修改」把修改指示以 `ui/message` 送回對話。兩段式確認因此不再需要本機瀏覽器確認頁。
+- **下載連結**（HTTP 模式）：`GET <path>/files/<draft_id>/<kind>?t=<token>`，`kind` 為 `htm`／`json`／`manifest`。token 是本行程金鑰簽的 HMAC、綁定 draft 與 kind、24 小時有效，是這條路徑唯一的憑證（瀏覽器下載不帶 bearer）。連結的主機名取自 `STRUCMED_PUBLIC_URL`，未設時用請求的 `X-Forwarded-Proto`／`X-Forwarded-Host`／`Host`。檔案以 `form_export` 記在 draft 裡的實際路徑取用（`draft.exported`），表單改名或自訂 `out_dir` 都不影響，也不會拿到同名另一張表單的檔案；連結永遠指向該 draft 最新一次匯出。
+- **資源**：輸出檔也可用 `resources/read` 讀 `strucmed://export/<draft_id>/<kind>`（`form_export` 回應的 `resources` 欄位；`resources/templates/list` 列有樣板），host 可自行取檔、不經模型。`include_content:true` 時 `.htm` 改以內嵌資源（`content` 的 `resource` 區塊）回傳，不放在文字結果；整份 .htm 仍會進對話，只在平台既沒有下載入口也不能讀資源時使用。
+
 ## 線上 tool（strucmed V2 API）
 呼叫 strucmed 的 token 保護 API。
 

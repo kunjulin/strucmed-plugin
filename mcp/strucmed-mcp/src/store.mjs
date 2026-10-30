@@ -55,8 +55,8 @@ export function loadDraft(id) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
-export function saveDraft(d) {
-  d.updated = new Date().toISOString();
+export function saveDraft(d, { touch = true } = {}) {
+  if (touch) d.updated = new Date().toISOString();   // touch:false：只記錄狀態（例如匯出紀錄），不算編輯
   fs.writeFileSync(draftPath(d.draft_id), JSON.stringify(d, null, 2));
   return d;
 }

@@ -27,6 +27,7 @@
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | 同一個市集 | skills、MCP、hooks；可安裝與載入，對話中的執行未實測 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | 手動設定 | 沒有 skill 流程與閘門，等於手動操作 tool；不建議用來上架 |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機伺服器或連到院內站台 |
+| **伺服器端 agent 平台**（MaiAgent 等，只接 HTTP MCP） | ⚠️ 只有離線 tool | 自行部署 HTTP 模式 | 設 `STRUCMED_HTTP_PORT` 以 Streamable HTTP 提供同一組 tool；沒有 skill 流程與閘門，線上登入與寫入確認頁到不了遠端使用者，見〈伺服器端 agent 平台〉 |
 
 每個工具都有兩種裝法，結果相同：
 
@@ -212,6 +213,18 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/strucmed-plugin
 ```
 
 `STRUCMED_SITE=offline` 完全不連線；拿掉後可使用線上 tool（瀏覽器登入）。`.strucmed/`、`output/` 放在 MCP 的工作目錄，可用 `STRUCMED_WORKSPACE` 指定。
+
+### 伺服器端 agent 平台（MaiAgent 等，只接 HTTP MCP）
+
+agent 跑在平台的伺服器上、沒有「使用者的電腦」可以啟動子行程時，把 MCP 以 HTTP 模式部署在平台連得到的主機，再在平台登錄這個網址與 bearer token：
+
+```bash
+git clone https://github.com/kunjulin/strucmed-plugin.git /opt/strucmed-plugin
+STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="<隨機長字串>" STRUCMED_WORKSPACE=/srv/strucmed \
+  node /opt/strucmed-plugin/mcp/strucmed-mcp/src/server.mjs
+```
+
+平台端 MCP 設定：網址 `http://<主機>:8765/mcp`（對外請走 TLS 反向代理），標頭 `Authorization: Bearer <token>`。平台拿到的是離線 tool（設計表單、驗證、預覽、匯出 `.htm`）；skill、hooks、subagent 不會跟過來，線上 tool 預設不提供。支援 MCP Apps 的 host（MaiAgent Web Chat／後台）會把預覽與匯出畫成互動卡片：確認匯出、下載 .htm、把修改指示送回對話都在卡片上完成。變數與限制見 [mcp/strucmed-mcp/README.md](mcp/strucmed-mcp/README.md) 的〈HTTP 模式〉與〈MCP App 卡片〉。
 
 ### 更新（已經裝過的人）
 

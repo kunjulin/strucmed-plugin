@@ -1,7 +1,7 @@
 # 變更紀錄
 
 strucmed plugin（`.claude-plugin/plugin.json`）與 MCP 伺服器（`mcp/strucmed-mcp`）的版本紀錄，新的在前。
-「發佈」指以 `tools/release/release-plugin.mjs` 產生並推送到 `kunjulin/strucmed-plugin`（同仁安裝用的市集）。平台端的對應變更記在 `kunjulin/strucmed` 的 `docs/CHANGELOG.md`。
+「發佈」指以 `tools/release/release-plugin.mjs` 產生並推送到 `kunjulin/strucmed-plugin`（同仁安裝用的市集），並在該 repo 打 `v<版本>` tag、建 GitHub Release（3.6.0 起）。平台端的對應變更記在 `kunjulin/strucmed` 的 `docs/CHANGELOG.md`。
 
 同仁更新：
 
@@ -14,9 +14,22 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.6.1（MCP 2.4.1）— 2026-10-30：伺服器端 agent 平台（MaiAgent）：Streamable HTTP 模式與 MCP App 卡片
+
+來源：MaiAgent（GitHub `playma`）對 strucmed-plugin 的 PR #1（Streamable HTTP）與 PR #2（MCP App 卡片），以 3.6.0 為基底 cherry-pick 到 `release/3.6.1`，加上維護者修正；字典助手（main 的 3.7.0）不在此版，等平台上線再發。發佈：strucmed-plugin tag `v3.6.1`（由 strucmed-skill tag `v3.6.1-src` 產生）。發佈時：`release-plugin.mjs` ok、207 個檔案、掃描無發現；`npm test` 137 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。stdio 模式、既有 16 個離線 tool 的文字結果、線上 tool、hooks、skill 都不變；Claude Code 等不畫卡片的 host 看到的結果與 3.6.0 相同。
+
+- **Streamable HTTP 模式**（`src/http.mjs`）：設 `STRUCMED_HTTP_PORT` 後以 HTTP 提供同一組離線 tool（`POST <path>` 一則 JSON-RPC 回一則 JSON；只有通知回 202；無 session；GET／DELETE 回 405），給跑在伺服器上、只能連 HTTP MCP 的 agent 平台（MaiAgent 等）。`STRUCMED_HTTP_TOKEN` 設了就要求 `Authorization: Bearer`（定長比較）；`STRUCMED_HTTP_HOST` 綁非本機位址時沒設 token 拒絕啟動；帶 `Origin` 的請求一律 403；本文上限 1 MiB。HTTP 模式下 `STRUCMED_SITE` 未設視為 `offline`（線上登入與寫入確認頁開在執行 MCP 那台機器的 127.0.0.1，遠端使用者到不了）。`server.mjs` 的分派改為回傳回應物件的 `respond()`，stdio 與 HTTP 共用。
+- **MCP App 卡片**（`src/cards.mjs`、`ui/form-card.html`）：支援 MCP Apps（SEP-1865）的 host 把 `form_preview` 與 `form_export` 畫成互動卡片（`tools/list` 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`，結果多 `structuredContent`；`initialize` 宣告 `resources`，`resources/list`／`read` 回卡片 HTML）。卡片上可「產生匯出計畫 → 確認匯出 → 下載 .htm」，「請 AI 修改」以 `ui/message` 把指示送回對話。單檔、不載入外部資源、明暗主題跟 host；卡片發起的匯出帶 `overwrite:true`。
+- **簽章下載連結**（`src/files.mjs`、HTTP 模式）：`GET <path>/files/<draft_id>/<kind>?t=<token>`，HMAC 綁 draft 與 kind、24 小時、本行程金鑰；主機名取 `STRUCMED_PUBLIC_URL` 或請求的 `X-Forwarded-*`／`Host`。
+- **匯出紀錄寫回 draft**（維護者修正）：`form_export` 第二段把輸出檔路徑記在 `draft.exported`（不更新 `updated`、不算表單內容，兩邊的 draftHash 都排除），下載連結、`resources/read` 與 `include_content` 都從這裡取檔：表單改名、自訂 `out_dir` 不影響，同名表單拿不到彼此的檔案，連結指向該 draft 最新一次匯出。
+- **輸出檔資源**：`form_export` 回應多 `resources` 欄位（`strucmed://export/<draft_id>/<htm|json|manifest>`），host 可用 `resources/read` 取檔、不經模型；`resources/templates/list` 列有樣板。`include_content:true` 改以 `content` 的 `resource` 區塊回傳 .htm，不再放進文字 JSON（整份 .htm 仍會進對話，只在平台既沒有下載入口也不能讀資源時使用）。
+- **文件**：README 安裝表加「伺服器端 agent 平台」一列與一節；`mcp/strucmed-mcp/README.md` 加〈HTTP 模式〉與〈MCP App 卡片〉。
+- **已知限制**（HTTP 模式）：`.strucmed/`、`output/` 整個行程共用，多人同時透過平台操作會看到彼此的 draft（多租戶隔離是後續工作）；沒有 skill、hooks、subagent，閘門 G3 不存在，`confirm_token` 在結果中可見，agent 可能不經使用者完成 `form_export` 第二段（離線、只寫 output/）；線上寫入 tool 不在 HTTP 模式提供。
+- **測試**：`test/http.test.mjs`（設定驗證、離線全流程、通知／批次／parse error、401／403／404／405／415）、`test/cards.test.mjs`（`_meta`、資源、`structuredContent`、兩段式、下載 200／404／405、`STRUCMED_PUBLIC_URL`、改名與自訂 `out_dir`、`resources/read`）。
+
 ## 3.6.0（MCP 2.4.0）— 2026-10-26：字典 JSON 說明、補述、FHIR 對應與體系升級
 
-尚未發佈。平台端（`strucmed` 的 `DictComment`、comment／memo／promote／demote／alias 端點、`dictSystem` 權限、字典頁與編輯器 UI）另行合併與部署；**平台上線前不要發佈**。步驟 0（`tools/v0-harness/dict-json-test.mjs`）已於 2026-10-26 在正式倉儲完成。發佈時：未發佈；`npm test` 128 過、1 個略過。
+strucmed-skill#63、#64、#65；發佈：strucmed-plugin `88c73dd`（由 main `5939f8d` 產生）。平台端（`strucmed` 的 `DictComment`、comment／memo／promote／demote／alias 端點、`dictSystem` 權限、字典頁與編輯器 UI）已上線（使用者確認）。步驟 0（`tools/v0-harness/dict-json-test.mjs`）已於 2026-10-26 在正式倉儲完成。發佈時：`release-plugin.mjs` ok、200 個檔案、掃描無發現；`npm test` 128 過、1 略過；`claude plugin validate --strict` 通過；自 GitHub `git clone` 確認版本 3.6.0／MCP 2.4.0 與根目錄的 `plugin.json`、`mcp_config.json`、`hooks.json`、`rules/AGENTS.md`。GitHub Release `v3.6.0`（tag 指向 `88c73dd`）。
 
 - **字典說明是 JSON 容器**：新增 `dictcomment.mjs`，與平台同一份規格（`{"v":1,"desc":…,"sys":…,"memo":…,"fhir":[…],"alias_of":…}`，壓縮、`v`／`desc` 在最前面、鍵順序固定、空段省略、整段 ≤ 1800 字）。舊純文字字典整段視為 desc；只有 desc 時維持純文字。
 - **新建字典一次寫好說明與補述**：`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo`、`dictionary_create` 的 `comment`／`memo`；`online_dictionary_create`／`batch` 與 `form_export` 的套件用同一個 builder 組 dicComment。沒有說明時回 `W_DICT_NO_DESC`。

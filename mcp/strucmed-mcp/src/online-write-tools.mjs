@@ -24,7 +24,7 @@ const WRITE_FOLDERS = ['usr', 'sub', 'dpt'];           // sys 需 V2:SystemListA
 const MAX_BODY_CHARS = 2 * 1024 * 1024;                 // TemplateWriteService.MaxContentBytes
 const BATCH_MAX = 500;                                  // V2:DictionaryBatchMax 預設
 
-const draftHash = d => { const { updated, created, ...rest } = d; return confirm.hashPayload(rest); };
+const draftHash = d => { const { updated, created, exported, ...rest } = d; return confirm.hashPayload(rest); };   // exported：匯出紀錄，不算表單內容
 const stripEtag = v => String(v || '').replace(/^W\//, '').replace(/^"|"$/g, '').trim();
 const checkId = (v, field) => { if (!ID_RE.test(String(v ?? ''))) fail(E.INVALID_INPUT, `${field} 格式不正確（英數與 -，最多 64 字）`); return String(v); };
 

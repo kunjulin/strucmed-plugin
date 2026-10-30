@@ -12,6 +12,9 @@ import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.m
 import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
 import { preview } from './preview.mjs';
 import { writeArtifacts, VERSION } from './export.mjs';
+import { cardData } from './cards.mjs';
+import * as files from './files.mjs';
+import { publicBase, current as requestCurrent } from './reqctx.mjs';
 import * as confirm from './confirm.mjs';
 import { parseSource, sha256 } from './importer.mjs';
 import { digestForm } from './formdiff.mjs';
@@ -22,7 +25,7 @@ const str = (description, extra = {}) => ({ type: 'string', description, ...extr
 const bool = description => ({ type: 'boolean', description });
 
 function draftHash(d) {
-  const { updated, created, ...rest } = d;
+  const { updated, created, exported, ...rest } = d;   // exported：匯出紀錄（下載連結、資源用），不算表單內容
   return confirm.hashPayload(rest);
 }
 function nextId(d) { return d.nextItemId++; }
@@ -663,6 +666,10 @@ export const TOOLS = [
       'html 需要平台前端的本機副本（STRUCMED_RUNTIME_WEB，或 <workspace>/repo/strucmed/web）與 harness 伺服器（node scripts/preview.mjs 會自動啟動）。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), format: str('tree | markdown | html', { enum: ['tree', 'markdown', 'html'] }) } },
+    card(_data, { draft_id, format }) {
+      if (format === 'html') return null;
+      return cardData(store.loadDraft(draft_id), 'preview');
+    },
     handler({ draft_id, format }) {
       const d = store.loadDraft(draft_id);
       if (format !== 'html') return { content: preview(d, format || 'tree') };
@@ -690,11 +697,20 @@ export const TOOLS = [
   },
   {
     name: 'form_export',
-    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/（相對於回傳的 workspace，請告訴使用者完整路徑）。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。',
+    description: '輸出 .htm（給編輯器匯入；內含舊版 tempdata 與範本套件 v2）、.package.json（範本套件 v2）、.manifest.md 到 output/（相對於回傳的 workspace，請告訴使用者完整路徑）。兩段式：先不帶 confirm_token 取得計畫並交給使用者確認，再帶 token 執行。驗證有錯誤時拒絕輸出。' +
+      '輸出檔可用 resources/read 讀 resources 欄位的 strucmed://export/<draft_id>/<kind>；伺服器端（HTTP 模式）另回傳 download 簽章連結供使用者下載。include_content:true 時 .htm 以內嵌資源（content 的 resource 區塊）回傳、不放在文字結果，整份 .htm 會進對話，只在平台既沒有下載入口也不能讀資源時使用。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), out_dir: str('輸出目錄（預設 <workspace>/output）'),
-      overwrite: bool('覆寫同名檔案'), confirm_token: str('第二次呼叫帶入') } },
-    handler({ draft_id, out_dir, overwrite, confirm_token }) {
+      overwrite: bool('覆寫同名檔案'), confirm_token: str('第二次呼叫帶入'),
+      include_content: bool('第二段呼叫時把 .htm 以內嵌資源回傳（會進對話；盡量改用 download 連結或 resources/read）') } },
+    card(data, { draft_id }) {
+      const d = store.loadDraft(draft_id);
+      if (data.plan) return cardData(d, 'export_plan', { plan: data.plan, confirm_token: data.confirm_token, import_mode: data.plan.import_mode });
+      const names = { htm: '.htm', json: '.package.json', manifest: '.manifest.md' };
+      const list = Object.entries(data.files || {}).map(([kind, rel]) => ({ kind, name: path.basename(rel), path: rel, url: data.download && data.download[kind], sha256: kind === 'htm' ? data.sha256 && data.sha256.htm : undefined }));
+      return cardData(d, 'exported', { files: list, import_mode: d.pendingDictionaries.length ? '匯入表單及字典' : '匯入表單' });
+    },
+    handler({ draft_id, out_dir, overwrite, confirm_token, include_content }) {
       const d = store.loadDraft(draft_id);
       const v = validateDraft(d, store.loadDictIndex(), store.loadPolicy());
       if (!v.valid) fail(E.INVALID_INPUT, '驗證未通過，不能輸出', { errors: v.errors });
@@ -720,7 +736,16 @@ export const TOOLS = [
       }
       confirm.verify('form_export', h, confirm_token);
       const r = w.write();
-      return { workspace: ws.root, files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker };
+      // 匯出紀錄寫回 draft（不更新 updated）：下載連結與 strucmed://export 資源以這裡記下的實際路徑取檔，不用表單名稱回推
+      d.exported = { at: new Date().toISOString(), files: r.files, sha256: r.sha256 };
+      store.saveDraft(d, { touch: false });
+      const out = { workspace: ws.root, files: Object.fromEntries(Object.entries(r.files).map(([k, f]) => [k, path.relative(ws.root, f)])), sha256: r.sha256, integrity: r.integrity, format: 'strucmed.template/v2', marker: r.marker, resources: files.resourceUris(d.draft_id) };
+      // 下載連結只在 HTTP 模式提供（簽章、綁 draft 與 kind、指向該 draft 最新一次匯出）；任何工作目錄內的 out_dir 都可以
+      const base = publicBase();
+      if (base) out.download = files.links(base, requestCurrent().path || '/mcp', d.draft_id);
+      // include_content：.htm 以內嵌資源回傳（server.mjs 把 __content 併進 content），不放進文字結果
+      if (include_content) out.__content = [files.embedded(d.draft_id, 'htm')].filter(Boolean);
+      return out;
     }
   }
 ];
