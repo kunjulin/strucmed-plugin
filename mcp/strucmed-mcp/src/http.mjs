@@ -60,8 +60,9 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []; let size = 0;
     req.on('data', c => {
+      if (size > MAX_BODY) return;   // 已超限：丟棄其餘本文，連線留著才回得了 413
       size += c.length;
-      if (size > MAX_BODY) { reject(Object.assign(new Error('payload too large'), { status: 413 })); req.destroy(); return; }
+      if (size > MAX_BODY) { chunks.length = 0; reject(Object.assign(new Error('payload too large'), { status: 413 })); return; }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -108,7 +109,7 @@ export function startHttp(config, respond, { log = () => {}, onRequest = () => {
     const ctype = String(req.headers['content-type'] || '');
     if (!/^application\/json\b/i.test(ctype)) return reply(res, 415, { error: 'Content-Type must be application/json' });
     let raw;
-    try { raw = await readBody(req); } catch (e) { return reply(res, e.status || 400, { error: String(e.message || e) }); }
+    try { raw = await readBody(req); } catch (e) { return reply(res, e.status || 400, { error: String(e.message || e) }, { Connection: 'close' }); }
     let msg;
     try { msg = JSON.parse(raw); } catch { return reply(res, 400, rpcError(null, -32700, 'Parse error')); }
     const batch = Array.isArray(msg);

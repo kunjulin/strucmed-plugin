@@ -26,6 +26,18 @@ before(async () => {
 });
 after(() => fs.rmSync(ws, { recursive: true, force: true }));
 
+
+test('form_import(source_text): package content works without a file, including for_update and the size limit', () => {
+  const pkg = fs.readFileSync(path.join(ws, 'src.package.json'), 'utf8');
+  const r = t.form_import({ source_text: pkg, dept_no: 'TEST0', for_update: true });
+  assert.equal(r.source_kind, 'package-json');
+  assert.equal(r.derived_from.templateID, 'syn-template-0001');
+  assert.equal(store.loadDraft(r.draft_id).meta.name, '合成原表單');
+  assert.throws(() => t.form_import({ source_text: pkg, name: '合成原表單', dept_no: 'TEST0' }), /for_update/);
+  assert.throws(() => t.form_import({ source_path: 'src.package.json', source_text: pkg, name: 'x', dept_no: 'TEST0' }), /擇一/);
+  assert.throws(() => t.form_import({ source_text: ' '.repeat(10 * 1024 * 1024 + 1), name: 'x', dept_no: 'TEST0' }), /10MB/);
+});
+
 test('#1／#7 form_import(for_update) keeps the source name, shortcut and groups and records only explicit meta', () => {
   const r = t.form_import({ source_path: 'src.package.json', dept_no: 'TEST0', for_update: true });
   const d = store.loadDraft(r.draft_id);

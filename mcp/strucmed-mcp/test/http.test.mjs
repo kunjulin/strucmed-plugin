@@ -90,6 +90,37 @@ test('http: full offline flow create → add → validate → export plan', asyn
   assert.ok(!fs.existsSync(path.join(ws, 'output')) || fs.readdirSync(path.join(ws, 'output')).length === 0, 'plan step writes nothing');
 });
 
+test('http: dictionary_load and form_import take content, since the caller cannot see server files', async () => {
+  const csv = '\ufeff"id","dicType","dictName","dicComment","createUser","createDate"\r\n"D1","TEST0","體重","體重（kg）","u","20250101"\r\n';
+  const loaded = await call('dictionary_load', { csv_text: csv, csv_name: '../../字典.csv', dept_no: 'TEST0' });
+  assert.equal(loaded.ok, true, JSON.stringify(loaded));
+  assert.equal(loaded.data.count, 1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(ws, '.strucmed/dictionaries.json'), 'utf8')).source, '字典.csv', 'file name never carries a path');
+  assert.equal((await call('dictionary_search', { query: '體重' })).data.results[0].id, 'D1');
+  const { draft_id } = (await call('form_create', { name: '字典綁定', dept_no: 'TEST0' })).data;
+  const { area_itemid } = (await call('form_add_area', { draft_id, title: '生命徵象' })).data;
+  assert.equal((await call('form_add_control', { draft_id, area_itemid, label_text: '體重', control: { datatype: 'numberbox', dictionary: { name: '體重' } } })).ok, true);
+  assert.equal((await call('form_preview', { draft_id, format: 'tree' })).ok, true);
+  const bound = JSON.parse(fs.readFileSync(path.join(ws, '.strucmed/drafts', `${draft_id}.json`), 'utf8'));
+  assert.deepEqual(bound.pendingDictionaries, [], 'name resolves against the loaded index instead of queuing a new dictionary');
+
+  const form = fs.readFileSync(path.join(HERE, 'fixtures/existing-form.json'), 'utf8');
+  const imported = await call('form_import', { source_text: form, source_name: '原表單.json', name: '改版', dept_no: 'TEST0' });
+  assert.equal(imported.ok, true, JSON.stringify(imported));
+  assert.equal(imported.data.source_kind, 'getdata-json');
+  assert.equal(imported.data.derived_from.name, '原表單');
+  assert.equal((await call('form_import', { source_text: form, source_name: '原表單.json', name: '原表單', dept_no: 'TEST0' })).ok, false, 'file name still guards the original name');
+  assert.equal((await call('form_import', { source_text: form, name: '不帶檔名', dept_no: 'TEST0' })).ok, true);
+  assert.equal((await call('form_import', { source_text: '<html></html>', name: 'x', dept_no: 'TEST0' })).error.code, 'E_INVALID_INPUT');
+
+  for (const args of [{}, { csv_path: 'a.csv', csv_text: csv }, { csv_path: '', csv_text: '' }]) {
+    assert.match((await call('dictionary_load', { ...args, dept_no: 'TEST0' })).error.message, /擇一/);
+  }
+  assert.equal((await call('dictionary_load', { csv_path: '', csv_text: csv, dept_no: 'TEST0' })).ok, true, 'blank optional path from an agent platform is ignored');
+  assert.match((await call('form_import', { name: 'x', dept_no: 'TEST0' })).error.message, /擇一/);
+  assert.equal((await post({ jsonrpc: '2.0', id: ++seq, method: 'tools/call', params: { name: 'dictionary_load', arguments: { csv_text: 'x'.repeat(1024 * 1024), dept_no: 'TEST0' } } })).status, 413);
+});
+
 test('http: protocol edge cases (notification → 202, batch, unknown method, parse error)', async () => {
   const n = await post({ jsonrpc: '2.0', method: 'notifications/initialized' });
   assert.equal(n.status, 202);

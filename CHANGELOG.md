@@ -14,9 +14,16 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.7.1（MCP 2.5.1）— 2026-10-31：HTTP 模式可直接傳字典與表單內容
+
+修正 MaiAgent 相容性檢查發現的最大缺口：字典索引載不進去時，表單欄位全部變成待新建字典。stdio 用法不受影響。
+
+- `dictionary_load` 新增 `csv_text`（＋選填 `csv_name`）、`form_import` 新增 `source_text`（＋選填 `source_name`），與原本的路徑參數擇一：HTTP 模式（MaiAgent 等伺服器端 agent 平台）的呼叫端讀不到伺服器的檔案，原本無法載入字典或既有表單。`csv_path`、`source_path` 改為選填，既有呼叫不受影響。
+- HTTP 模式：本文超過 1 MiB 時回 413，不再直接斷線（原本先關閉連線，回應送不出去，呼叫端只看到連線失敗）。
+
 ## 3.7.0（MCP 2.5.0）— 2026-10-27：字典助手（找字典引用、AI 完整補述、既有表單補述）
 
-需要平台端（`kunjulin/strucmed`：補述三個新欄位、`scope=all`、`memo/batch`、使用索引開放給 MCP）先上線；舊站台時 MCP 會略過新欄位、補述批次改逐本，不會出錯。發佈（2026-10-30）：strucmed-plugin tag `v3.7.0`（由 strucmed-skill tag `v3.7.0-src` 產生；main 已含 3.6.1 的 forward-port，所以這一版也包含 HTTP 模式與 MCP App 卡片）。發佈前確認院外站台 `cgmh.ddns.net` 已部署平台端：`PUT api/v2/dictionaries/memo/batch` 與 `GET api/v2/dictionaries/usage` 端點存在（不帶憑證回 401，不存在的路徑回 404），線上 `js/v2-editor.js`、`js/v2-dictionary.js` 與平台 repo main 逐位元相同（含 10-28 的編輯器修正）；`V2:ScanEnabled` 無法從外部確認，使用索引若回 `W_SERVER_OLD` 請檢查該設定。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 146 過、1 略過；`claude plugin validate --strict` 未執行（發佈機器沒有 `claude` 指令）。
+需要平台端（`kunjulin/strucmed`：補述三個新欄位、`scope=all`、`memo/batch`、使用索引開放給 MCP）先上線；舊站台時 MCP 會略過新欄位、補述批次改逐本，不會出錯。發佈（2026-10-30）：strucmed-plugin `aaf9e8e`（tag `v3.7.0`，由 strucmed-skill tag `v3.7.0-src`＝`4349a87` 產生；main 已含 3.6.1 的 forward-port，所以這一版也包含 HTTP 模式與 MCP App 卡片）。發佈前確認院外站台 `cgmh.ddns.net` 已部署平台端：`PUT api/v2/dictionaries/memo/batch` 與 `GET api/v2/dictionaries/usage` 端點存在（不帶憑證回 401，不存在的路徑回 404），線上 `js/v2-editor.js`、`js/v2-dictionary.js` 與平台 repo main 逐位元相同（含 10-28 的編輯器修正）；院內站台 `lvaiw.cgmf.org.tw/strucmed` 同日由使用者在院內探測，結果相同：health ok，五個狀態碼一致；兩個 JS 檔只差 CRLF 換行（Windows 工作目錄 autocrlf），轉 LF 後 sha256 與 main 相同。`V2:ScanEnabled` 無法從外部確認（院內伺服器 `appsettings.Production.json` 已設 `true`，需應用程式集區重啟後生效），使用索引若回 `W_SERVER_OLD` 請檢查該設定。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 146 過、1 略過；`claude plugin validate --strict` 於發佈後在 Mac mini 以 Claude Code 2.1.308 執行，通過（strucmed-plugin `aaf9e8e`）；同機自 GitHub 市集安裝 `strucmed@strucmed-marketplace`（user 範圍）為 3.7.0，MCP 2.5.0 以 stdio 啟動，離線 19 個 tool、自動站台（院外）36 個 tool，新工具都在。
 
 - **補述新增 3 個欄位**：`func`（表單功能）、`usecase`（使用情境）、`interop`（交換引用），正規順序插在 `range` 之後（與平台相同；既有補述的鍵順序與 etag 不變）。站台是否支援以 `GET dictionaries` 回的 `memoKeys` 判斷；不支援時寫入前移除並回 `W_SERVER_OLD_MEMO_KEYS`（`online_dictionary_create`／`batch`／`memo_set`／`memo_batch`）。
 - **新 skill `dictionary-assist`**：模式 1 找字典引用（候選、理由、綁定與引用片段）、模式 2 新字典完整補述（寫進 G1）、模式 3 既有表單補述（補述計畫 `memo-plan.md` → 核准 → 批次寫入）。新 agent `dictionary-annotator`（headless 起草補述）、新 reference `DictionaryMemo.md`（11 個欄位與三個角度的寫法）。

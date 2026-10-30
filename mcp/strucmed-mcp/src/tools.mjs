@@ -25,6 +25,14 @@ import { editableItems, findControl, refsTo, maxItemId, walk, isControl } from '
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = description => ({ type: 'boolean', description });
+const MAX_SOURCE = 10 * 1024 * 1024;
+// 路徑與內容擇一：HTTP 模式的呼叫端看不到伺服器的檔案系統，只能直接傳內容。回 true＝用內容。
+// 空字串視同未提供：部分 agent 平台會把沒用到的選填參數填成 ''
+function useInline(a, pathKey, textKey) {
+  const given = v => v !== undefined && v !== null && v !== '';
+  if (given(a[pathKey]) === given(a[textKey])) fail(E.INVALID_INPUT, `${pathKey} 與 ${textKey} 必須擇一提供`);
+  return given(a[textKey]);
+}
 
 function draftHash(d) {
   const { updated, created, exported, ...rest } = d;   // exported：匯出紀錄（下載連結、資源用），不算表單內容
@@ -134,13 +142,25 @@ export function runtimeWeb(ws) {
 export const TOOLS = [
   {
     name: 'dictionary_load',
-    description: '載入使用者從 StrucMed 字典頁「Export」匯出的 CSV，建立本機字典索引（離線）。之後的字典比對與 dicid 驗證都依此索引。',
-    inputSchema: { type: 'object', required: ['csv_path', 'dept_no'], properties: {
-      csv_path: str('CSV 檔路徑（相對於工作目錄或絕對路徑）'), dept_no: str('登入編輯器時使用的科部代碼（決定比對範圍）') } },
-    handler({ csv_path, dept_no }) {
-      const p = path.resolve(store.workspace().root, csv_path);
-      if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${csv_path}`);
-      const idx = dict.buildIndex(fs.readFileSync(p, 'utf8'), String(dept_no), path.basename(p));
+    description: '載入使用者從 StrucMed 字典頁「Export」匯出的 CSV，建立本機字典索引（離線）。之後的字典比對與 dicid 驗證都依此索引。csv_path 與 csv_text 擇一：伺服器端 agent 平台（HTTP 模式）讀不到使用者的檔案，請用 csv_text 傳 CSV 內容。',
+    inputSchema: { type: 'object', required: ['dept_no'], properties: {
+      csv_path: str('CSV 檔路徑（相對於工作目錄或絕對路徑）'),
+      csv_text: str('CSV 內容（UTF-8 文字，含表頭列；與 csv_path 擇一）'),
+      csv_name: str('csv_text 的來源檔名（選填，只用於紀錄）'),
+      dept_no: str('登入編輯器時使用的科部代碼（決定比對範圍）') } },
+    handler(a) {
+      const { csv_path, dept_no } = a;
+      let text, name;
+      if (useInline(a, 'csv_path', 'csv_text')) {
+        text = String(a.csv_text);
+        name = path.basename(String(a.csv_name || 'inline.csv'));
+      } else {
+        const p = path.resolve(store.workspace().root, String(csv_path));
+        if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${csv_path}`);
+        text = fs.readFileSync(p, 'utf8');
+        name = path.basename(p);
+      }
+      const idx = dict.buildIndex(text, String(dept_no), name);
       store.saveDictIndex(idx);
       return { count: idx.entries.length, has_ids: idx.hasIds, deleted_skipped: idx.deleted,
         dic_types: [...new Set(idx.entries.map(e => e.dicType))], duplicates: idx.duplicates.slice(0, 20),
@@ -294,9 +314,12 @@ export const TOOLS = [
       '編輯器「匯出 JSON 文件」的 .json。所有區塊（表格、圖形、頁籤、群組…）、計算式、巨集、表單 JS 都原封保留；輸出時是**新表單**，' +
       '不沿用原 templateID。捷徑與作業別預設不沿用（避免與原表單在 HIS 清單重複），需要時明確指定。' +
       '要更新同一張線上範本（online_template_update）時帶 for_update:true：名稱可省略或與原表單相同、捷徑／作業別／Info 沿用來源，' +
-      '上架時沒有明確修改的名稱、捷徑、作業別、Info 一律沿用線上值（不會改名或下架）。',
-    inputSchema: { type: 'object', required: ['source_path', 'dept_no'], properties: {
+      '上架時沒有明確修改的名稱、捷徑、作業別、Info 一律沿用線上值（不會改名或下架）。' +
+      'source_path 與 source_text 擇一：伺服器端 agent 平台（HTTP 模式）讀不到使用者的檔案，請用 source_text 傳檔案內容。',
+    inputSchema: { type: 'object', required: ['dept_no'], properties: {
       source_path: str('來源檔路徑（相對於工作目錄，且必須在工作目錄內）'),
+      source_text: str('來源檔內容（.htm 或 JSON 文字；與 source_path 擇一，上限 10MB）'),
+      source_name: str('source_text 的原始檔名（選填；來源是舊版 .htm 或 .json 時作為原表單名稱）'),
       name: str('新表單名稱（≤36 字；必須與原表單區分；for_update:true 時選填，可與原表單相同）'), dept_no: str('目標科部代碼'),
       shortcut: str('新捷徑（選填；預設空白＝不上架；for_update:true 時預設沿用來源）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別（選填；預設不勾；for_update:true 時預設沿用來源）' },
@@ -305,15 +328,24 @@ export const TOOLS = [
       for_update: bool('要以 online_template_update 更新來源範本（來源必須帶 templateID：online_template_get(save:true) 的套件，或 iot 有 templateID／sheetid 的 .htm）') } },
     handler(a) {
       const ws = store.workspace();
-      const p = path.resolve(ws.root, String(a.source_path || ''));
-      if (!p.startsWith(ws.root + path.sep)) fail(E.INVALID_INPUT, '來源檔必須在工作目錄內');
-      if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${a.source_path}`);
-      if (fs.statSync(p).size > 10 * 1024 * 1024) fail(E.INVALID_INPUT, '來源檔超過 10MB');
+      let text, fileName;
+      if (useInline(a, 'source_path', 'source_text')) {
+        text = String(a.source_text);
+        if (Buffer.byteLength(text) > MAX_SOURCE) fail(E.INVALID_INPUT, '來源檔超過 10MB');
+        fileName = a.source_name ? path.basename(String(a.source_name)) : '';
+      } else {
+        const p = path.resolve(ws.root, String(a.source_path));
+        if (!p.startsWith(ws.root + path.sep)) fail(E.INVALID_INPUT, '來源檔必須在工作目錄內');
+        if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${a.source_path}`);
+        if (fs.statSync(p).size > MAX_SOURCE) fail(E.INVALID_INPUT, '來源檔超過 10MB');
+        text = fs.readFileSync(p, 'utf8');
+        fileName = path.basename(p);
+      }
       const forUpdate = !!a.for_update;
-      const src = parseSource(fs.readFileSync(p, 'utf8'), path.basename(p));
+      const src = parseSource(text, fileName);
       const js = (src.form.find(x => x.itemtype === 'javascript') || {}).content || '';
       const iot = src.form.find(x => x.itemtype === 'iot');
-      const srcName = (src.template && src.template.name) || path.basename(p).replace(/\.[^.]+$/, '').replace(/\.package$/, '');
+      const srcName = (src.template && src.template.name) || fileName.replace(/\.[^.]+$/, '').replace(/\.package$/, '');
       const srcID = String((src.template && src.template.templateID) || iot.templateID || iot.sheetid || '');
       if (forUpdate && !srcID) fail(E.INVALID_INPUT, '來源沒有 templateID（套件 template.templateID 或 iot 的 templateID／sheetid），不能用來更新線上範本；請先 online_template_get(save:true)');
       const name = String(a.name !== undefined ? a.name : forUpdate ? srcName.slice(0, 36) : '').trim();
