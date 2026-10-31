@@ -224,7 +224,7 @@ STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="<隨機長字串>" STRUCMED_WORKSPA
   node /opt/strucmed-plugin/mcp/strucmed-mcp/src/server.mjs
 ```
 
-平台端 MCP 設定：網址 `http://<主機>:8765/mcp`（對外請走 TLS 反向代理），標頭 `Authorization: Bearer <token>`。平台拿到的是離線 tool（設計表單、驗證、預覽、匯出 `.htm`）；字典 CSV 與既有表單用 `dictionary_load` 的 `csv_text`、`form_import` 的 `source_text` 直接傳內容（平台讀不到伺服器的檔案），大型字典先篩到本科部用得到的列。平台若會平行呼叫 tool，要控制欄位順序請依序呼叫 `form_add_control` 並帶 `after_itemid`。skill、hooks、subagent 不會跟過來，線上 tool 預設不提供。支援 MCP Apps 的 host（MaiAgent Web Chat／後台）會把預覽與匯出畫成互動卡片：確認匯出、下載 .htm、把修改指示送回對話都在卡片上完成。變數與限制見 [mcp/strucmed-mcp/README.md](mcp/strucmed-mcp/README.md) 的〈HTTP 模式〉與〈MCP App 卡片〉。
+平台端 MCP 設定：網址 `http://<主機>:8765/mcp`（對外請走 TLS 反向代理），標頭 `Authorization: Bearer <token>`。平台拿到的是離線 tool（設計表單、驗證、預覽、匯出 `.htm`）；字典 CSV 與既有表單用 `dictionary_load` 的 `csv_text`、`form_import` 的 `source_text` 直接傳內容（平台讀不到伺服器的檔案），大型字典先篩到本科部用得到的列。平台若會平行呼叫 tool，要控制欄位順序請依序呼叫 `form_add_control` 並帶 `after_itemid`。HTTP 模式的檔案路徑限制在工作目錄內；請以低權限帳號或容器執行。skill、hooks、subagent 不會跟過來，線上 tool 預設不提供。支援 MCP Apps 的 host（MaiAgent Web Chat／後台）會把預覽與匯出畫成互動卡片：確認匯出、下載 .htm、把修改指示送回對話都在卡片上完成。變數與限制見 [mcp/strucmed-mcp/README.md](mcp/strucmed-mcp/README.md) 的〈HTTP 模式〉與〈MCP App 卡片〉。
 
 ### 更新（已經裝過的人）
 

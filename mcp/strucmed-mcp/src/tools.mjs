@@ -149,7 +149,7 @@ export const TOOLS = [
     name: 'dictionary_load',
     description: '載入使用者從 StrucMed 字典頁「Export」匯出的 CSV，建立本機字典索引（離線）。之後的字典比對與 dicid 驗證都依此索引。csv_path 與 csv_text 擇一：伺服器端 agent 平台（HTTP 模式）讀不到使用者的檔案，請用 csv_text 傳 CSV 內容。',
     inputSchema: { type: 'object', required: ['dept_no'], properties: {
-      csv_path: str('CSV 檔路徑（相對於工作目錄或絕對路徑）'),
+      csv_path: str('CSV 檔路徑（相對於工作目錄或絕對路徑；HTTP 模式必須在工作目錄內）'),
       csv_text: str('CSV 內容（UTF-8 文字，含表頭列；與 csv_path 擇一）'),
       csv_name: str('csv_text 的來源檔名（選填，只用於紀錄）'),
       dept_no: str('登入編輯器時使用的科部代碼（決定比對範圍）') } },
@@ -161,7 +161,10 @@ export const TOOLS = [
         name = path.basename(String(a.csv_name || 'inline.csv'));
       } else {
         const p = path.resolve(store.workspace().root, String(csv_path));
+        // 本機使用者的 CSV 常在下載資料夾；HTTP 呼叫端不是伺服器的使用者，範圍要先於存在與否檢查，才不會洩漏檔案是否存在
+        if (requestCurrent().path && !store.insideWorkspace(p)) fail(E.INVALID_INPUT, 'HTTP 模式下 CSV 檔必須在工作目錄內；或用 csv_text 傳內容');
         if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${csv_path}`);
+        if (!fs.statSync(p).isFile()) fail(E.INVALID_INPUT, `不是檔案：${csv_path}`);
         text = fs.readFileSync(p, 'utf8');
         name = path.basename(p);
       }
@@ -340,7 +343,7 @@ export const TOOLS = [
         fileName = a.source_name ? path.basename(String(a.source_name)) : '';
       } else {
         const p = path.resolve(ws.root, String(a.source_path));
-        if (!p.startsWith(ws.root + path.sep)) fail(E.INVALID_INPUT, '來源檔必須在工作目錄內');
+        if (!store.insideWorkspace(p)) fail(E.INVALID_INPUT, '來源檔必須在工作目錄內');
         if (!fs.existsSync(p)) fail(E.NOT_FOUND, `找不到檔案：${a.source_path}`);
         if (fs.statSync(p).size > MAX_SOURCE) fail(E.INVALID_INPUT, '來源檔超過 10MB');
         text = fs.readFileSync(p, 'utf8');
@@ -845,7 +848,7 @@ export const TOOLS = [
       if (!v.valid) fail(E.INVALID_INPUT, '驗證未通過，不能輸出', { errors: v.errors });
       const ws = store.workspace();
       const outDir = out_dir ? path.resolve(ws.root, out_dir) : ws.outDir;
-      if (!outDir.startsWith(ws.root)) fail(E.INVALID_INPUT, '輸出目錄必須在工作目錄內');
+      if (!store.insideWorkspace(outDir)) fail(E.INVALID_INPUT, '輸出目錄必須在工作目錄內');
       const w = writeArtifacts(outDir, d, v, overwrite, store.loadDictIndex());
       if (w.exists.length && !overwrite) fail(E.OUTPUT_EXISTS, `檔案已存在：${w.exists.map(f => path.basename(f)).join(', ')}；如要覆寫請帶 overwrite:true`);
       const h = confirm.hashPayload({ d: draftHash(d), outDir, overwrite: !!overwrite });

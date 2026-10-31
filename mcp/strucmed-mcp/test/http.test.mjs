@@ -183,6 +183,51 @@ test('http: shortcut is stored lowercase, as the platform requires, and says so'
   assert.match((await call('form_import', { source_text: form, name: '捷徑四', shortcut: 'ImpTest', dept_no: 'TEST0' })).data.shortcut_note, /ImpTest → imptest/);
 });
 
+test('http: file paths stay inside the workspace, with symlinks resolved', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-outside-'));
+  const csv = '"id","dicType","dictName","dicComment","createUser","createDate"\n"S1","TEST0","外部","","u","20250101"\n';
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'API_KEY=canary\n');
+  fs.writeFileSync(path.join(outside, 'out.csv'), csv);
+  fs.writeFileSync(path.join(outside, 'form.json'), fs.readFileSync(path.join(HERE, 'fixtures/existing-form.json')));
+  fs.mkdirSync(path.join(outside, 'dir'));
+  fs.symlinkSync(path.join(outside, 'out.csv'), path.join(ws, 'link.csv'));
+  fs.symlinkSync(path.join(outside, 'form.json'), path.join(ws, 'link.json'));
+  fs.symlinkSync(path.join(outside, 'dir'), path.join(ws, 'linkdir'));
+  fs.symlinkSync(path.join(outside, 'gone'), path.join(ws, 'dangling'));
+  const evil = `${ws}-evil`;
+  try {
+    const refused = [path.join(outside, 'secret.txt'), path.relative(ws, path.join(outside, 'out.csv')), 'link.csv', 'dangling', path.join(outside, 'nope.csv'), '/dev/zero'];
+    for (const csv_path of refused) {
+      const r = await call('dictionary_load', { csv_path, dept_no: 'TEST0' });
+      assert.equal(r.error.code, 'E_INVALID_INPUT', csv_path);
+      assert.equal(JSON.stringify(r).includes('canary'), false);
+      assert.match(r.error.message, /工作目錄內/, 'an outside file and a missing one look the same');
+    }
+    fs.writeFileSync(path.join(ws, 'dict.csv'), csv);
+    assert.equal((await call('dictionary_load', { csv_path: 'dict.csv', dept_no: 'TEST0' })).data.count, 1);
+    assert.equal((await call('dictionary_load', { csv_path: path.join(ws, 'dict.csv'), dept_no: 'TEST0' })).ok, true, 'an absolute path inside still works');
+    assert.equal((await call('dictionary_load', { csv_path: 'nope.csv', dept_no: 'TEST0' })).error.code, 'E_NOT_FOUND');
+    assert.equal((await call('dictionary_load', { csv_path: '.strucmed', dept_no: 'TEST0' })).error.code, 'E_INVALID_INPUT');
+
+    assert.match((await call('form_import', { source_path: 'link.json', name: 'x', dept_no: 'TEST0' })).error.message, /工作目錄內/);
+
+    const { draft_id } = (await call('form_create', { name: '路徑', dept_no: 'TEST0' })).data;
+    const { area_itemid } = (await call('form_add_area', { draft_id, title: '評估' })).data;
+    await call('form_add_control', { draft_id, area_itemid, label_text: '欄位', control: { datatype: 'textbox' } });
+    for (const out_dir of [evil, 'linkdir', 'linkdir/sub', '..', outside]) {
+      assert.match((await call('form_export', { draft_id, out_dir })).error.message, /工作目錄內/, out_dir);
+    }
+    assert.equal(fs.existsSync(evil), false);
+    const plan = (await call('form_export', { draft_id, out_dir: 'exports/new' })).data;
+    assert.equal((await call('form_export', { draft_id, out_dir: 'exports/new', confirm_token: plan.confirm_token })).ok, true, 'a folder not yet created is fine');
+    assert.equal(fs.readdirSync(path.join(ws, 'exports/new')).length, 3);
+    assert.equal(fs.readdirSync(path.join(outside, 'dir')).length, 0);
+  } finally {
+    for (const f of ['link.csv', 'link.json', 'linkdir', 'dangling']) fs.unlinkSync(path.join(ws, f));
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('http: protocol edge cases (notification → 202, batch, unknown method, parse error)', async () => {
   const n = await post({ jsonrpc: '2.0', method: 'notifications/initialized' });
   assert.equal(n.status, 202);

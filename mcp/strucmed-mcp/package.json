@@ -1,6 +1,6 @@
 {
   "name": "strucmed-mcp",
-  "version": "2.5.2",
+  "version": "2.5.3",
   "description": "MCP server that builds StrucMed 2.0 form definitions (.htm/.json) for manual import. Offline by default; optional online tools call the strucmed V2 API on the detected site (internal LVAIW, or the external site cgmh.ddns.net, overridable) (browser login; the HIS password never reaches the MCP).",
   "type": "module",
   "private": true,

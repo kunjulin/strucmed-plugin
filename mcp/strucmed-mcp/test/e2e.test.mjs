@@ -39,6 +39,15 @@ before(() => {
 });
 after(() => { proc.kill(); fs.rmSync(ws, { recursive: true, force: true }); });
 
+test('stdio: a local user can still load a CSV from outside the workspace, but not a directory', async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-e2e-outside-'));
+  try {
+    fs.copyFileSync(path.join(ws, 'dict.csv'), path.join(outside, 'dict.csv'));
+    assert.equal((await call('dictionary_load', { csv_path: path.join(outside, 'dict.csv'), dept_no: 'TEST0' })).data.count, 1);
+    assert.match(JSON.stringify(await call('dictionary_load', { csv_path: outside, dept_no: 'TEST0' })), /E_INVALID_INPUT/);
+  } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
 test('full offline flow: create → add → validate → preview → export (two-step)', async () => {
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
   assert.equal(init.result.serverInfo.name, 'strucmed-mcp');

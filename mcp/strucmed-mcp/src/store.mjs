@@ -38,6 +38,22 @@ export function workspace() {
   return { root, base, drafts, dictFile: path.join(base, 'dictionaries.json'), outDir: path.join(root, 'output') };
 }
 
+// 絕對路徑 p 是否在工作目錄內：解開 symlink 後比對。p 可以尚未建立（匯出目錄），懸空 symlink 算在外
+export function insideWorkspace(p) {
+  const root = real(workspace().root);
+  const exists = f => { try { fs.lstatSync(f); return true; } catch { return false; } };
+  let cur = p;
+  while (!exists(cur)) {
+    const up = path.dirname(cur);
+    if (up === cur) return false;
+    cur = up;
+  }
+  try {
+    const r = fs.realpathSync(cur);
+    return r === root || r.startsWith(root + path.sep);
+  } catch { return false; }
+}
+
 const ID_RE = /^d-[0-9a-f]{12}$/;
 
 export function newDraftId() {

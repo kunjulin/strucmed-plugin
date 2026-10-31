@@ -14,9 +14,20 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.7.3（MCP 2.5.3）— 2026-10-31：HTTP 模式的檔案路徑限制
+
+有部署 HTTP 模式的環境請更新。
+
+- 安全：HTTP 模式下，`dictionary_load` 的 `csv_path` 限制在工作目錄內。stdio 模式仍可用工作目錄外的路徑。
+- 安全：修正 `form_export` 的 `out_dir` 工作目錄檢查。
+- `form_import` 的 `source_path` 與 `form_export` 的 `out_dir` 改為解開 symlink 後檢查，指向工作目錄外的 symlink 會被拒絕（stdio 模式也一樣）。如果 `output` 是指向外部的 symlink，請改用工作目錄內的資料夾。
+- `dictionary_load` 的路徑不是一般檔案時回 `E_INVALID_INPUT`。
+
 ## 3.7.2（MCP 2.5.2）— 2026-10-31：MaiAgent 平台觀察的三點
 
 MaiAgent 在平台上觀察到平行呼叫、同參數去重與捷徑小寫化。stdio 用法不受影響。
+
+發佈（2026-10-31）：strucmed-plugin `a91c8b8`（tag `v3.7.2`，由 strucmed-skill tag `v3.7.2-src`＝`bdfa07d` 產生）。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 151 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.304 執行，通過。發佈後自 tag 重新 clone，以 HTTP 模式啟動為 MCP 2.5.2，離線 19 個 tool，`after_itemid`、`updated_at`、`shortcut_note` 實測正常。尚未在 MaiAgent 平台實測，也未實測從市集更新。
 
 - `form_add_control` 新增選填的 `after_itemid`，插在同一區塊或同一格的指定控制項之後。
 - `form_validate` 回傳 `updated_at`（draft 最後修改時間），並接受同名選填參數，讓平台不會把重新驗證當成重複呼叫。
