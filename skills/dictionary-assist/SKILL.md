@@ -65,8 +65,8 @@ allowed-tools: Read, Write, AskUserQuestion, Task, Bash(node *), mcp__strucmed__
    Status: Ready
    Revision: 1
 
-   | 字典 | 層級 | 使用表單數 | 動作（補充／建議修改） | 補上的欄位 | 內容摘要 |
-   |---|---|---|---|---|---|
+   | 字典 | 層級 | 使用表單數 | 目前補述作者（`memo_by`） | 動作（補充／建議修改） | 補上的欄位 | 內容摘要 |
+   |---|---|---|---|---|---|---|
 
    ### 逐本內容
    （每本：改前 memo／改後 memo，FHIR 有改時一併列出；W_ 警告）
@@ -85,6 +85,10 @@ allowed-tools: Read, Write, AskUserQuestion, Task, Bash(node *), mcp__strucmed__
 6. **核准**：改「## 核准」為 Approved → `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <memo-plan.md> --by <user_id>`。沒有這一步，hooks 會阻擋第二次呼叫。不要自己把計畫標成 Approved。
 7. **執行**：`online_dictionary_memo_batch`（同一份 `items`、`draft_id`、plan 的 `etags`、`confirm_token`）。回 `pending`（附 `approve_url`）時，請使用者在瀏覽器確認頁核對後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次；**不要替使用者確認**。回 `E_CONFLICT`（有字典在取得計畫後被改）：以 `details.stale` 的目前內容合併，Revision 加 1，重新給使用者核准。部分衝突（`W_PARTIAL_CONFLICT`）只對失敗的字典重做。
 8. **收尾**：逐本回報成功與失敗；`online_dictionary_search`（`update_index: true`）重建索引；提醒「字典頁與編輯器的補述視窗看得到新內容；之後的表單用 dictionary_suggest 會引用它們」。有跨科共用的字典時，把它列進「體系升級建議」交給體系字典管理者（AI 不升級）。
+
+## 誰能補
+
+所有登入者都能補補述與 FHIR，不限字典建立者，也不用上架表單。別人的字典只補缺的鍵；要改別人寫的內容一律標「建議修改」，由使用者逐項決定。create-form、edit-form 交付前會提議走模式 3。
 
 ## 不做
 

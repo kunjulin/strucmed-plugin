@@ -72,7 +72,7 @@ A2 身體測量（formtable）
 ```
 
 ### 待新建字典
-| 名稱 | 用於 | 說明（desc，一行） | 補述（memo 摘要） | 備註 |
+| 名稱 | 用於 | 說明（desc，一行） | 補述（memo 摘要） | 已查候選與不採用理由 | 備註 |
 
 ### 字典補述
 每本用到的字典（既有＋新建）一列；既有 memo 已完整的寫「沿用」。補述寫法見 `references/DictionaryMemo.md`（func／usecase／interop 三個角度），每本先過 `dictionary_memo_check`。FHIR 欄位的驗證狀態：`ICD-10 MCP 已驗證`／`待人工確認`（LOINC、SNOMED 沒有查詢工具）／`沿用既有`。

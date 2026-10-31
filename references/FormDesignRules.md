@@ -51,6 +51,7 @@
 ### 綁定順序
 
 `online_dictionary_search(update_index:true)` 後，依序找：**體系（sys：第 2–3 碼的字典，或帶體系標記、`sys.code` 等於登入者體系代碼的他科字典）→ 本科（own）→ 次專（sub，前 4 碼）→ 科部（dpt，前 3 碼）→ 新建科部字典**。
+- **先找再建**：每個存檔欄位都先跑 `dictionary_suggest`。`confidence: high`（名稱或補述別名 `asr` 與欄位說明相同、在比對範圍內、型別與單位不衝突）直接選入計畫，仍在 G1 給使用者確認；他科字典不自動選。待新建字典有高信心候選時，`form_validate` 回 `W_DICT_CANDIDATE_EXISTS`，要改綁或寫出理由。
 - 同名多層時 MCP 自動綁體系字典（`W_DICT_PREFER_SYSTEM`），計畫裡寫出綁的是哪一本。
 - 字典有 `alias_of` 時 MCP 會改綁目標（`W_DICT_ALIAS`）。
 - 綁既有字典前先讀它的 `memo`：datatype、單位、範圍、選項、計算式白話與 prompt 的欄位描述以 memo 為依據；memo 與需求衝突時列入「待決」，不要默默改用別的字典。

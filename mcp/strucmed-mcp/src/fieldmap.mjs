@@ -5,17 +5,14 @@ import { walk, isControl, areaNode, referencesOf } from './formtree.mjs';
 import { captions } from './formula-explain.mjs';
 import { scriptFindings, tableControlIds } from './validate.mjs';
 import * as dc from './dictcomment.mjs';
+import { unitOf } from './dictsuggest.mjs';
+import { compareUnits } from './units.mjs';
+
+export { unitOf };
 
 const CHOICE = new Set(['selection', 'combobox', 'radiobutton', 'checkbox']);
 const AREA_LABEL = { form: '文字區塊', formtable: '固定表格', tab1: '垂直頁籤', tab2: '水平頁籤', table1: '欄向動態表格', table2: '列向動態表格' };
 const REF_LABEL = { formula: '計算式', actionScript: '巨集或 LLM prompt', target: '巨集寫入', reference: '資料引用', further: '選項連動', actionID: '結果回傳', furActionID: '輸入後觸發' };
-// 說明文字或字典名稱中的單位：括號內（例「體重(kg)」）或結尾的常見單位
-const UNIT_RE = /[（(]\s*([A-Za-z%°µμ/²³0-9.\s^]{1,12}|[次分秒時天週月年歲公斤克毫升公分公尺度]{1,4})\s*[)）]\s*[:：]?\s*$|\b(kg|g|mg|mcg|cm|mm|m|mmHg|bpm|%|mL|ml|L|°C|mg\/dL|mmol\/L|kg\/m2)\s*[:：]?\s*$/i;
-
-export function unitOf(text) {
-  const m = String(text || '').match(UNIT_RE);
-  return m ? String(m[1] || m[2]).trim() : '';
-}
 const optionValues = c => (Array.isArray(c.option) ? c.option : []).map(o => (o && typeof o === 'object' ? String(o.value ?? '') : String(o))).filter(Boolean);
 const clip = (s, n = 300) => { const a = [...String(s)]; return a.length > n ? a.slice(0, n - 1).join('') + '…' : a.join(''); };
 
@@ -107,6 +104,37 @@ export function fieldMap(draft, idx, policy = {}) {
   };
 }
 
+// ── 計算式與引用對照補述（formula_check）───────────────────────────
+const TEXT_TYPES = new Set(['textbox', 'textarea']);   // 選項、日期可以參與計算（評分、日期差），不算
+const RANGE_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[-~－～至到]\s*(-?\d+(?:\.\d+)?)\s*$/;
+
+// fields：fieldMap 的結果；refs：被引用的 itemid；formula：kind=formula 時的計算式原文；samples：試算例 → { ref_dictionary, findings }
+export function refChecks(fields, refs, { formula, samples } = {}) {
+  const ref_dictionary = {}, findings = [];
+  const warn = (code, message) => findings.push({ level: 'warn', code, message });
+  for (const id of refs || []) {
+    const f = fields.find(x => String(x.itemid) === String(id));
+    if (!f || !f.dictionary || f.dictionary.unknown) continue;
+    const key = `A${id}`, who = `${key}「${f.caption || f.dictionary.name}」`, m = f.dictionary.memo;
+    if (!m) { ref_dictionary[key] = { dictionary: f.dictionary.name }; warn('W_REF_NO_MEMO', `${who} 綁的字典「${f.dictionary.name}」沒有補述，無法確認單位與範圍`); continue; }
+    ref_dictionary[key] = { dictionary: f.dictionary.name, ...Object.fromEntries(['unit', 'range', 'type', 'calx', 'llm'].filter(k => m[k]).map(k => [k, m[k]])) };
+    const unit = unitOf(f.caption);
+    const cmp = unit && m.unit ? compareUnits(unit, m.unit) : { kind: 'same' };
+    if (cmp.kind === 'convertible') warn('W_REF_UNIT_MISMATCH', `${who} 的單位是 ${unit}，字典補述是 ${m.unit}（1 ${unit} = ${cmp.factor} ${m.unit}）：請確認計算式的換算`);
+    else if (cmp.kind === 'different') warn('W_REF_UNIT_MISMATCH', `${who} 的單位是 ${unit}，字典補述是 ${m.unit}，兩者不是同一種量，不能直接換算`);
+    else if (cmp.kind === 'unknown') warn('W_REF_UNIT_UNKNOWN', `${who} 的單位是 ${unit}，字典補述是 ${m.unit}：無法判定是否相同，請確認`);
+    if (formula && TEXT_TYPES.has(m.type) && new RegExp(`[-+*/^]\\s*${key}\\b|\\b${key}\\s*[-+*/^]`).test(formula)) warn('W_REF_TYPE_MISMATCH', `${who} 參與運算，但字典補述的型別是 ${m.type}`);
+    const r = RANGE_RE.exec(String(m.range || ''));
+    if (!r) continue;
+    for (const sm of samples || []) {
+      const values = (sm && sm.values) || {}, v = values[key] ?? values[String(id)];
+      const n = v === '' || v === null || v === undefined ? NaN : Number(v);
+      if (!Number.isNaN(n) && (n < Number(r[1]) || n > Number(r[2]))) warn('W_SAMPLE_OUT_OF_RANGE', `試算例的 ${who}＝${v} 超出字典補述的範圍 ${m.range}`);
+    }
+  }
+  return { ref_dictionary, findings };
+}
+
 // ── 補述草稿檢查（dictionary_memo_check）────────────────────────────────
 const TW_ID = /[A-Z][12]\d{8}/;
 const LONG_DIGITS = /(^|[^\d.])\d{7,10}([^\d.]|$)/;
@@ -144,7 +172,7 @@ export function checkMemo({ memo, fhir, existing, field, desc = '' }) {
   if (!m.meaning) warn('W_MEMO_NO_MEANING', '沒有「語意」：別人搜尋與引用時看不懂這個欄位記錄什麼');
   if (field) {
     if (m.type && m.type !== field.datatype) warn('W_MEMO_TYPE_MISMATCH', `「控制項」寫 ${m.type}，表單上是 ${field.datatype}`);
-    if (m.unit && field.unit && m.unit.toLowerCase() !== String(field.unit).toLowerCase()) warn('W_MEMO_UNIT_MISMATCH', `「單位」寫 ${m.unit}，欄位說明是 ${field.unit}`);
+    if (m.unit && field.unit && compareUnits(m.unit, field.unit).kind !== 'same') warn('W_MEMO_UNIT_MISMATCH', `「單位」寫 ${m.unit}，欄位說明是 ${field.unit}`);
     const rr = parseRange(m.range);
     if (rr && (field.min || field.max)) {
       const [lo, hi] = rr;

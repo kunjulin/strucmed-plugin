@@ -7,6 +7,8 @@ import { RUNTIME_ROLE, DATATYPES_V02, cellKind } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import * as dc from './dictcomment.mjs';
+import { captions } from './formula-explain.mjs';
+import { suggest, unitOf } from './dictsuggest.mjs';
 
 // 由 scriptlint 以更精確的訊息回報的參照種類
 const SCRIPT_REF_KINDS = new Set(['formula', 'actionScript', 'target', 'actionID']);
@@ -244,6 +246,15 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   if (draft.source && draft.source.javascript) warn('W_CUSTOM_JS', `保留原表單 JS（${draft.source.javascript.length} 字元），本工具未審查其內容，請人工審查後再使用`);
 
   const nodes = controls.map(x => x.node);
+  // 先找再建：待新建字典的欄位，比對範圍內已有高信心候選時要改綁或寫出理由
+  if (pending.length && dictIndex) {
+    const names = captions(draft);
+    for (const c of nodes.filter(n => !n.dicid && pending.some(p => p.name === n.dictionary))) {
+      const caption = names.get(String(c.itemid)) || '';
+      const hit = caption && suggest(dictIndex, { caption, datatype: c.datatype, unit: unitOf(caption) }, { deptNo: m.dept_no, limit: 3 }).find(x => x.confidence === 'high');
+      if (hit) warn('W_DICT_CANDIDATE_EXISTS', `#${c.itemid}「${caption}」擬新建字典「${c.dictionary}」，但已有字典「${hit.name}」（${hit.id.slice(0, 8)}…，${hit.level}）：請改綁，或在計畫寫出不採用的理由`, c.itemid);
+    }
+  }
   // 字典補述與層級（docs/14）：綁定的字典沒有 memo、或只是科部層級（own／sub／dpt）→ 統計供計畫與審查用
   const dictOf = id => dictIndex ? dc.enrich(dictIndex.entries.find(e => e.id === id), m.dept_no) : null;
   const boundEntries = nodes.filter(c => c.dicid).map(c => dictOf(c.dicid)).filter(Boolean);

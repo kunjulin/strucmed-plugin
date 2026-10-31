@@ -18,7 +18,7 @@ import { publicBase, current as requestCurrent } from './reqctx.mjs';
 import * as confirm from './confirm.mjs';
 import { parseSource, sha256 } from './importer.mjs';
 import { digestForm } from './formdiff.mjs';
-import { fieldMap, checkMemo, unitOf } from './fieldmap.mjs';
+import { fieldMap, checkMemo, unitOf, refChecks } from './fieldmap.mjs';
 import { suggest } from './dictsuggest.mjs';
 import { editableItems, findControl, refsTo, maxItemId, walk, isControl } from './formtree.mjs';
 
@@ -231,15 +231,17 @@ export const TOOLS = [
   {
     name: 'dictionary_suggest',
     description: '（離線，唯讀；字典助手）為一個欄位找合適的字典：帶 draft_id＋itemid（用 form_fields 的事實），或 field:{ caption, datatype, unit, options, intent }。' +
-      '從本機字典索引計分排序（名稱、說明與補述命中、控制項型別、單位、選項、層級體系優先、使用表單數），每筆附 reasons（為什麼推薦）與 cite（引用方式：綁定用的 dictionary.id、' +
+      '每筆回 confidence（high＝名稱或補述別名 asr 與欄位說明相同、在比對範圍內、型別與單位不衝突，可自動選入計畫）。從本機字典索引計分排序（名稱、說明與補述命中、控制項型別、單位、選項、層級體系優先、使用表單數），每筆附 reasons（為什麼推薦）與 cite（引用方式：綁定用的 dictionary.id、' +
       '寫 LLM prompt 可用的欄位描述 memo.llm、計算式說明 memo.calx、計算式與巨集用的 A<itemid>）。要找別科的字典：先 online_dictionary_search(scope:"all", q, update_index:true)，再帶 include_other:true。' +
       '使用表單數來自 online_dictionary_usage（不帶 dic_id）寫進索引的計數。',
     inputSchema: { type: 'object', properties: {
       draft_id: str('draft id（與 itemid 一起用）'), itemid: { type: 'number', description: '欄位 itemid' },
       field: { type: 'object', description: '不用 draft 時直接描述欄位', properties: { caption: str('欄位說明文字'), datatype: str('控制項類型'), unit: str('單位'),
-        options: { type: 'array', items: { type: 'string' } }, intent: str('用途或要存的語意（例：門診初診體重，供 BMI 計算）') } },
+        options: { type: 'array', items: { type: 'string' } }, intent: str('用途或要存的語意（例：門診初診體重，供 BMI 計算）'),
+        aliases: { type: 'array', items: { type: 'string' }, description: '欄位的同義詞與英文縮寫（例：["BW","weight"]）；與字典名稱或補述 asr 完全相同時加分，最高 medium' } } },
+      aliases: { type: 'array', items: { type: 'string' }, description: '同 field.aliases（與 draft 一起用時）' },
       intent: str('補充用途（與 draft 一起用時）'), include_other: bool('也列出他科、他體系的字典（level=other）'), limit: { type: 'number', description: '最多幾筆（預設 8，最多 30）' } } },
-    handler({ draft_id, itemid, field, intent, include_other, limit }) {
+    handler({ draft_id, itemid, field, aliases, intent, include_other, limit }) {
       const idx = store.loadDictIndex();
       if (!idx) fail(E.INVALID_INPUT, '沒有本機字典索引：請先 online_dictionary_search(update_index:true) 或 dictionary_load');
       let f = field ? { ...field, unit: field.unit || unitOf(field.caption) } : null, current = null;
@@ -248,7 +250,7 @@ export const TOOLS = [
         const fm = fieldMap(store.loadDraft(draft_id), idx, store.loadPolicy());
         const x = fm.fields.find(y => y.itemid === Number(itemid));
         if (!x) fail(E.NOT_FOUND, `draft 中找不到 #${itemid}`);
-        f = { caption: x.caption, datatype: x.datatype, unit: x.unit || '', options: x.options || [], intent: [intent, x.derived.func].filter(Boolean).join(' '), itemid: x.itemid };
+        f = { caption: x.caption, datatype: x.datatype, unit: x.unit || '', options: x.options || [], intent: [intent, x.derived.func].filter(Boolean).join(' '), aliases, itemid: x.itemid };
         current = x.dictionary;
       }
       if (!f || !String(f.caption || f.intent || '').trim()) fail(E.INVALID_INPUT, '請帶 draft_id＋itemid，或 field.caption／field.intent');
@@ -736,6 +738,7 @@ export const TOOLS = [
     description: '【v0.2】檢查一段計算式、巨集、LLM prompt 或 HIS 參照（不修改 draft）。規則依平台 runtime 實際行為：' +
       'Calx 語法（已與真實 Calx 2.2.8 逐條比對）、未知或巨集專用函數、禁用函數、A<itemid> 參照、LLM 模型名稱、巨集步驟切分等。' +
       '帶 draft_id 時會一併檢查參照對象是否存在、是否勾「參與計算」，並回傳 labeled（A<itemid> 換成欄位名稱）與 ref_labels：用它確認每個參照都是計畫裡的那個欄位（例如 BMI 的身高、體重沒有對調）。' +
+      '有字典索引時另回 ref_dictionary（被引用欄位的字典補述：unit、range、type、calx、llm），並以補述檢查：W_REF_NO_MEMO、W_REF_UNIT_MISMATCH（單位不同，可換算時附倍率）、W_REF_UNIT_UNKNOWN（無法判定）、W_REF_TYPE_MISMATCH、W_SAMPLE_OUT_OF_RANGE。' +
       'kind=formula 可帶 samples（計畫的試算例）實際計算；有 expect 而結果不符時回 E_FORMULA_SAMPLE_MISMATCH。只支援常用運算與函數，不支援的回報 reason，不猜。',
     inputSchema: { type: 'object', required: ['kind', 'text'], properties: {
       kind: str('formula（label 計算式）| macro（巨集按鈕腳本）| prompt（LLM 按鈕）| hisquery（HIS 參照）', { enum: ['formula', 'macro', 'prompt', 'hisquery'] }),
@@ -743,10 +746,10 @@ export const TOOLS = [
       samples: { type: 'array', description: '試算例（kind=formula）：[{ "values": { "A2": 170, "A3": 65 }, "expect": 22.5 }]；expect 選填', items: { type: 'object', required: ['values'], properties: {
         values: { type: 'object', description: '參照 → 試算值（鍵可寫 A3 或 3）' }, expect: { description: '預期結果（數字、文字或 true／false）' } } } } } },
     handler({ kind, text, draft_id, self_itemid, samples }) {
-      let controls = null, names = null;
+      let controls = null, names = null, d = null;
       if (draft_id) {
         controls = new Map();
-        const d = store.loadDraft(draft_id);
+        d = store.loadDraft(draft_id);
         walk(d, n => { if (isControl(n)) controls.set(String(n.itemid), n); });
         names = captions(d);
       }
@@ -769,10 +772,15 @@ export const TOOLS = [
         } else if (e.ok && sm && 'expect' in sm) res.match = true;
         return res;
       }) : null;
+      // 沒有字典索引時不比對：讀不到補述不代表字典沒有補述
+      const idx = d && store.loadDictIndex();
+      const memo = idx && r.refs ? refChecks(fieldMap(d, idx, store.loadPolicy()).fields, r.refs, { formula: kind === 'formula' ? text : '', samples }) : null;
+      if (memo) r.findings.push(...memo.findings);
       const errors = r.findings.filter(f => f.level === 'error'), warnings = r.findings.filter(f => f.level === 'warn');
       return {
         ok: errors.length === 0, errors, warnings,
         ...(r.refs && { refs: r.refs.map(id => 'A' + id) }),
+        ...(memo && Object.keys(memo.ref_dictionary).length && { ref_dictionary: memo.ref_dictionary }),
         ...(names && parsed && { labeled: labelFormula(text, names), ref_labels: Object.fromEntries(r.refs.map(id => ['A' + id, names.get(String(id)) || null])) }),
         ...(tried && { samples: tried }),
         ...(r.functions && { functions: [...new Set(r.functions)] }),

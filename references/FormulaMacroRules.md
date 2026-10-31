@@ -16,6 +16,8 @@
 | 按鈕問 LLM | `action2`（預設模型）或 `action` 內 `LLMQUERY(id, prompt, "模型")` | `action_id` 必填（回覆寫入的 textarea／textbox） |
 | 輸入後自動執行巨集 | `textbox` | `fur_action_id` = 巨集按鈕 itemid |
 
+**引用欄位先看字典補述**：寫計算式、巨集、LLM prompt 前，用 `dictionary_suggest` 的 `cite` 或 `formula_check`（帶 `draft_id`）的 `ref_dictionary` 讀被引用欄位的 `unit`、`range`、`type`、`calx`、`llm`。單位換算、試算例範圍、計算式白話、prompt 欄位描述都以補述為準，與需求衝突時列入「待決」，不要默默改。`formula_check` 會以補述提醒 `W_REF_NO_MEMO`、`W_REF_UNIT_MISMATCH`（可換算時附倍率）、`W_REF_UNIT_UNKNOWN`、`W_REF_TYPE_MISMATCH`、`W_SAMPLE_OUT_OF_RANGE`。
+
 **一定要避開的陷阱**：
 - 比較運算子兩側**加空白**：`A5 > 3`，不要寫 `A5>3`（會語法錯誤）。
 - 不能用 `&`，改用 `CONCATENATE`；小數寫 `0.5`；文字一律加引號。

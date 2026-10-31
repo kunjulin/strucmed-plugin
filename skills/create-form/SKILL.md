@@ -23,7 +23,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 | 表單目的 | ✓ | 臨床情境、使用者、要收集什麼、要帶回 HIS 的文字 |
 | 目標科部代碼 `dept_no` | ✓ | 線上模式用 `online_me` 的 `dept_no`（空白並回 `W_NO_DEPT` 時表示登入時沒帶科部，請使用者提供）；離線時請使用者提供登入編輯器時填的 deptno |
 | 作業別 | ✓ | 門／住／急／手術／檢查／助手／All；**測試表單不設** |
-| 字典來源 | 建議 | **線上優先**：`online_dictionary_search`（`update_index: true`，不帶 `q`），索引帶層級、desc、memo、fhir；離線才用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
+| 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | 是否正式上架 | ✓ | 否 → 不設捷徑與作業別 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
 
@@ -44,7 +44,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 ```
 
 ### 階段 2：規劃
-- 字典：選字典與寫補述的做法照 `dictionary-assist`（模式 1、2）；planner 用 `dictionary_suggest` 選字典，補述依 `references/DictionaryMemo.md` 寫三個角度。
+- 字典：**先找再建**。planner 為每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 的候選直接選入計畫，範圍內沒有候選才找他科或列待新建。選字典與寫補述的做法照 `dictionary-assist`（模式 1、2），補述依 `references/DictionaryMemo.md` 寫三個角度。使用者選擇不提供索引時，計畫要標明「未比對既有字典」。
 - 用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、字典索引是否已載入、工作目錄。
 - 它回傳計畫檔路徑與 `Status`。`Blocked` → 把它列的問題問使用者後重跑；`NeedsRevision` → 依它的建議補需求。
 - 計畫以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
@@ -84,7 +84,7 @@ allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
 ## 3. 交付格式
 
 1. 結構預覽（tree）。
-2. 字典：綁定既有（名稱／id 前 8 碼／層級／角色）與待新建清單（含說明與補述）；補述與升級建議要等上架（publish-form）時才寫入線上，只輸出 `.htm` 時告知使用者新字典的說明與補述已在套件內、既有字典的補述需上架流程或請使用者在字典頁操作，體系升級建議請轉給體系字典管理者。
+2. 字典：綁定既有（名稱／id 前 8 碼／層級／角色）與待新建清單（含說明與補述）；新字典的說明與補述在套件內。計畫「### 字典補述」有動作為「補充」的既有字典、且已登入時，**提議**走 `dictionary-assist` 模式 3 寫入：不用上架，非建立者也能補，寫入仍要使用者核准並在瀏覽器確認頁按確認。使用者要上架時併入 publish-form 的 G3。未登入時告知既有字典的補述可之後補，或請使用者在字典頁操作，體系升級建議請轉給體系字典管理者。
 3. 驗證警告與處理建議；`W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列。
 4. 輸出檔（`.htm` 內含範本套件 v2、`.package.json`）與 `*.manifest.md`（含匯入步驟與保存前確認清單）的路徑。支援 v2 的編輯器匯入時會預填名稱、捷徑、作業別、Info，**有捷徑＋作業別＝保存後上架**，務必提醒使用者確認。
 5. 提醒：先按「新增表單」並確認 sheetID 空白再匯入；有新字典時**必須**「匯入表單及字典」；匯入後不要按「重新編號」；保存前逐一檢查區塊人形圖示。

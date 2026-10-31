@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.5.3 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.6.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -139,7 +139,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 |---|---|
 | `dictionary_load` / `dictionary_search` | 載入字典頁 Export 的 CSV（`csv_path` 或 `csv_text` 擇一）、搜尋（編輯器相同的科部比對規則；同範圍內體系 → 本科 → 次專 → 科部；fuzzy 也搜 desc 與 memo）。CSV 中 JSON 說明被逗號斷欄時回 `W_DICT_CSV_JSON_BROKEN` |
 | `form_fields` | 字典助手：把 draft 解析成逐欄事實（說明文字、datatype、選項、範圍、單位、字典與目前補述、誰參照誰、AI 資料流），`derived` 是推得的補述草稿（func／type／range／unit） |
-| `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `reasons` 與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；`include_other` 列出他科字典 |
+| `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `confidence`（high 可自動選入計畫）、`reasons` 與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；`include_other` 列出他科字典 |
 | `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度 |
 | `dictionary_create` | 規劃新字典（不寫入）；`comment`＝desc、`memo`＝補述，建立時寫進字典 JSON（`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo` 相同） |
 | `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2 |

@@ -14,9 +14,22 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.8.0（MCP 2.6.0）— 2026-10-31：字典流程：先找再建、補述不綁上架、計算式參考補述
+
+建表與改表時自動比對既有字典，補述可以不上架就寫入，計算式會對照字典補述檢查。平台不用改。
+
+- 先找再建：create-form 自動建立字典索引；form-planner 每個存檔欄位都跑 `dictionary_suggest`，範圍內沒有候選才找他科；edit-form 加入同一套比對，小改動也要做。G1「待新建字典」新增「已查候選與不採用理由」。
+- `dictionary_suggest` 每筆回 `confidence`（high／medium／low），欄位說明去掉括號內單位後與字典同名也算同名。`form_validate` 新增 `W_DICT_CANDIDATE_EXISTS`：待新建字典已有高信心候選。
+- 補述：create-form、edit-form 交付前提議走 `dictionary-assist` 模式 3，不用上架，非建立者也能補；補述計畫顯示目前作者 `memo_by`。寫入仍要核准與瀏覽器確認。
+- `formula_check` 帶 `draft_id` 且有字典索引時回 `ref_dictionary`，並新增 `W_REF_NO_MEMO`、`W_REF_UNIT_MISMATCH`、`W_REF_TYPE_MISMATCH`、`W_SAMPLE_OUT_OF_RANGE`。
+- 單位比對：新增 `units.mjs`，kg 與公斤算相同（代碼用 UCUM）。`formula_check` 分成可換算（附倍率）、不同量、無法判定（`W_REF_UNIT_UNKNOWN`）；`unitOf` 先查對照表，抓得到 `次/分`、`℃`、`分鐘` 與結尾單獨寫的單位；`dictionary_suggest` 與 `dictionary_memo_check` 共用同一套比對，可換算的單位仍算衝突。
+- 同義詞：欄位說明與補述別名 `asr` 完全相同時視同名稱相同；`dictionary_suggest` 新增 `aliases`，命中時加分，最高 medium。
+
 ## 3.7.3（MCP 2.5.3）— 2026-10-31：HTTP 模式的檔案路徑限制
 
 有部署 HTTP 模式的環境請更新。
+
+發佈（2026-10-31）：strucmed-plugin `96c04f7`（tag `v3.7.3`，由 strucmed-skill tag `v3.7.3-src`＝`4ec7c1c` 產生）。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 153 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.308 執行，通過。發佈後自 tag 重新 clone，以 HTTP 模式啟動為 MCP 2.5.3，路徑檢查實測正常。尚未在 MaiAgent 平台實測，也未實測從市集更新。
 
 - 安全：HTTP 模式下，`dictionary_load` 的 `csv_path` 限制在工作目錄內。stdio 模式仍可用工作目錄外的路徑。
 - 安全：修正 `form_export` 的 `out_dir` 工作目錄檢查。
