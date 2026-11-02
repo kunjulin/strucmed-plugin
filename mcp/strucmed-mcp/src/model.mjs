@@ -80,9 +80,9 @@ export function buildControl(itemid, c) {
     if (!LABEL_FORMATS.includes(f)) fail(E.INVALID_INPUT, `label.format 必須是 ${LABEL_FORMATS.join(' / ')}`);
     o.format = f;
     // runtime 只要 formula 非空就會計算，不看 format（平台 web/js/TempHtml.js:4368）→ 其他 format 一律清空
+    // formula 可以先留空：計算式常要引用之後才建的欄位，建好後再 form_update_control 補上；仍是空的由 form_validate 報 E_FORMULA_EMPTY
     if (f === 'formula') {
-      if (!c.formula || !String(c.formula).trim()) fail(E.INVALID_INPUT, 'format=formula 需要 formula（計算式）');
-      o.formula = String(c.formula);
+      o.formula = c.formula ? String(c.formula) : '';
     } else if (c.formula) fail(E.INVALID_INPUT, `format=${f} 不能帶 formula（runtime 仍會計算它）`);
     if (f === 'hisquery') {
       if (!c.hisquery || !String(c.hisquery).trim()) fail(E.INVALID_INPUT, 'format=hisquery 需要 hisquery（HIS 參照）');
@@ -118,7 +118,8 @@ export const STRUCTURED_TYPES = ['formtable', 'tab1', 'tab2', 'table1', 'table2'
 // 編輯器固定表格的欄寬選項（總和 6；scripts.js:873-881）
 export const FORMTABLE_PATTERNS = ['1,1,1,1,1,1', '1,2,1,2', '2,1,1,1,1', '2,2,2', '2,4', '3,3', '4,2', '6'];
 // 格子類型：formtable 格子與一般區塊相同（Quill 串流、字典可上傳）；
-// tab／table 格子走舊版載入（SetData2）：dicrole 一律變 nohis、執行時不上傳 HIS；
+// tab 格子走舊版載入（SetData2）：dicrole 保留、依角色上傳（平台 20261101 起）；
+// table 格子也走 SetData2：dicrole 一律變 nohis、執行時不上傳 HIS；
 // table 另外每新增一列就複製一份同 itemid 的欄位 → tocalc 必須 false、不能放計算式與巨集
 export function cellKind(areaType) {
   if (areaType === 'table1' || areaType === 'table2') return 'table';

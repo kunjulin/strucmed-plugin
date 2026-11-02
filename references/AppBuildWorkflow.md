@@ -54,7 +54,7 @@ Approved-By:
 
 3. 對話中呈現同一份，`AskUserQuestion`：核准（建議）／要求修改／取消。核准後：
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <app-plan.md> --by <user_id 或 local>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<slug>/app-plan.md --by <user_id 或 local>
    ```
    H1 不產生檔案：改走 `online_me_notes_set` 的兩段式 plan（它自己就是閘門），不需要 app-plan.md。
 
@@ -62,11 +62,11 @@ Approved-By:
 
 1. 把計畫寫成 `config.json`（`scripts/scaffold-form-app.mjs` 檔頭格式）到計畫目錄。
 2. `Task(app-builder)`：它先 `verify-plan.mjs verify`，再執行 scaffold，回報 `files`、`unresolved_placeholders`；不執行 npm。
-3. 本 skill 在輸出目錄執行（告知使用者需要 Node 20 與網路取套件）：
+3. 本 skill 對輸出目錄執行（告知使用者需要 Node 20 與網路取套件；不要 `cd`，一律以 `--prefix` 帶絕對路徑）：
    ```bash
-   npm install --no-audit --no-fund
-   npm run build
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/check-app-dist.mjs" dist
+   npm --prefix <輸出目錄> install --no-audit --no-fund
+   npm --prefix <輸出目錄> run build
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/check-app-dist.mjs" <輸出目錄>/dist
    ```
    `check-app-dist` 不通過（金鑰、token、身分證樣式、殘留佔位符、sourcemap）→ 不交付，回報 findings。
    H0 的 `Dockerfile` 只把這份 `dist/` 裝進 nginx 映像（容器內不跑 npm），所以 `docker compose build` 一定在 build 與檢查之後。

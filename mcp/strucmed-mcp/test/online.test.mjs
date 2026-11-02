@@ -447,7 +447,7 @@ test('online_me explains an empty dept_no (試用回饋 #11)', async () => {
   behavior.noDept = true;
   const r = await mcp.call('online_me', {});
   assert.equal(r.data.dept_no, '');
-  assert.match(r.data.warnings[0], /^W_NO_DEPT：.*online_login\(dept_no\)/);
+  assert.match(r.data.warnings[0], /^W_NO_DEPT：.*重新 online_login.*登入頁填科部/);
 });
 
 test('online_features aggregates health, runtime features and llm-config without the gateway token', async () => {
@@ -489,13 +489,20 @@ test('online_dictionary_search filters by q and can replace the local dictionary
   assert.equal(idx.data.index_updated, true);
   assert.equal(idx.data.index_count, 6);
   assert.deepEqual(idx.warnings, []);
+  // 不帶 q 是建索引：只回摘要，不回 items（F-17：全院字典的全文超過工具輸出上限）
+  assert.equal(idx.data.items, undefined);
+  assert.equal(idx.data.summary_only, true);
+  assert.equal(idx.data.duplicates, 1, '假資料有一組同名字典');
+  assert.equal(Object.values(idx.data.level_counts).reduce((a, b) => a + b, 0), 6);
+  assert.equal(idx.data.level_counts.sys, 2);
   // docs/14：體系優先排序、level／desc／memo／etag
-  assert.equal(idx.data.items[0].id, 'D5');
-  assert.equal(idx.data.items[0].level, 'sys');
-  assert.equal(idx.data.items[0].desc, '體重（kg）');
-  assert.deepEqual(idx.data.items[0].memo, { unit: 'kg' });
-  assert.equal(idx.data.items[0].etag, dc.etag(dicts.find(d => d.id === 'D5').dicComment));
-  assert.equal(idx.data.items.find(x => x.id === 'D1').desc, '有無跌倒', 'legacy plain text is desc');
+  const listed = await mcp.call('online_dictionary_search', {});
+  assert.equal(listed.data.items[0].id, 'D5');
+  assert.equal(listed.data.items[0].level, 'sys');
+  assert.equal(listed.data.items[0].desc, '體重（kg）');
+  assert.deepEqual(listed.data.items[0].memo, { unit: 'kg' });
+  assert.equal(listed.data.items[0].etag, dc.etag(dicts.find(d => d.id === 'D5').dicComment));
+  assert.equal(listed.data.items.find(x => x.id === 'D1').desc, '有無跌倒', 'legacy plain text is desc');
   const local = await mcp.call('dictionary_search', { query: '疼痛', dept_no: 'APP' });
   assert.equal(local.ok, true);
   assert.equal(local.data.results.length, 1, JSON.stringify(local.data));
@@ -898,7 +905,8 @@ test('online_dictionary_memo_set: someone else changed it after the plan → E_C
 
 test('sys mark: a promoted dictionary of another dept in the same system is level sys, bindable by name, and memo_set keeps the mark', async () => {
   await browserLogin(mcp, {});
-  const idx = await mcp.call('online_dictionary_search', { update_index: true });
+  await mcp.call('online_dictionary_search', { update_index: true });
+  const idx = await mcp.call('online_dictionary_search', {});
   const d7 = idx.data.items.find(x => x.id === 'D7');
   assert.equal(d7.level, 'sys');
   assert.equal(d7.dic_type, 'XPPB0', 'id and dicType unchanged by promotion');

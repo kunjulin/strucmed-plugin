@@ -230,7 +230,8 @@ test('formula_check tells units apart: same spelling is quiet, convertible gives
 
 test('unitOf: finds what the table knows, including vital signs, and leaves ordinary brackets alone', () => {
   const cases = { '脈搏(次/分)': '次/分', '呼吸（次/分鐘）：': '次/分鐘', '體溫(℃)': '℃', '體溫 ℃': '℃', 'SpO2 %': '%', '呼吸速率 次/分': '次/分', '手術時間(分鐘)': '分鐘',
-    'eGFR(ml/min/1.73m²)': 'ml/min/1.73m²', '尿量(cc/hr)': 'cc/hr', 'WBC(10^3/uL)': '10^3/uL', '體重(kg)：': 'kg', '體重（公斤）': '公斤', '體重 kg': 'kg', 'INR': '', '血壓(右側)': '', '過敏史(有無)': '' };
+    'eGFR(ml/min/1.73m²)': 'ml/min/1.73m²', '尿量(cc/hr)': 'cc/hr', 'WBC(10^3/uL)': '10^3/uL', '體重(kg)：': 'kg', '體重（公斤）': '公斤', '體重 kg': 'kg', 'INR': '', '血壓(右側)': '', '過敏史(有無)': '',
+    'CDR 記憶（M）：': '', 'CDR 記憶 M：': '', '第一題 (a)': '', 'NIHSS (NIHSS)': '', '階段(1)': '', '身長(m)': 'm', '尿量(L)': 'L', '活性(U)': 'U' };
   for (const [caption, unit] of Object.entries(cases)) assert.equal(unitOf(caption), unit, caption);
   assert.deepEqual(compareUnits('次/分', 'bpm'), { kind: 'same' });
   assert.deepEqual(compareUnits('cc/hr', 'mL/h'), { kind: 'same' });
@@ -238,4 +239,20 @@ test('unitOf: finds what the table knows, including vital signs, and leaves ordi
   assert.deepEqual(compareUnits('10³/μL', '10^9/L'), { kind: 'same' });
   assert.deepEqual(compareUnits('10^3/uL', '/uL'), { kind: 'convertible', factor: 1000 });
   assert.equal(compareUnits('mg/kg', 'mg').kind, 'different');
+});
+
+test('dictionary_suggest: a same-name match is not high while a similar dictionary is also in scope', () => {
+  seedIndex();
+  const idx = store.loadDictIndex();
+  idx.entries.push(...['dose', 'dose_preinj', 'dose_postinj', 'XX_dose_far', 'dosage'].map((dicName, i) => dc.fromItem({ id: `D-${i}`, dicType: i === 3 ? 'XZZ00' : 'TEST0', dicName, dicComment: dicName, createDate: '20250101' }, 'TEST0')));
+  store.saveDictIndex(idx);
+  const r = t.dictionary_suggest({ field: { caption: 'dose', datatype: 'numberbox' } });
+  const top = r.candidates.find(c => c.id === 'D-0');
+  assert.equal(top.confidence, 'medium');
+  assert.match(top.reasons.join(' '), /還有 2 本名稱相近（dose_preinj、dose_postinj）/, 'other sites and unrelated names do not count');
+  assert.equal(top.similar, undefined);
+  const pick = t.dictionary_suggest({ field: { caption: '體重(kg)', datatype: 'numberbox' } }).candidates.find(c => c.id === 'D-SYS');
+  assert.equal(pick.confidence, 'high', '體重磅 has a different unit, so it is not a rival');
+  const near = t.dictionary_suggest({ field: { caption: '跌倒史', datatype: 'radiobutton' } }).candidates.find(c => c.id === 'D-FALL');
+  assert.equal(near.confidence, 'high');
 });

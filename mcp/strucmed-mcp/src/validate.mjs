@@ -25,6 +25,7 @@ export function scriptFindings(c, ctlMap, policy = {}, tableIds = null) {
     if (c.datatype === 'label') formulaRefs = r.refs;
     if (c.datatype === 'label' && c.format !== 'formula') found.push({ code: 'E_FORMULA_FORMAT', level: 'error', message: `format 是「${c.format || '（空）'}」但 formula 不是空的：runtime 仍會計算它（TempHtml.js:4368）` });
   }
+  if (c.datatype === 'label' && c.format === 'formula' && !String(c.formula || '').trim()) found.push({ code: 'E_FORMULA_EMPTY', level: 'error', message: '計算式是空的：請用 form_update_control 補上 formula' });
   if (c.datatype === 'label' && c.format === 'hisquery') found.push(...lintHisQuery(c.hisquery).findings);
   const emptyAction = (c.datatype === 'action' || c.datatype === 'action2') && !String(c.actionScript || '').trim();
   if (emptyAction) found.push({ code: 'E_ACTION_EMPTY', level: 'error', message: `${c.datatype === 'action' ? '巨集按鈕' : 'LLM 按鈕'}的腳本是空的：按下去不會有任何動作；請用 form_update_control 補上 action_script` });
@@ -62,7 +63,22 @@ export function tableControlIds(draft) {
   return ids;
 }
 // 新增／修改時可以延後處理的錯誤（參照對象可能稍後才建立）；其餘錯誤當下就拒絕
-export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE']);
+export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE', 'E_FORMULA_EMPTY']);
+
+// 文字輸出（GetJsonText）的鍵：[鍵:] 標記，來自頁籤名稱（GetText2 以「[頁籤名稱:]」分段）與說明文字、label
+const HIS_KEY_RE = /\[([^\]\r\n]+):\]/g;
+function hisTextKeyFindings(draft, want) {
+  const have = new Set();
+  const scan = t => { for (const m of String(t || '').matchAll(HIS_KEY_RE)) have.add(m[1].trim()); };
+  walk(draft, (n, arr, idx, area) => {
+    const type = areaNode(area).itemtype;
+    if (n.itemtype === 'td' && (type === 'tab1' || type === 'tab2') && n.datatitle) have.add(String(n.datatitle).trim());
+    if (n.datatype === 'text' || n.datatype === 'label') { scan(n.datavalue); scan(n.formula); }
+  });
+  const lower = new Map([...have].map(k => [k.toLowerCase(), k]));
+  const absent = want.filter(k => !have.has(k));
+  return { missing: absent.filter(k => !lower.has(k.toLowerCase())), case_mismatch: absent.filter(k => lower.has(k.toLowerCase())).map(k => ({ want: k, found: lower.get(k.toLowerCase()) })) };
+}
 
 const TW_ID = /[A-Z][12]\d{8}/;               // 身分證字號樣式
 const LONG_DIGITS = /\b\d{7,10}\b/;            // 可能是病歷號（僅警告）
@@ -102,7 +118,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     // 區塊 title 不會出現在 HIS 表單上：有 title 的文字區塊或固定表格，第一行要有可見的文字（說明文字或純文字型 label）
     if (String(a.title || '').trim() && (!a.structured || a.area.itemtype === 'formtable')) {
       const stream = a.structured ? ((((a.area.item[0] || {}).item || [])[0] || {}).item || []) : a.items;
-      const first = stream.find(i => i.datatype !== 'newline');
+      // 只有空白的說明文字等於沒有說明，看下一個節點
+      const first = stream.find(i => i.datatype !== 'newline' && !(i.datatype === 'text' && !String(i.datavalue || '').trim()));
       const visible = first && (first.datatype === 'text' ? String(first.datavalue || '').trim() : first.datatype === 'label' && (first.format || 'defaultValue') === 'defaultValue');
       if (!visible) warn('W_AREA_NO_VISIBLE_HEADING', `${where}「${a.title}」：區塊標題不會顯示在表單上，第一行也沒有說明文字，HIS 畫面上這個區塊沒有標題；請用 form_add_area 的 visible_title，或在第一個控制項加說明文字`, a.itemid);
     }
@@ -161,15 +178,13 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     if (fresh && !draft.source && !DATATYPES_V02.includes(c.datatype)) report(true, 'E_UNSUPPORTED_DATATYPE', `datatype ${c.datatype} 不在本工具支援範圍`, c.itemid);
     // v1：表格與頁籤格子的規則（實測 load→save 與 runtime 行為）
     const kind = cellKind(areaNode(area).itemtype);
-    if (kind === 'tab' || kind === 'table') {
-      if ((c.dicrole && c.dicrole !== 'nohis') || c.dicid) {
-        report(freshFor(c, area, 'dict'), 'E_CELL_DICT', `#${c.itemid}：${kind === 'tab' ? '頁籤' : '動態表格'}內的欄位執行時不上傳 HIS，編輯器載入時也會把字典角色改成 nohis（目前 ${c.dicrole}${c.dictionary ? `，字典 ${c.dictionary}` : ''}）`, c.itemid);
-      }
-    }
     if (kind === 'table') {
-      if (c.tocalc !== false) report(freshFor(c, area, 'flags'), 'E_TABLE_TOCALC', `#${c.itemid}：動態表格每一列共用同一個 itemid，欄位不能參與計算（tocalc 必須 false）`, c.itemid);
+      if ((c.dicrole && c.dicrole !== 'nohis') || c.dicid) {
+        report(freshFor(c, area, 'dict', 'moved'), 'E_CELL_DICT', `#${c.itemid}：動態表格內的欄位執行時不上傳 HIS，編輯器載入時也會把字典角色改成 nohis（目前 ${c.dicrole}${c.dictionary ? `，字典 ${c.dictionary}` : ''}）`, c.itemid);
+      }
+      if (c.tocalc !== false) report(freshFor(c, area, 'flags', 'moved'), 'E_TABLE_TOCALC', `#${c.itemid}：動態表格每一列共用同一個 itemid，欄位不能參與計算（tocalc 必須 false）`, c.itemid);
       if (['action', 'action2'].includes(c.datatype) || (c.datatype === 'label' && (c.formula || c.format === 'hisquery'))) {
-        report(freshFor(c, area, 'formula'), 'E_TABLE_SCRIPT', `#${c.itemid}：動態表格每一列會複製同一組欄位，計算式、HIS 參照與巨集請放在表格外`, c.itemid);
+        report(freshFor(c, area, 'formula', 'moved'), 'E_TABLE_SCRIPT', `#${c.itemid}：動態表格每一列會複製同一組欄位，計算式、HIS 參照與巨集請放在表格外`, c.itemid);
       }
     }
     for (const r of referencesOf(c)) {
@@ -185,7 +200,9 @@ export function validateDraft(draft, dictIndex, policy = {}) {
         else warn('W_DICT_NOT_IN_INDEX', `dicid ${String(c.dicid).slice(0, 8)}… 不在已載入的字典 CSV（可能屬上層科部；原表單既有）`, c.itemid);
       } else if (!dictIndex && dictFresh) report(true, 'E_DICT_UNKNOWN_ID', `指定了 dicid ${c.dicid}，但尚未載入字典 CSV，無法驗證`, c.itemid);
     }
-    if (dictFresh && !c.dicid && c.dictionary && c.dicrole !== 'tohis') warn('W_DICT_ROLE_FORCED', `只以名稱綁定「${c.dictionary}」：匯入後角色一律變成 tohis`, c.itemid);
+    // 編輯器以名稱配對字典時，頁籤欄位維持 nohis（scripts.js:4596）：線上上架會先建字典取得 id，離線匯入才有這個問題
+    if ((dictFresh || cats(c).includes('moved')) && !c.dicid && c.dictionary && kind === 'tab') warn('W_TAB_DICT_BY_NAME', `#${c.itemid}：頁籤內只以名稱綁定「${c.dictionary}」：匯入編輯器後角色維持 nohis、不會寫入。線上上架不受影響；離線匯入後請在編輯器設定角色`, c.itemid);
+    else if (dictFresh && !c.dicid && c.dictionary && c.dicrole !== 'tohis') warn('W_DICT_ROLE_FORCED', `只以名稱綁定「${c.dictionary}」：匯入後角色一律變成 tohis`, c.itemid);
     if (!c.dicid && !c.dictionary && c.dicrole && c.dicrole !== 'nohis') report(dictFresh, 'E_DICT_REQUIRED', `dicrole=${c.dicrole} 但沒有綁字典（匯入後會被改成 nohis）`, c.itemid);
     const dv = (typeof c.datavalue === 'string' ? c.datavalue : '') + ' ' +
       (Array.isArray(c.option) ? c.option.map(o => (typeof o === 'string' ? o : (o && o.value) || '')).join(' ') : '');
@@ -245,13 +262,31 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   if (pending.length) warn('W_NEW_DICTIONARY', `有 ${pending.length} 個新字典：必須用「匯入表單及字典」匯入，否則綁定會靜默消失（04 結論 2）`);
   if (draft.source && draft.source.javascript) warn('W_CUSTOM_JS', `保留原表單 JS（${draft.source.javascript.length} 字元），本工具未審查其內容，請人工審查後再使用`);
 
+  if ((m.hisTextKeys || []).length) {
+    const { missing, case_mismatch } = hisTextKeyFindings(draft, m.hisTextKeys);
+    if (missing.length || case_mismatch.length) {
+      const parts = [missing.length && `缺 ${missing.join('、')}`, case_mismatch.length && `大小寫不同 ${case_mismatch.map(x => `${x.want}（表單上是 ${x.found}）`).join('、')}`].filter(Boolean);
+      warnings.push({ code: 'W_HIS_TEXT_KEYS', message: `HIS 接收端要的文字鍵在頁籤名稱與 label 文字中找不到對應的 [鍵:]：${parts.join('；')}`, missing, case_mismatch });
+    }
+  }
+
   const nodes = controls.map(x => x.node);
+  // 同一本字典被多個欄位寫入：key-value 以字典為鍵，存檔只留第一個有值的欄位（平台 scripts.js:570）；編輯器只提示不阻擋，這裡也一樣
+  const writers = new Map();
+  for (const c of nodes) {
+    if (!['tohis', 'puthis'].includes(c.dicrole) || !(c.dicid || c.dictionary)) continue;
+    const key = c.dicid || c.dictionary;
+    writers.set(key, [...(writers.get(key) || []), c]);
+  }
+  for (const list of writers.values()) {
+    if (list.length > 1) warn('W_DICT_DUP_WRITE', `字典「${list[0].dictionary}」被 ${list.map(c => '#' + c.itemid).join('、')} 寫入：存檔只留第一個有值的欄位，其他欄位的值不會進倉儲`, list[0].itemid);
+  }
   // 先找再建：待新建字典的欄位，比對範圍內已有高信心候選時要改綁或寫出理由
   if (pending.length && dictIndex) {
     const names = captions(draft);
     for (const c of nodes.filter(n => !n.dicid && pending.some(p => p.name === n.dictionary))) {
       const caption = names.get(String(c.itemid)) || '';
-      const hit = caption && suggest(dictIndex, { caption, datatype: c.datatype, unit: unitOf(caption) }, { deptNo: m.dept_no, limit: 3 }).find(x => x.confidence === 'high');
+      const hit = caption && suggest(dictIndex, { caption, datatype: c.datatype, unit: (draft.units || {})[c.itemid] || unitOf(caption) }, { deptNo: m.dept_no, limit: 3 }).find(x => x.confidence === 'high');
       if (hit) warn('W_DICT_CANDIDATE_EXISTS', `#${c.itemid}「${caption}」擬新建字典「${c.dictionary}」，但已有字典「${hit.name}」（${hit.id.slice(0, 8)}…，${hit.level}）：請改綁，或在計畫寫出不採用的理由`, c.itemid);
     }
   }

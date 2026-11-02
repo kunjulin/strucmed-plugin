@@ -100,12 +100,17 @@ function planCommon(d, v, built, user, base) {
   };
 }
 
+// 寫入性質放在描述最前面（M15）：Claude Code auto mode 的分類器看描述判斷，第一次呼叫只產生計畫不該被當成寫入（F-42）
+const TWO_STEP = '（只產生計畫，不寫入）第一次呼叫不帶 confirm_token，只回 plan。（寫入，需 confirm_token 與瀏覽器確認）第二次帶 confirm_token 才寫入。';
+// 範本與字典都走同一段確認（approve.mjs）：等 STRUCMED_APPROVE_WAIT_MS（預設 2 分鐘），使用者按得快就在這次呼叫內完成，來不及才回 pending（F-44）
+const SECOND_CALL = '第二次呼叫會在瀏覽器開啟寫入確認頁，並在呼叫內等候最多約 2 分鐘：使用者按「確認寫入」就直接寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次（確認頁被關掉可重開 approve_url）。';
+
 export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_template_create',
-    description: '（online，寫入範本）把已驗證的 draft 新建成線上範本（POST api/v2/folders/{type}/templates，回 201）。兩段式：先不帶 confirm_token 取得 plan，' +
+    description: TWO_STEP + '（online，寫入範本）把已驗證的 draft 新建成線上範本（POST api/v2/folders/{type}/templates，回 201）。兩段式：先不帶 confirm_token 取得 plan，' +
       '**必須把 plan（站台、登入者、資料夾、名稱、捷徑、作業別、是否保存即上架、字典、警告）原樣給使用者確認**，同意後帶 confirm_token 再呼叫一次。' +
-      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。' +
+      SECOND_CALL +
       '前置：form_validate 無 error、沒有待新建字典（否則 E_DICT_PENDING）。資料夾只能 usr／sub／dpt（sys 需管理者）。寫入不重試；502 pending 時不要重複保存。',
     inputSchema: { type: 'object', required: ['draft_id', 'folder_type'], properties: {
       draft_id: str('draft id'), folder_type: str('目標資料夾', { enum: WRITE_FOLDERS }), confirm_token: str('第二次呼叫帶入') } },
@@ -122,7 +127,7 @@ export const ONLINE_WRITE_TOOLS = [
         return {
           plan,
           confirm_token: confirm.issue('online_template_create', h),
-          next: '請把 plan 給使用者確認（閘門 G3），同意後帶 confirm_token 再呼叫一次'
+          next: '請把 plan 給使用者確認（閘門 G2 定稿），同意後帶 confirm_token 再呼叫一次'
         };
       }
       confirm.verify('online_template_create', h, confirm_token);
@@ -142,13 +147,13 @@ export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_template_update',
     flag: 'templateUpdate',
-    description: '（online，寫入範本，flag templateUpdate）更新線上既有範本（PUT api/v2/templates/{id}，If-Match）。只允許 draft 的來源就是該範本（derivedFrom.templateID＝template_id）：' +
+    description: TWO_STEP + '（online，寫入範本，flag templateUpdate）更新線上既有範本（PUT api/v2/templates/{id}，If-Match）。只允許 draft 的來源就是該範本（derivedFrom.templateID＝template_id）：' +
       'online_template_get(save:true) 的套件，或 iot 的 templateID／sheetid 等於線上 ID 的 .htm，以 form_import（建議帶 for_update:true）載入。' +
       '名稱、捷徑、作業別、Info 預設沿用線上值，只有 draft 明確修改過的欄位才覆寫（plan.meta 並列線上／draft／寫入值；W_META_RENAME、W_UNPUBLISH 要特別提醒使用者）。' +
       'plan.diff 逐項比對內容：這次會寫入的變更（新增／移除／修改的控制項、區塊版面與說明文字、表單 JS、iot），以及線上自來源後被改的地方（W_ONLINE_CHANGED_SINCE_SOURCE：更新會蓋掉）。' +
       '兩段式：第一次呼叫讀線上目前版本取得 If-Match（ETag）並回 plan；**plan 必須原樣給使用者確認**，同意後帶 confirm_token 與 plan 的 if_match 再呼叫一次。' +
       '線上內容或名稱等在取得計畫後被修改 → E_CONFLICT 或 E_CONFIRM_MISMATCH，必須重新取得計畫。寫入不重試。' +
-      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
+      SECOND_CALL,
     inputSchema: { type: 'object', required: ['draft_id', 'template_id'], properties: {
       draft_id: str('draft id（derivedFrom.templateID 必須等於 template_id）'), template_id: str('要更新的範本 ID'),
       if_match: str('第二次呼叫帶入 plan 的 if_match'), confirm_token: str('第二次呼叫帶入') } },
@@ -195,7 +200,7 @@ export const ONLINE_WRITE_TOOLS = [
         return {
           plan,
           confirm_token: confirm.issue('online_template_update', h),
-          next: '請把 plan 給使用者確認（閘門 G3；特別是 meta 的名稱／捷徑／作業別、diff，以及 W_UNPUBLISH、W_META_RENAME、W_ONLINE_CHANGED_SINCE_SOURCE），同意後帶 confirm_token 與 if_match 再呼叫一次'
+          next: '請把 plan 給使用者確認（閘門 G2 定稿；特別是 meta 的名稱／捷徑／作業別、diff，以及 W_UNPUBLISH、W_META_RENAME、W_ONLINE_CHANGED_SINCE_SOURCE），同意後帶 confirm_token 與 if_match 再呼叫一次'
         };
       }
       confirm.verify('online_template_update', h, confirm_token);
@@ -229,11 +234,11 @@ export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_dictionary_create',
     flag: 'dictionaryWrite',
-    description: '（online，寫入字典，flag dictionaryWrite）把 draft 的一個「待新建字典」建立到線上（POST api/v2/dictionaries，scope 固定 dept：建立者＝登入者、類型＝登入科部）。' +
+    description: TWO_STEP + '（online，寫入字典，flag dictionaryWrite）把 draft 的一個「待新建字典」建立到線上（POST api/v2/dictionaries，scope 固定 dept：建立者＝登入者、類型＝登入科部）。' +
       'dicComment 以字典 JSON 一次寫好：comment＝desc（一行語意）、memo＝補述（預設用規劃時 dictionary_create／form_add_control 給的）。' +
       '兩段式：先取得 plan 給使用者確認，再帶 confirm_token。同名未刪除字典存在時伺服器回 reused（沿用既有 id）；有自己可還原的同名已刪除字典時回 E_DELETED_EXISTS（候選列在 details），' +
       '**不自動 force**，由使用者決定還原（請管理者在字典頁操作）或帶 force:true 建立新的。成功後把 draft 內使用該名稱的控制項綁上 id、移出待新建清單、更新本機字典索引。' +
-      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
+      SECOND_CALL,
     inputSchema: { type: 'object', required: ['draft_id', 'name'], properties: {
       draft_id: str('draft id'), name: str('待新建字典名稱（必須在 draft 的 pendingDictionaries 內）'), comment: str('一行說明 desc（選填；預設用規劃時的 comment）'),
       memo: { type: 'object', description: '補述（選填；預設用規劃時的 memo）：meaning／type／unit／range／asr／calx／llm／scope' },
@@ -281,9 +286,9 @@ export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_dictionary_batch',
     flag: 'dictionaryWrite',
-    description: '（online，寫入字典，flag dictionaryWrite）把 draft 的全部「待新建字典」一次建立（POST api/v2/dictionaries/batch，最多 500 筆，逐筆回報）。兩段式：先取得 plan 給使用者確認。' +
+    description: TWO_STEP + '（online，寫入字典，flag dictionaryWrite）把 draft 的全部「待新建字典」一次建立（POST api/v2/dictionaries/batch，最多 500 筆，逐筆回報）。兩段式：先取得 plan 給使用者確認。' +
       '成功的字典會綁回 draft 並更新本機索引；失敗的留在待新建清單並回 warnings（例如 E_DELETED_EXISTS 需改用 online_dictionary_create 逐一決定）。' +
-      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。',
+      SECOND_CALL,
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'), confirm_token: str('第二次呼叫帶入') } },
     async handler({ draft_id, confirm_token }) {
       const user = online.currentUser();
@@ -324,12 +329,12 @@ export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_dictionary_memo_set',
     flag: 'dictionaryWrite',
-    description: '（online，寫入字典補述，flag dictionaryWrite）更新一本字典的補述 memo 與 FHIR 對應 fhir（PUT api/v2/dictionaries/{id}/memo，If-Match: etag）。任何登入者都能寫，不會動到 desc（只有原作者或體系管理者能改 desc）。' +
+    description: TWO_STEP + '（online，寫入字典補述，flag dictionaryWrite）更新一本字典的補述 memo 與 FHIR 對應 fhir（PUT api/v2/dictionaries/{id}/memo，If-Match: etag）。任何登入者都能寫，不會動到 desc（只有原作者或體系管理者能改 desc）。' +
       'memo 是「補充」：保留既有鍵、只覆寫有給的鍵（值給 "" 表示清除）；fhir 有給就整組取代。送出前在本機先做與平台相同的格式檢查（E_INVALID_FHIR；datatype 與 FHIR 型別不一致只警告 W_FHIR_TYPE_MISMATCH）。' +
       '兩段式：第一次呼叫讀線上目前內容，回 plan（改前 before／改後 after／etag）給使用者確認；同意後帶 confirm_token 與 plan 的 etag 再呼叫一次。' +
-      '線上在取得計畫後被他人修改 → E_CONFLICT，details.current 是目前內容，請合併後重新取得計畫。第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入。',
+      '線上在取得計畫後被他人修改 → E_CONFLICT，details.current 是目前內容，請合併後重新取得計畫。' + SECOND_CALL,
     inputSchema: { type: 'object', required: ['dic_id'], properties: {
-      dic_id: str('字典 id'), draft_id: str('選填：publish-form 合併在 G3 時帶入對應的 draft（hooks 會檢查該 draft 的上架計畫核准）'),
+      dic_id: str('字典 id'), draft_id: str('選填：publish-form 在 G2 定稿時帶入對應的 draft（hooks 會檢查該 draft 的上架計畫核准）'),
       memo: { type: 'object', description: '要補充的 memo 鍵：meaning／type／unit／range／asr（字串陣列）／calx／llm／scope' },
       fhir: { type: 'array', description: 'FHIR 對應（整組取代）：[{ res, path, code?, display?, ucum?, component?, note? }]', items: { type: 'object' } },
       etag: str('第二次呼叫帶入 plan 的 etag'), confirm_token: str('第二次呼叫帶入') } },
@@ -370,10 +375,10 @@ export const ONLINE_WRITE_TOOLS = [
   {
     name: 'online_dictionary_memo_batch',
     flag: 'dictionaryWrite',
-    description: '（online，寫入字典補述，flag dictionaryWrite）一次補多本字典的補述 memo 與 FHIR 對應（PUT api/v2/dictionaries/memo/batch，最多 100 本；逐本 If-Match）。' +
+    description: TWO_STEP + '（online，寫入字典補述，flag dictionaryWrite）一次補多本字典的補述 memo 與 FHIR 對應（PUT api/v2/dictionaries/memo/batch，最多 100 本；逐本 If-Match）。' +
       'dictionary-assist 的「既有表單補述」用：合併規則與 online_dictionary_memo_set 相同（memo 保留既有鍵、只覆寫有給的鍵，值給 "" 清除；fhir 有給就整組取代）。' +
       '兩段式：第一次呼叫讀線上目前內容，plan 逐本列改前／改後與 etag（內容沒變的列在 no_change、不寫）；**plan 必須給使用者確認**，同意後帶 confirm_token 與 plan 的 etags 再呼叫一次。' +
-      '第二次呼叫若有字典在取得計畫後被改 → E_CONFLICT（details.stale 附目前內容，不開確認頁），請合併後重取計畫；否則開瀏覽器寫入確認頁，使用者按「確認寫入」才寫入，逐本回報成功或衝突。' +
+      '第二次呼叫若有字典在取得計畫後被改 → E_CONFLICT（details.stale 附目前內容，不開確認頁），請合併後重取計畫；否則逐本回報成功或衝突。' + SECOND_CALL +
       '站台沒有批次端點時改為逐本寫入（最多 15 本，W_SERVER_OLD）。站台不支援 func／usecase／interop 時會略過並回 W_SERVER_OLD_MEMO_KEYS。',
     inputSchema: { type: 'object', required: ['items'], properties: {
       items: { type: 'array', description: '[{ dic_id, memo?, fhir? }]，1–100 本', items: { type: 'object', required: ['dic_id'], properties: {
@@ -456,9 +461,9 @@ export const ONLINE_WRITE_TOOLS = [
   },
   {
     name: 'online_me_notes_set',
-    description: '（online，寫入 struNote 清單）整份取代登入者的 struNote 表單清單（PUT api/v2/me/notes，最多 500 筆；B2 的 H1 做法：把已上架的範本加進既有 struNote）。' +
+    description: TWO_STEP + '（online，寫入 struNote 清單）整份取代登入者的 struNote 表單清單（PUT api/v2/me/notes，最多 500 筆；B2 的 H1 做法：把已上架的範本加進既有 struNote）。' +
       '兩段式：第一次不帶 confirm_token，會先讀目前清單並回 plan（新增／移除／保留的差異），**plan 必須給使用者確認**；同意後帶 confirm_token 再呼叫一次。' +
-      '第二次呼叫會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次。' +
+      SECOND_CALL +
       '建議用 add／remove 做增量，items 則是整份指定。',
     inputSchema: { type: 'object', properties: {
       items: { type: 'array', items: { type: 'object', required: ['template_id', 'name'], properties: { template_id: str('範本 ID'), name: str('顯示名稱（≤4000 字）') } }, description: '整份清單（與 add／remove 擇一）' },

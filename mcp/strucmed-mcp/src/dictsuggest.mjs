@@ -13,15 +13,19 @@ const UNIT_RE = /[（(]\s*([A-Za-z%°µμ/²³0-9.\s^]{1,12}|[次分秒時天週
 
 // 對照表認得的優先（次/分、℃、分鐘、1.73m2 這些 UNIT_RE 抓不到）；查不到的括號內容不算單位，避免把「(右側)」當單位
 const TAIL_PAREN = /[（(]\s*([^（）()]{1,20}?)\s*[)）]\s*[:：]?\s*$/;
+// 單一字母與全大寫、純數字多半是題號或量表分項（CDR 的 M、NIHSS、V1、(a)），不是單位；只認大小寫完全相同的 g、m、L、U、IU
+const looksLikeUnit = u => ['g', 'm', 'L', 'U', 'IU'].includes(u) || (!/^[A-Za-z]$/.test(u) && !/^[A-Z0-9]+$/.test(u));
 
 export function unitOf(text) {
   const t = String(text || '');
   const paren = t.match(TAIL_PAREN);
-  if (paren && parseUnit(paren[1])) return paren[1].trim();
+  if (paren && looksLikeUnit(paren[1].trim()) && parseUnit(paren[1])) return paren[1].trim();
   const last = t.replace(/[:：\s]+$/, '').split(/\s+/);
-  if (last.length > 1 && parseUnit(last[last.length - 1])) return last[last.length - 1];
+  const tail = last[last.length - 1];
+  if (last.length > 1 && looksLikeUnit(tail) && parseUnit(tail)) return tail;
   const m = t.match(UNIT_RE);
-  return m ? String(m[1] || m[2]).trim() : '';
+  const u = m ? String(m[1] || m[2]).trim() : '';
+  return looksLikeUnit(u) ? u : '';
 }
 // 詞：英數字串整段；中文取相鄰兩字（「體重測量」→ 體重、重測、測量）
 function terms(text) {
@@ -35,7 +39,8 @@ function terms(text) {
 }
 const memoText = m => (m ? Object.values(m).flat().join(' ') : '');
 
-// high 才會在計畫中自動選用（使用者仍在 G1 確認）；他科字典再像也不自動選
+// high 才會在計畫中自動選用（使用者仍在預覽頁與 G2 定稿確認）；他科字典再像也不自動選。
+// 比對範圍內還有名稱相近的字典時也不算 high（見 suggest 結尾）：回放評估中，通用說明（dose、indication）判錯多半是這種情況
 const confidence = ({ sameName, conflict, level, score }) =>
   sameName && !conflict && level !== 'other' ? 'high' : score >= 25 && !conflict ? 'medium' : 'low';
 
@@ -87,6 +92,7 @@ export function suggest(idx, field, opts = {}) {
     results.push({
       id: e.id, name: e.dicName, dic_type: e.dicType, level, desc: e.desc || '', memo: e.memo || null, fhir: e.fhir || [], alias_of: e.alias_of || '', used_by: used,
       score, confidence: confidence({ sameName, conflict: typeConflict || unitConflict, level, score }), reasons,
+      similar: { name, usable: level !== 'other' && !typeConflict && !unitConflict },
       cite: {
         bind: { dictionary: { id: e.alias_of || e.id } },
         prompt: m.llm || [e.desc || e.dicName, m.unit && `（${m.unit}）`].filter(Boolean).join(''),
@@ -95,6 +101,12 @@ export function suggest(idx, field, opts = {}) {
       }
     });
   }
+  for (const r of results.filter(x => x.confidence === 'high')) {
+    const near = results.filter(o => o.similar.usable && o.similar.name !== r.similar.name && o.similar.name.includes(r.similar.name)).map(o => o.name);
+    if (!near.length) continue;
+    r.confidence = 'medium';
+    r.reasons.push(`還有 ${near.length} 本名稱相近（${near.slice(0, 3).join('、')}），不自動選用`);
+  }
   results.sort((a, b) => b.score - a.score || dc.levelRank(a.level) - dc.levelRank(b.level) || b.used_by - a.used_by);
-  return results.slice(0, Math.max(1, Math.min(Number(opts.limit) || 8, 30)));
+  return results.slice(0, Math.max(1, Math.min(Number(opts.limit) || 8, 30))).map(({ similar, ...r }) => r);
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Antigravity 版閘門 G3（PreToolUse，matcher call_mcp_tool）：檢查同 ../gate-check.js，只有輸入與輸出格式不同。
+// Antigravity 版閘門 G2 定稿（PreToolUse，matcher call_mcp_tool）：檢查同 ../gate-check.js，只有輸入與輸出格式不同。
 //   輸入（stdin，camelCase）：{ toolCall: { name: "call_mcp_tool", args: { ServerName, ToolName, Arguments } }, workspacePaths, ... }
 //   輸出（stdout）：{"decision":"deny","reason":…} 阻擋；其餘回 {"decision":"ask"}，照 Antigravity 原本的核准流程（不額外放行）。
 // hook 的 cwd 是 hooks.json 所在目錄，IDE 未開資料夾時 workspacePaths 是空的，所以計畫檔所在的工作目錄依序取：
 //   STRUCMED_WORKSPACE 環境變數 → cwd 下的 mcp_config.json → ~/.gemini/config/mcp_config.json 裡 strucmed 伺服器的 STRUCMED_WORKSPACE
 //   → MCP 的預設 ~/Documents/StrucMed（以 plugin 安裝時 MCP 沒有設定 STRUCMED_WORKSPACE，用的就是這裡；資料夾存在才採用）。
-// Antigravity 不載入 publish-form skill，通常沒有 G3 計畫檔：沒有計畫檔（或找不到工作目錄）時交給 MCP 2.3.0 起強制的
+// Antigravity 不載入 publish-form skill，通常沒有 G2 定稿檔：沒有計畫檔（或找不到工作目錄）時交給 MCP 2.3.0 起強制的
 // 瀏覽器寫入確認頁把關（回 ask）；有計畫檔但未核准、核准後被改過、或檢查出錯，仍然阻擋。讀不到輸入也阻擋。
 'use strict';
 const fs = require('node:fs');
@@ -46,7 +46,7 @@ function decide(raw) {
   if (!GATED.test(tool)) return { decision: 'ask' };
   const args = typeof a.Arguments === 'string' ? JSON.parse(a.Arguments || '{}') : (a.Arguments || {});
   if (!args.confirm_token) return { decision: 'ask' };                // 第一段：只取 plan
-  const browser = { decision: 'ask', reason: 'strucmed：沒有 G3 上架計畫，寫入要由使用者在 MCP 開啟的瀏覽器確認頁按「確認寫入」' };
+  const browser = { decision: 'ask', reason: 'strucmed：沒有 G2 定稿檔，寫入要由使用者在 MCP 開啟的瀏覽器確認頁按「確認寫入」' };
   const workspace = resolveWorkspace();
   if (!workspace) return browser;
   const r = checkGate({ tool, args, workspace });

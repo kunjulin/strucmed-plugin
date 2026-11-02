@@ -193,8 +193,8 @@
   function actionsHtml() {
     var a = '';
     if (data.kind === 'preview') a += '<button class="primary" data-act="plan" ' + (data.validation.valid ? '' : 'disabled') + '>產生匯出計畫</button>';
-    if (data.kind === 'export_plan') a += '<button class="primary" data-act="confirm">確認匯出</button><button data-act="preview">返回預覽</button>';
-    if (data.kind === 'exported') a += '<button data-act="preview">再看一次預覽</button>';
+    if (data.kind === 'export_plan') a += '<button class="primary" data-act="confirm">確認匯出</button>';
+    if (data.kind === 'exported') a += '<button data-act="plan">重新產生匯出計畫</button>';
     // 沙箱 iframe 沒有 allow-forms，不能用 <form>：以 Enter／按鈕送出
     a += '<div class="ask" data-act="ask"><input type="text" placeholder="修改指示，例如：把備註改成必填" aria-label="修改指示"><button type="button">請 AI 修改</button></div>';
     if (busy) a += '<span class="busy">處理中…</span>';
@@ -221,7 +221,7 @@
         var send = function () {
           var text = (inp.value || '').trim();
           if (!text) return;
-          request('ui/message', { role: 'user', content: [{ type: 'text', text: '針對表單「' + data.form.name + '」（draft ' + data.draft_id + '）：' + text + '。改完請重新呼叫 form_preview 讓我看結果。' }] })
+          request('ui/message', { role: 'user', content: [{ type: 'text', text: '針對表單「' + data.form.name + '」（draft ' + data.draft_id + '）：' + text + '。改完請重新呼叫 form_export 取得匯出計畫，讓我再確認一次。' }] })
             .then(function () { inp.value = ''; }).catch(function (e) { lastError = e.message; render(); });
         };
         btn.addEventListener('click', send);
@@ -247,7 +247,6 @@
     // 卡片上的匯出是使用者明確要求：同名舊檔直接覆寫（plan 會列出會覆寫的檔案）
     if (kind === 'plan') call('form_export', { draft_id: data.draft_id, overwrite: true });
     if (kind === 'confirm') call('form_export', { draft_id: data.draft_id, overwrite: true, confirm_token: data.confirm_token });
-    if (kind === 'preview') call('form_preview', { draft_id: data.draft_id, format: 'markdown' });
   }
 
   // ---- boot: initial data injected by the host, then the handshake for live updates

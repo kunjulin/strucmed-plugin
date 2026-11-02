@@ -103,6 +103,21 @@ export function isStorable(ch) {
   return (BITS[c >> 3] & (1 << (c & 7))) !== 0;
 }
 
+// 存不了的字元的替代寫法（W_NON_BIG5）：只放換了語意不變的字；≧ ≦ ° 這些 Big5 有的字不用換，emoji、圈號等沒有對照的不猜
+export const SUBSTITUTES = { '≥': '大於等於', '≤': '小於等於', '²': '^2', '³': '^3', 'µ': 'u', '∼': '~', '−': '-', '•': '‧', '½': '1/2', '¼': '1/4', '¾': '3/4', '‰': '千分之' };
+
+// 有對照的字元換掉：{ text, replaced:[{ char, to }]（去重）}；沒有對照的留著，由呼叫端報錯
+export function replaceUnstorable(text) {
+  let out = '';
+  const replaced = new Map();
+  for (const ch of String(text ?? '')) {
+    const to = ch.length === 1 && isStorable(ch) ? undefined : SUBSTITUTES[ch];
+    out += to === undefined ? ch : to;
+    if (to !== undefined) replaced.set(ch, to);
+  }
+  return { text: out, replaced: [...replaced].map(([char, to]) => ({ char, to })) };
+}
+
 // 第一個存不了的字元：{ index（第幾個 UTF-16 單位，從 0 起）, char（emoji 等 BMP 以外的字是完整一個字）, code（U+XXXX）}；全部可以存回 null
 export function firstUnstorable(text) {
   const s = String(text ?? '');

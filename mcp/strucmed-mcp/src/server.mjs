@@ -12,7 +12,7 @@
 //     call back to 127.0.0.1 of the machine running this process, which a remote user's browser cannot reach
 import readline from 'node:readline';
 import { httpConfig, startHttp } from './http.mjs';
-import { CARD_TOOLS, uiMeta, listResources, readResource } from './cards.mjs';
+import { CARD_TOOLS, cardsEnabled, uiMeta, listResources, readResource } from './cards.mjs';
 import * as files from './files.mjs';
 import { TOOLS } from './tools.mjs';
 import { ONLINE_TOOLS as ONLINE_READ_TOOLS } from './online-tools.mjs';
@@ -33,17 +33,28 @@ const SERVER_INFO = { name: 'strucmed-mcp', version: VERSION };
 const INSTRUCTIONS =
   '產生長庚結構化病歷 2.0（StrucMed）可匯入的表單定義檔。預設離線：不連線、不處理帳密、不寫入編輯器或倉儲。' +
   '流程：dictionary_load（選用）→ form_create → form_add_area → form_add_control… → form_validate → form_preview → ' +
-  'form_export（兩段式確認，plan 必須先給使用者看）。產出的 .htm 由使用者本人在編輯器匯入並保存。';
+  'form_export（兩段式確認，plan 必須先給使用者看）。產出的 .htm 由使用者本人在編輯器匯入並保存。' +
+  '改版面不必重建：form_move_control（搬欄位，itemid 不變）、form_update_area、form_remove_area（空區塊）、form_add_area(after_itemid)；要重建時 form_create 帶 from_draft_id，字典補述會帶過去。' +
+  '未知參數一律回錯誤：說明文字用頂層 label_text、單位用 changes.unit。有預覽頁時所有審閱都在預覽頁；form_preview(html) 的 url 是 null 時執行 open 欄位的指令取得 link。';
 const ONLINE_INSTRUCTIONS =
   ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（開啟瀏覽器登入頁，使用者在頁面輸入 HIS 帳密，絕不在對話中索取密碼；' +
   '回 pending 時請使用者在瀏覽器完成登入後再呼叫一次）→ online_me／online_features／online_dictionary_search／online_folder_list／online_template_get（唯讀）、' +
-  'online_template_create／online_template_update（上架，兩段式，plan 是閘門 G3，核准前不得呼叫第二次）、online_dictionary_create／batch（建立時 dicComment 以字典 JSON 寫好 desc＋memo）、online_dictionary_memo_set（補述與 FHIR 對應，If-Match；體系升級沒有 tool，列入計畫的「體系升級建議」交給體系字典管理者在字典頁操作）、online_template_versions、online_me_notes_get／set（struNote 清單，set 兩段式）。所有寫入的第二次呼叫都會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；回 pending 時請使用者到確認頁操作，再帶同一個 confirm_token 呼叫一次，不要替使用者確認。沒有查詢或存檔病人紀錄的 tool（平台對 strucmed-mcp 的 token 一律回 403），請使用者在編輯器或 HIS 操作。';
+  'online_template_create／online_template_update（上架，兩段式，plan 是閘門 G2 定稿，核准前不得呼叫第二次）、online_dictionary_create／batch（建立時 dicComment 以字典 JSON 寫好 desc＋memo）、online_dictionary_memo_set（補述與 FHIR 對應，If-Match；體系升級沒有 tool，列入計畫的「體系升級建議」交給體系字典管理者在字典頁操作）、online_template_versions、online_me_notes_get／set（struNote 清單，set 兩段式）。所有寫入的第二次呼叫都會在瀏覽器開啟寫入確認頁，使用者按「確認寫入」才寫入；回 pending 時請使用者到確認頁操作，再帶同一個 confirm_token 呼叫一次，不要替使用者確認。沒有查詢或存檔病人紀錄的 tool（平台對 strucmed-mcp 的 token 一律回 403），請使用者在編輯器或 HIS 操作。';
 const LLMGW_INSTRUCTIONS =
   ' LlmGateway 已設定（LLMGW_BASE_URL／LLMGW_API_KEY）：llmgateway_models 取得模型白名單快取（之後 form_validate／formula_check 以此檢查巨集模型）；llmgateway_chat_test（flag llmChatTest）只用白名單模型試跑去識別化的 prompt。';
 const onlineNames = new Set(ONLINE_TOOLS.map(t => t.name));
 const llmgwNames = new Set(LLMGW_TOOLS.map(t => t.name));
 const fmapiNames = new Set(FMAPI_TOOLS.map(t => t.name));
 const byName = new Map([...TOOLS, ...ONLINE_TOOLS, ...LLMGW_TOOLS, ...FMAPI_TOOLS].map(t => [t.name, t]));
+for (const t of byName.values()) t.inputSchema.additionalProperties = false;
+// schema 外的頂層鍵回錯誤，不靜默忽略（F-39、F-02）：模型以為參數生效，工具卻什麼都沒做
+function checkArgs(tool, args) {
+  const allowed = Object.keys(tool.inputSchema.properties || {});
+  const bad = Object.keys(args || {}).filter(k => !allowed.includes(k));
+  if (!bad.length) return;
+  const hints = bad.map(k => (tool.arg_hints || {})[k]).filter(Boolean);
+  throw new ToolError(E.INVALID_INPUT, `${tool.name} 不接受參數 ${bad.join('、')}，這次什麼都沒有做${hints.length ? `：${hints.join('；')}` : ''}。可用的參數：${allowed.join('、') || '（無）'}`, { unknown: bad, allowed });
+}
 // 線上 tool 只在有可用站台（site.mjs）且 feature flag online 開啟時列出；未設定時呼叫一律 E_ONLINE_DISABLED，
 // flag 關閉（feature-flags.json）時回 E_FEATURE_DISABLED。個別 tool 可再帶 flag（例如 templateUpdate）。
 function listed() {
@@ -78,6 +89,7 @@ async function callTool(name, args) {
       if (!enabled('llmgateway', f)) throw new ToolError(E.FEATURE_DISABLED, 'feature flag llmgateway 已關閉（feature-flags.json）');
       if (tool.flag && !enabled(tool.flag, f)) throw new ToolError(E.FEATURE_DISABLED, `feature flag ${tool.flag} 未開啟（feature-flags.json）`);
     }
+    checkArgs(tool, args);
     const data = await tool.handler(args || {});
     const warnings = Array.isArray(data && data.warnings) ? data.warnings : [];
     // __content：tool 要附在文字結果之後的其他 content 區塊（例如 form_export include_content 的內嵌資源），不進文字 JSON
@@ -121,7 +133,7 @@ async function respond(msg) {
       if (!isRequest) return undefined;
       await site.ready();
       return { jsonrpc: '2.0', id, result: {
-        tools: listed().map(({ name, description, inputSchema }) => (CARD_TOOLS.has(name) ? { name, description, inputSchema, _meta: uiMeta() } : { name, description, inputSchema })) } };
+        tools: listed().map(({ name, description, inputSchema }) => (CARD_TOOLS.has(name) && cardsEnabled() ? { name, description, inputSchema, _meta: uiMeta() } : { name, description, inputSchema })) } };
     case 'tools/call':
       if (!isRequest) return undefined;
       return { jsonrpc: '2.0', id, result: await callTool(params && params.name, params && params.arguments) };

@@ -8,7 +8,7 @@
 
 | 你想做的事 | 結果 |
 |---|---|
-| 「幫我做一張跌倒風險評估單」 | 需求訪談 → 表單計畫（核准）→ 建置 → 審查 → runtime 驗證（核准）→ 可匯入的 `.htm`，或直接上架 |
+| 「幫我做一張跌倒風險評估單」 | 需求一次問完 → 草案直接建 draft → 預覽頁審閱 → 定稿（核准）→ 可匯入的 `.htm`，或直接上架 |
 | 「以這張表單為範本加兩個欄位」 | 載入 `.htm`／線上範本 → 原結構原封保留 → 輸出新版 |
 | 「上架到編輯器」 | 經 API v2 新建或更新範本（If-Match 防衝突），唯一會寫入線上的步驟，兩段式確認 |
 | 「做成 app、平板用」 | B1：HIS 內執行、AI 走院內 LlmGateway 的檢核清單；B2：行動紀錄型 PWA（本機 Docker 預設） |
@@ -21,9 +21,9 @@
 
 | 工具 | 支援程度 | 安裝方式 | 說明 |
 |---|---|---|---|
-| **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 市集 | 全部功能：skill 流程、對話中核准、hooks 閘門、subagent |
+| **Claude Code**（CLI、桌面 app） | ✅ 完整（建議） | 市集 | 全部功能：skill 流程、預覽頁審閱、對話中核准、hooks 閘門、subagent |
 | **OpenAI Codex**（CLI、app） | ⚠️ 實驗性 | 同一個市集 | skills、MCP、hooks（要先信任）；沒有結構化提問與 subagent。app 已實測安裝、瀏覽器登入、建表單與匯出；經確認頁上架未實測 |
-| **Google Antigravity**（2.0 app、IDE） | ⚠️ 實驗性 | git clone 成 plugin | skills、MCP（內建 Node，不用另外安裝）、G3 hook。2.0 app 已實測安裝、瀏覽器登入、唯讀查詢、經確認頁上架；hook 只支援 macOS／Linux |
+| **Google Antigravity**（2.0 app、IDE） | ⚠️ 實驗性 | git clone 成 plugin | skills、MCP（內建 Node，不用另外安裝）、G2 定稿 hook。2.0 app 已實測安裝、瀏覽器登入、唯讀查詢、經確認頁上架；hook 只支援 macOS／Linux |
 | **GitHub Copilot CLI** | ⚠️ 實驗性 | 同一個市集 | skills、MCP、hooks；可安裝與載入，對話中的執行未實測 |
 | **其他本機 MCP client**（Cursor、VS Code 等） | ⚠️ 只有 MCP tool | 手動設定 | 沒有 skill 流程與閘門，等於手動操作 tool；不建議用來上架 |
 | **ChatGPT**（網頁／桌面 app） | ❌ 不支援 | — | 只接受遠端 HTTPS MCP，無法啟動本機伺服器或連到院內站台 |
@@ -113,7 +113,7 @@ codex plugin add strucmed@strucmed-marketplace
 
 **注意**：
 
-- **hooks 要先信任**：沒有信任時，閘門 G3 的核准檢查、安全提醒、登入提示與 workflow-log 都不會執行；線上寫入仍有 MCP 的寫入確認頁把關。
+- **hooks 要先信任**：沒有信任時，閘門 G2 定稿的核准檢查、安全提醒、登入提示與 workflow-log 都不會執行；線上寫入仍有 MCP 的寫入確認頁把關。
 - **觸發 skill**：用 `$strucmed:strucmed-form` 等，或直接描述需求。skill 裡的結構化提問（AskUserQuestion）與 subagent 在 Codex 不存在，會改成一般對話、由主 agent 依序執行。
 - **工作目錄**：`.strucmed/`、`output/` 放在啟動 `codex` 的目錄；Codex app 或 Windows 的 PowerShell／cmd 沒有可用的目錄時，放在「文件」下的 `StrucMed` 資料夾。要指定位置見「進階」的〈環境變數〉。
 - **登入**：manifest 已把 tool 逾時設為 180 秒（Codex 預設 60 秒，短於瀏覽器登入的等待時間）。第一次呼叫線上 tool 時 Codex 會要求核准。
@@ -149,7 +149,7 @@ git clone https://github.com/kunjulin/strucmed-plugin.git ~/.gemini/config/plugi
 - **工作目錄**：`.strucmed/`、`output/` 一律放在「文件」下的 `StrucMed` 資料夾。
 - **第一次呼叫可能失敗**：MCP 在對話開始時才啟動，第一次呼叫可能回「tool … is not enabled」，稍等再試一次即可。對話中的伺服器名稱是 `strucmed_strucmed`（Antigravity 加上 plugin 前綴）。
 - **Turbo 模式**：MCP tool 會直接執行、不跳核准框；線上寫入仍要在瀏覽器確認頁按確認。
-- **hook 只支援 macOS／Linux**：Windows 上 G3 hook 不會正確執行，線上寫入仍有寫入確認頁把關。
+- **hook 只支援 macOS／Linux**：Windows 上 G2 定稿 hook 不會正確執行，線上寫入仍有寫入確認頁把關。
 - 沒有結構化提問與 subagent，skill 會改在對話中詢問、依序執行；安全提醒與 workflow-log 兩個 hook 尚未移植。
 
 ### GitHub Copilot CLI
@@ -281,7 +281,7 @@ codex plugin marketplace upgrade strucmed-marketplace
 codex plugin add strucmed@strucmed-marketplace
 ```
 
-**確認**：開新對話後 `/mcp` 看到 `strucmed`；到 `/hooks` 重新信任 strucmed 的 hooks（更新後可能要再信任一次，沒信任時 G3 檢查不會執行）。
+**確認**：開新對話後 `/mcp` 看到 `strucmed`；到 `/hooks` 重新信任 strucmed 的 hooks（更新後可能要再信任一次，沒信任時 G2 定稿檢查不會執行）。
 
 #### Google Antigravity
 
@@ -346,7 +346,7 @@ git -C ~/strucmed-plugin pull
 
 安裝好之後，在任何一個工具都可以這樣開始：
 
-1. **連線與登入**：輸入下表的「連線」，或直接說「幫我連線 strucmed」。系統瀏覽器會開啟 strucmed 站台的登入頁：確認網址是 strucmed 站台後輸入 HIS 帳號密碼，按「登入並同意」，回到 AI 工具即可（瀏覽器沒有自動開啟時，對話中會顯示網址）。
+1. **連線與登入**：輸入下表的「連線」，或直接說「幫我連線 strucmed」。系統瀏覽器會開啟 strucmed 站台的登入頁：確認網址是 strucmed 站台後輸入 HIS 帳號密碼、填科部代碼，按「登入並同意」，回到 AI 工具即可（瀏覽器沒有自動開啟時，對話中會顯示網址）。
 2. **做表單**：輸入下表的「做表單」，或直接描述需求，例如「幫我做一張跌倒風險評估單」。
 
 | 工具 | 連線 | 做表單 |
@@ -368,19 +368,19 @@ git -C ~/strucmed-plugin pull
 
 1. 先連線並用瀏覽器登入 strucmed（密碼我自己在登入頁輸入，不要在對話中問）。
 2. 規劃一張失智症門診用的表單：MMSE 11 題問病人、CDR 6 項問家屬；提問卡逐題提示，一鍵錄音轉文字（院內 ASUS），逐字稿標上【題名】；AI 先整理證據、再逐題給分（qwen332b），不確定就留給人；MMSE 總分、教育程度切點、CDR 總評（Morris 規則）、SOB、報告結果句用計算式完成；最後由醫師確認。不要產生 CUSTOMFUNC 或表單 JS，不把病人識別資料送給 AI。
-3. 缺的資訊（科部代碼、分數放哪裡、要不要設捷徑與作業別）一次問我。
-4. 先給我表單計畫，等我核准後才建置；建好後用 runtime 預覽實跑驗證，把預覽連結給我。
-5. 驗證通過後上架到我的個人資料夾（usr）：寫入前先把上架計畫給我看，由我在瀏覽器確認頁按「確認寫入」；完成後取回範本，核對名稱與控制項數。
+3. 缺的資訊（分數放哪裡、要不要設捷徑與作業別）一次問我。
+4. 草案直接建成 draft，把 runtime 預覽連結給我；我在預覽頁填值、看計算結果與 HIS 文字輸出、留意見，你照意見修改。
+5. 我按定稿後，把驗證結果、字典與上架設定一次給我核准，上架到我的個人資料夾（usr），由我在瀏覽器確認頁按「確認寫入」；完成後取回範本，核對名稱與控制項數。
 ```
 
 **怎麼開始**：Claude Code 輸入 `/strucmed:strucmed-form`、Codex 輸入 `$strucmed:strucmed-form`，空一格後貼上整段；Antigravity、Copilot CLI 直接貼上整段。
 
 **接下來會發生的事**：
 
-1. 瀏覽器開啟登入頁，你輸入 HIS 帳號密碼。
-2. AI 一次問完缺的資訊，交出**表單計畫（G1）**；你核准，或說要改哪裡。
-3. AI 建置並實跑驗證，交出**驗證結果（G2）**與預覽連結；點開就能看到表單、實際填值。
-4. 你核准後，AI 交出**上架計畫（G3）**；瀏覽器開「寫入確認頁」，你按「確認寫入」才會上架。
+1. 瀏覽器開啟登入頁，你輸入 HIS 帳號密碼、填科部代碼。
+2. AI 一次問完缺的資訊，用幾行告訴你草案，直接建好，給你**預覽連結**；點開就能看到表單、實際填值。
+3. 你在預覽頁改說明文字、選項與字典補述（新字典的補述 AI 已先填好，你只改不對的地方），看 HIS 文字輸出，留意見，按「送出意見」；回到對話說一聲，AI 改好後請你重新整理。可以來回幾輪。
+4. 你按「定稿」後，AI 一次交出**定稿（G2）**：驗證結果、HIS 文字輸出、字典、上架設定。你核准後瀏覽器開「寫入確認頁」，你按「確認寫入」才會上架。
 
 **提醒**：
 
@@ -449,7 +449,7 @@ $env:STRUCMED_WORKSPACE = (Get-Location).Path; codex
    STRUCMED_WORKSPACE="<工作目錄>" STRUCMED_RUNTIME_WEB="<平台 web/ 副本>" node "<plugin 資料夾>/scripts/preview.mjs" <draft_id>
    ```
 
-   它會在背景啟動只聽本機的預覽伺服器（127.0.0.1:8765），並印出 `http://127.0.0.1:8765/__preview/<draft_id>`。
+   它會在背景啟動只聽本機的預覽伺服器（預設 127.0.0.1:8765，被舊版占用時自動改下一個埠），並印出實際的預覽連結。
 4. 點對話裡的連結，用自己的瀏覽器開啟。伺服器會留著讓你重開連結，不用時結束那個 node 程序即可。
 
 Antigravity 的 `/browser` 瀏覽器代理也能去開預覽頁，但它要連 Google Chrome，且 Chrome 必須先在 `chrome://inspect/#remote-debugging` 開啟遠端偵錯（會改 Chrome 的安全設定，請自行決定）；這條路尚未實測成功。
@@ -477,7 +477,7 @@ Antigravity 的 `/browser` 瀏覽器代理也能去開預覽頁，但它要連 G
    ```
 
 3. 確認載入：IDE 在 Manage MCP Servers 按 **Refresh**（改設定後都要再按）；2.0 app 在 Customizations → Installed 最下方的 MCP Servers 看到 `strucmed` 綠燈。
-4. 拿掉 `STRUCMED_SITE=offline`（啟用線上 tool）時，在 `~/.gemini/config/hooks.json` 加上 G3 hook：
+4. 拿掉 `STRUCMED_SITE=offline`（啟用線上 tool）時，在 `~/.gemini/config/hooks.json` 加上 G2 定稿 hook：
 
    ```json
    {
@@ -493,7 +493,7 @@ Antigravity 的 `/browser` 瀏覽器代理也能去開預覽頁，但它要連 G
 
 #### 給維護者：Antigravity 的 hook 行為
 
-MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`。stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程；回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 尚未移植）。G3 的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。各工具的實測紀錄見 [CHANGELOG.md](CHANGELOG.md)。
+MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `toolCall.args.ServerName`／`ToolName`、參數在 `toolCall.args.Arguments`。stdout 回 `{"decision":"deny","reason":…}` 擋下、回 `ask` 照原本的核准流程；回 `allow` 也不會略過核准框。hook 的 cwd 是 `hooks.json` 所在目錄，IDE 未開資料夾時 `workspacePaths` 是空陣列；被擋下的呼叫仍會觸發 `PostToolUse`，且 `error` 是空字串（所以 workflow-log 尚未移植）。G2 定稿的檢查本身在 `hooks/gate-check.js`，Claude 版與 Antigravity 版共用。各工具的實測紀錄見 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 院內與院外
 
@@ -513,29 +513,41 @@ MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `to
 |---|---|---|
 | `/strucmed:strucmed-form` | **入口**：確認環境、判定意圖、分流到下列流程 | `<表單需求>`，或 `改版 <檔案或範本ID>`、`預覽 <draft_id>`、`上架 <draft_id>`、`app <範本ID>` |
 | `/strucmed:connect-strucmed` | 檢查並建立與 strucmed API v2、LlmGateway、FMapi 的連線 | — |
-| `/strucmed:create-form` | 設計新表單：訪談 → 計畫（G1）→ 建置 → 審查 → runtime 驗證（G2）→ 輸出 | `<表單目的與臨床情境>` |
+| `/strucmed:create-form` | 設計新表單：需求 → 草案直接建 draft → 預覽頁審閱 → 定稿（G2）→ 上架或輸出 | `<表單目的與臨床情境>` |
 | `/strucmed:edit-form` | 以既有 `.htm`／`.json`／線上範本為範本改版，原結構原封保留 | `<來源> <要改什麼>` |
 | `/strucmed:verify-runtime` | 以 HIS 端 runtime 的本機離線副本實跑計算式、巨集、表格頁籤，交出「輸入 → 結果」對照表 | `<draft_id>` |
 | `/strucmed:tune-prompt` | 調校單一 LLM 按鈕的提示詞：依 PromptPatterns 改寫、formula_check、選用去識別化樣本試跑比較模型，再寫回 draft | `<draft_id> <itemid> [模型別名]` |
 | `/strucmed:dictionary-assist` | 欄位字典助手：為欄位、計算式、巨集、LLM prompt 找合適的字典並給引用方式；為新字典寫完整補述（表單功能、使用情境、交換引用）；解析既有表單、補齊它用到的字典補述 | `find <draft_id> <itemid>`／`new <draft_id>`／`annotate <template_id\|.htm\|draft_id>` |
-| `/strucmed:publish-form` | 經 API v2 上架（新建或 If-Match 更新；G3），字典先建後綁；線上未設定時改走 `.htm` 匯入 | `<draft_id> [--folder usr\|sub\|dpt] [--update <templateID>]` |
+| `/strucmed:publish-form` | 定稿 G2 的執行段：經 API v2 上架（新建或 If-Match 更新），字典先建後綁；create-form、edit-form 內嵌，也可單獨對既有 draft 使用；線上未設定時改走 `.htm` 匯入 | `<draft_id> [--folder usr\|sub\|dpt] [--update <templateID>]` |
 | `/strucmed:build-form-app` | B1 執行條件檢核清單；B2 表單 APP 產生（G4；H0 本機 Docker／H1 既有 struNote／H2 站台 `/apps/`） | `<範本 ID> [b1\|b2]` |
 | `/strucmed:report-issue` | 收集 workflow-log、版本與遮蔽後的錯誤，產生 issue 草稿（由你自己送出） | `[一句話描述問題]` |
 
-Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`form-planner`（唯讀，產表單計畫）、`form-builder`（單一、依序建置 draft）、`form-reviewer`（計畫 ↔ draft 對照、白名單、AI 資料流、疑似個資）、`app-builder`（執行 scaffold 與靜態檢查）。共同規則在 [AGENTS.md](AGENTS.md)。
+Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`form-planner`（唯讀，產表單草案）、`form-builder`（單一、依序建置 draft）、`form-reviewer`（草案 ↔ draft 對照、自出試算例、白名單、AI 資料流、疑似個資）、`app-builder`（執行 scaffold 與靜態檢查）。共同規則在 [AGENTS.md](AGENTS.md)。
 
 ## 流程與核准閘門
 
-寫入前一律先給你看計畫，核准狀態落地成檔案，可中斷續跑：
+3.9.0 起是「先建再看」：draft 是本機檔，建錯可以重建，不動線上，所以你看著表單改，只在寫入線上或輸出前核准一次。
+
+```
+需求（一次問完）→ 草案直接建成 draft → 預覽頁審閱迴圈（你看著表單改、留意見）→ 定稿 G2（驗證＋字典＋上架一次核准）→ 上架或輸出 → 交付
+```
+
+| 階段 | 對話中出現什麼 |
+|---|---|
+| 需求 | 一次提問 |
+| 草案 | ≤ 15 行的摘要＋預覽連結；不停下來核准 |
+| 審閱迴圈 | 每輪 ≤ 5 行；意見在預覽頁留，存在 `.strucmed/review/` |
+| 定稿 G2 | 一次呈現＋一次核准 |
+| 交付 | ≤ 15 行 |
+
+審查報告、結構 tree、對照表、截圖、字典補述都不貼回對話。字典補述與 FHIR 集中在一份 CSV（`dictionary_plan_export`），用 Excel 改完匯回。
 
 | 閘門 | 計畫檔標題 | 核准後才會 |
 |---|---|---|
-| G1 | `## 表單計畫` | 建置 draft |
-| G2 | `## 驗證結果` | 輸出 `.htm` 或進入上架 |
-| G3 | `## 上架計畫` | 呼叫 `online_template_create`／`update` 第二段（唯一寫線上的點；hook 會檢查核准 sidecar，MCP 再開瀏覽器確認頁由使用者按「確認寫入」） |
+| G2 | `## 定稿` | 依序寫入字典、補述、範本（`online_template_create`／`update` 第二段；唯一寫線上的點；hook 會檢查核准 sidecar，MCP 再開瀏覽器確認頁由使用者按「確認寫入」）；離線時輸出 `.htm` |
 | G4 | `## 應用程式計畫` | 產生 B2 app 目錄 |
 
-計畫檔與核准 sidecar 放在工作目錄的 `.strucmed/plans/<id>/`，`scripts/verify-plan.mjs` 以 sha256 比對；計畫一改，核准就失效。格式見 [references/Gates.md](references/Gates.md)。
+G1、G3 編號已停用（舊文件與 CHANGELOG 裡的 G1～G3 指 3.8.0 以前的流程）。定稿檔與核准 sidecar 放在工作目錄的 `.strucmed/plans/<draft_id>/`，`scripts/verify-plan.mjs` 以 sha256 比對；一改，核准就失效。格式見 [references/Gates.md](references/Gates.md)。
 
 ## 案例：MMSE／CDR 語音訪談表單
 
@@ -545,9 +557,9 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 
 | 階段 | 這個案例學到的 |
 |---|---|
-| 需求訪談 | 一次問完：分數放哪裡（頁籤不回倉儲）、科部、語音服務、測試或上架 |
-| G1 計畫 | 前後 4 版；按鈕 `action_id` 不能指向 numberbox |
-| G2 runtime 驗證 | 語法全過，實跑仍抓到 4 個平台計算差異（`COUNT` 算空白、`SMALL` 出錯、`LEFT` 數字、`0 = ""`） |
+| 需求訪談 | 一次問完：分數放哪裡（動態表格不回倉儲）、科部、語音服務、測試或上架 |
+| 表單計畫（3.8.0 的 G1） | 前後 4 版；按鈕 `action_id` 不能指向 numberbox |
+| runtime 驗證（3.8.0 的 G2） | 語法全過，實跑仍抓到 4 個平台計算差異（`COUNT` 算空白、`SMALL` 出錯、`LEFT` 數字、`0 = ""`） |
 | 提示詞優化 | 兩段式、規則寫進 prompt、輸出鎖死、回覆驗證；M2 因「無法核對」被判 NA 的修正 |
 | 院內版 | 只用 `VOICETOTEXT`＋`LLMQUERY`，巨集全部自動產生，資料不出院 |
 
@@ -588,7 +600,24 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 }
 ```
 
-寫入線上的 tool（`online_template_create`／`update`、`online_dictionary_*`、`online_me_notes_set`）建議**不要**預先允許，讓閘門與提示都留著。
+寫入線上的 tool（`online_template_create`／`update`、`online_dictionary_*`、`online_me_notes_set`）平常建議**不要**預先允許，讓閘門與提示都留著。
+
+用 Claude Code 的 **auto mode** 時，權限分類器可能把上架的第一次呼叫（只產生計畫，不寫入）當成修改共用資源擋下。被擋下時在提示中允許即可；想先排除，可以只加這幾個：
+
+```jsonc
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_strucmed_strucmed__online_dictionary_batch",
+      "mcp__plugin_strucmed_strucmed__online_dictionary_memo_batch",
+      "mcp__plugin_strucmed_strucmed__online_template_create",
+      "mcp__plugin_strucmed_strucmed__online_template_update"
+    ]
+  }
+}
+```
+
+這只略過 Claude Code 的權限提示。第二次呼叫仍要有 G2 核准（hook 檢查 sidecar），並由你在瀏覽器確認頁按「確認寫入」才會寫入。
 
 ## Repo 結構
 
@@ -604,7 +633,7 @@ strucmed-plugin/
 ├── skills/                  # 9 個 skill（見上表）
 ├── agents/                  # form-planner、form-builder、form-reviewer、app-builder
 ├── references/              # 設計規則、計算式與巨集、提示詞樣板、巨集工作流配方、表格頁籤規則與版面樣板、閘門、上架與 APP 流程、模型白名單、安全不變量
-├── hooks/                   # UserPromptSubmit 安全提醒、PreToolUse 核准檢查、PostToolUse workflow-log；antigravity/＝Antigravity 版 G3
+├── hooks/                   # UserPromptSubmit 安全提醒、PreToolUse 核准檢查、PostToolUse workflow-log；antigravity/＝Antigravity 版 G2 定稿
 ├── scripts/                 # check-env、verify-plan、preview、scaffold-form-app、check-app-dist、report-issue
 ├── templates/form-app/      # B2 表單 APP 範本＋ H0 Docker
 ├── mcp/strucmed-mcp/        # MCP 伺服器（src/、test/、README）
@@ -639,7 +668,7 @@ cd mcp/strucmed-mcp && npm test
 
 | 文件 | 內容 |
 |---|---|
-| [案例：MMSE／CDR 表單](docs/case-mmse-cdr.md) | 從安裝、需求訪談、G1～G3、runtime 驗證到提示詞優化的完整案例與截圖 |
+| [案例：MMSE／CDR 表單](docs/case-mmse-cdr.md) | 從安裝、需求訪談、閘門（3.8.0 的 G1～G3 流程）、runtime 驗證到提示詞優化的完整案例與截圖 |
 | [references/](references/) | 表單設計、計算式與巨集、提示詞樣板、閘門、上架流程、模型白名單、安全不變量 |
 | [mcp/strucmed-mcp/README.md](mcp/strucmed-mcp/README.md) | MCP tool 與錯誤碼 |
 

@@ -25,10 +25,10 @@ test('each v0.1 control has exactly the key set the real editor produces after l
   }
 });
 
-test('unsupported datatypes are rejected; v0.2 types require their script (action scripts may be filled in later)', () => {
+test('unsupported datatypes are rejected; v0.2 scripts and formulas may be filled in later', () => {
   assert.throws(() => buildControl(1, { datatype: 'imgbox' }), /不支援新增/);
   assert.equal(buildControl(1, { datatype: 'action' }).actionScript, '', '試用回饋 #6：先留空，form_validate 報 E_ACTION_EMPTY');
-  assert.throws(() => buildControl(1, { datatype: 'label', format: 'formula' }), /需要 formula/);
+  assert.equal(buildControl(1, { datatype: 'label', format: 'formula' }).formula, '', 'F-22：先留空，form_validate 報 E_FORMULA_EMPTY');
   assert.throws(() => buildControl(1, { datatype: 'action2', action_script: '"x"' }), /action_id/);
 });
 

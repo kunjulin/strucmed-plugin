@@ -97,7 +97,10 @@ export const ONLINE_TOOLS = [
       const file = path.join(dir, `${id}.package.json`);
       fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
       const saved = path.relative(ws.root, file).split(path.sep).join('/');
-      return { saved, summary: summarize(pkg, chars), ...(include_package && { package: pkg }) };
+      return { saved, summary: summarize(pkg, chars),
+        notes: ['summary.rev 是套件裡 template.rev 的值，不是版本號：新建回 rev 1、取回常是 0；版本號以 online_template_versions 的 current_rev 為準',
+          'summary.chars 是整個套件（含 presets、dictionaries、integrity）的字元數，比上架計畫的 body_chars（只算 template＋form）大是正常的'],
+        ...(include_package && { package: pkg }) };
     }
   },
   {
@@ -110,7 +113,7 @@ export const ONLINE_TOOLS = [
         folders: r.folders && typeof r.folders === 'object' ? r.folders : {}, is_admin: !!r.isAdmin, token_expires_at: r.tokenExpiresAt || null };
       // token 的科部取自登入時帶的 dept_no（online_login 參數或登入頁的科部欄），不是由 HIS 帳號推得（平台 V2NoteEndpoints.VerifyAsync）
       if (!out.dept_no) out.warnings = ['W_NO_DEPT：這次登入沒有帶科部，所以 dept_no 是空白（科部取自登入時填的科部代碼，不是由 HIS 帳號推得）。' +
-        '字典比對、科部資料夾與 form_create 都需要科部：請使用者告知科部代碼，或 online_logout 後以 online_login(dept_no) 重新登入'];
+        '字典比對、科部資料夾與 form_create 都需要科部：請 online_logout 後重新 online_login，由使用者在登入頁填科部'];
       return out;
     }
   },
@@ -141,11 +144,13 @@ export const ONLINE_TOOLS = [
       'all＝全院（含他體系，level=other；必須帶 q 或 page），找別科已有的字典做交換引用時用。page／page_size 分頁（has_more 表示還有下一頁）。' +
       '每筆另回 memo_by／memo_at（補述最後由誰、何時寫）；回應的 memo_keys 是站台接受的補述欄位（舊站台沒有 func／usecase／interop）。' +
       '每筆回 level（sys／own／sub／dpt／system）、desc（一行說明）、sys（體系標記：體系管理者升級時寫入，id 與 dic_type 不變；同體系他科也看得到）、memo（補述）、fhir、alias_of、etag（寫 memo 時要帶）；清單體系優先。' +
-      'update_index:true 時把結果寫成本機字典索引（取代 dictionary_load 的 CSV），之後 dictionary_search 與 form_add_control 的字典比對、dicid 驗證都依此索引；要完整索引請不帶 q。',
+      'update_index:true 時把結果寫成本機字典索引（取代 dictionary_load 的 CSV），之後 dictionary_search 與 form_add_control 的字典比對、dicid 驗證都依此索引；要完整索引請不帶 q。' +
+      'update_index:true 且不帶 q 時只回摘要（index_count、level_counts、duplicates 數、warnings），不回 items；要看內容請帶 q。',
     inputSchema: { type: 'object', properties: {
       q: str('名稱、說明或補述的關鍵字（選填，最多 50 字；scope=all 時必須帶 q 或 page）'), scope: str('match（預設）、exact 或 all', { enum: ['match', 'exact', 'all'] }),
       page: { type: 'number', description: '分頁頁次（從 1 起，選填）' }, page_size: { type: 'number', description: '每頁筆數（預設 100，最多 500）' },
-      update_index: { type: 'boolean', description: '把結果寫入本機字典索引（.strucmed/dictionaries.json）；scope=all 時是合併加入（不取代），讓他科字典也能以 id 綁定與推薦' } } },
+      update_index: { type: 'boolean', description: '把結果寫入本機字典索引（.strucmed/dictionaries.json）；scope=all 時是合併加入（不取代），讓他科字典也能以 id 綁定與推薦；不帶 q 時只回摘要' } } },
+    arg_hints: { dept_no: '科部取自登入（登入頁的科部欄），本工具不接受；要找別科的字典請用 scope:"all"' },
     async handler({ q, scope, page, page_size, update_index }) {
       if (q !== undefined && q !== null && String(q).length > 50) fail(E.INVALID_INPUT, 'q 最多 50 字');
       if (scope !== undefined && !['match', 'exact', 'all'].includes(scope)) fail(E.INVALID_INPUT, 'scope 必須是 match、exact 或 all');
@@ -189,6 +194,14 @@ export const ONLINE_TOOLS = [
           entries, deleted: 0, warnings: [], duplicates: Object.entries(byName).filter(([, v]) => v.length > 1).map(([name, v]) => ({ name, ids: v.map(x => x.id) })) });
         result.index_updated = true;
         result.index_count = entries.length;
+      }
+      // 不帶 q 是建索引，不是查詢：全院字典上萬本，items 會超過工具輸出上限（F-17）
+      if (update_index && !String(q || '').trim()) {
+        const { items: _items, ...summary } = result;
+        const level_counts = {};
+        for (const e of entries) level_counts[e.level || 'other'] = (level_counts[e.level || 'other'] || 0) + 1;
+        const names = entries.map(e => e.dicName);
+        return { ...summary, summary_only: true, level_counts, duplicates: new Set(names.filter((n, i) => names.indexOf(n) !== i)).size };
       }
       return result;
     }

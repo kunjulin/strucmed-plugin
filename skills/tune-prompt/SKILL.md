@@ -11,6 +11,8 @@ allowed-tools: Read, AskUserQuestion, Bash(node *), mcp__strucmed__form_preview,
 
 # tune-prompt
 
+> **不要 `cd`**：工作區＝工作目錄，`.strucmed/`、hooks、`preview.mjs` 都靠它找檔案。Bash 一律寫絕對路徑（`<workspace>/.strucmed/…`），`cd` 之後 hook 會找不到定稿檔。
+
 只動**一個控制項的 prompt**，不改表單結構。規則：`references/PromptPatterns.md`（樣板與原則）、`references/MacroRecipes.md`（多步驟時的前後步驟）、`references/ModelWhitelist.md`（模型）、`references/FormulaMacroRules.md`（Calx 字串陷阱）。安全不變量照 `references/SecurityInvariants.md`：**不用真實病人資料**，試跑只用去識別化樣本。
 
 ## 1. 取得現況

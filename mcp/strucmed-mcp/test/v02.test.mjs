@@ -207,12 +207,13 @@ test('re-revising a tool output keeps a single generated-by marker', () => {
   assert.match(js, /v9 new\nvar keep = 1;$/);
 });
 
-test('form_preview html writes the runtime data under .strucmed/preview and returns the local URL', () => {
+test('form_preview html writes the runtime data under .strucmed/preview; url comes from the harness, open works from anywhere', () => {
   const { draft_id } = t.form_create({ name: '預覽', dept_no: 'TEST0' });
   const { area_itemid: a } = t.form_add_area({ draft_id });
   t.form_add_control({ draft_id, area_itemid: a, label_text: 'x', control: { datatype: 'textbox' } });
   const r = t.form_preview({ draft_id, format: 'html' });
-  assert.equal(r.url, `http://127.0.0.1:8765/__preview/${draft_id}`);
+  assert.equal(r.url, null, '沒有 harness 的 server.json 時不猜埠');
+  assert.ok(r.open.includes('scripts/preview.mjs') && r.open.includes(draft_id) && r.open.includes(`--workspace "${ws}"`), r.open);
   const file = path.join(ws, r.file);
   assert.ok(file.startsWith(path.join(ws, '.strucmed', 'preview')), '只寫在 .strucmed/preview（已 gitignore）');
   const form = JSON.parse(fs.readFileSync(file, 'utf8'));

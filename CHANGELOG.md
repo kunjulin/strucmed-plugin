@@ -14,9 +14,66 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.9.1（MCP 2.8.0）— 2026-11-02：不靜默、少重建、預覽頁是唯一的審閱介面
+
+3.9.0 實跑 BMI 與 MMSE 兩張表單後的調整。實測：BMI 27 分；MMSE 扣除等待 1 小時 17 分、3 次重建、使用者輸入 12 次；兩張都只有 G2 一個閘門。使用者在預覽頁用眼睛發現問題這件事成立，時間主要花在重建、工具靜默與環境陷阱。
+
+需要平台配合：授權登入頁的科部欄位。部署前 `W_NO_DEPT` 會要使用者在登入頁填一個還不存在的欄位，所以**平台要先上線**。
+
+尚未實測：3.9.1 的完整流程、`from_draft_id` 與 CSV 匯回的重建、頁籤欄位實際寫入倉儲、auto mode 下的 allowlist、從市集更新。
+
+**不靜默（MCP）**
+- `form_update_control` 的 `changes` 只接受白名單鍵，其餘回 `E_UNKNOWN_KEY` 並提示正確寫法（`caption` → 頂層 `label_text`）；所有工具的 inputSchema 加 `additionalProperties: false`。
+- `changes.unit` 可直接設定單位，優先於由說明文字推導，`form_fields` 回 `unit_source`；`unitOf` 不再把括號內的字當單位。
+- `form_validate` 新增 `W_DICT_DUP_WRITE`（同字典多欄寫入只留第一個有值的欄位）；`dictionary_plan_import` 等新增 `W_NON_BIG5`；`form_review_read` 對空意見回 `W_REVIEW_EMPTY`；新 draft 帶到舊的 `applied_seq` 時回 `W_APPLIED_SEQ_RESET`。
+- `online_dictionary_search(update_index: true)` 不帶 `q` 時只回摘要，不回全文。
+
+**少重建**
+- 新工具 `form_move_control`、`form_update_area`、`form_remove_area`，`form_add_area` 加 `after_itemid`。搬欄位、改區塊標題、刪空區塊、插入區塊都不必重建。
+- `form_create` 加 `from_draft_id`：重建時把待新建字典的 desc、補述、FHIR 帶過來。
+- `create-form` 新增〈重建流程〉：重建前匯出舊 draft 的 CSV，有缺時只匯回 `action=new` 且名稱在新 draft 裡的列（整份匯回會把別本字典改名），`applied_seq` 從 0，`memo-items.json` 複製，並告知使用者重建約幾分鐘。
+- 需求與規則衝突在階段 1 擋下：`AskUserQuestion` 的選項說明寫清楚規則，planner 遇到衝突回 `Blocked`。
+- `form-builder`：每一輪只送出一個工具呼叫，回覆加 `Calls`；formula 型 label 先建普通 label 再補公式，不放暫時公式；草案格式對齊工具參數（`cell` 從 0 起算、字典 id 寫完整、radiobutton 的 `row` 是數字）。
+
+**預覽頁是唯一的審閱介面**
+- 有預覽頁時 `form_preview`、`form_export` 不出 MCP App 卡片；只有沒有預覽頁的 host 才用卡片。
+- 新字典的補述改在階段 2 由 AI 起草（builder 建完、reviewer 之前），預覽卡片打開就有內容；`form-builder` 工具清單加 `dictionary_memo_check`。
+- `form_preview` 新參數 `formulas_from_review`，自動讀 review.md 的試算；預覽網址取實際的埠，`scripts/preview.mjs` 只回一個 `link`，8765 被舊版占用時自動改下一個埠；`--workspace` 固定工作區。
+- 卡片用語改中文，字典段落標題「字典補述（可在此修改）」；沒有修改時提示直接定稿。
+
+**環境與用語**
+- 科部在登入頁填，不在對話中問；`online_login` 的 `dept_no` 只是預填值，`create-form` 階段 1 取自 `online_me`，離線才問。
+- 不要 `cd`：所有 skill 加上工作區提醒，bash 範例改絕對路徑，agents 讀 `${CLAUDE_PLUGIN_ROOT}/references/`。`check-env` 的 runtime 結論改寫：這個 shell 看不到 plugin 設定，以 MCP `form_preview` 的 `runtime_available` 為準。`runtime_web` 預設路徑依序找三個位置，不再疊成雙 `repo`。
+- 說明文字用頂層 `label_text`、單位用 `changes.unit`，寫進 `create-form`、`form-builder`、`form-reviewer`。reviewer 的計數以工具回傳為準。
+- G2 的「資料夾」改為 個人（usr／OL5）、次專（sub／代碼）、科部（dpt／代碼），選項描述加「有疑問請先在對話問，不要在這裡選」。
+- auto mode 可能擋下只取計畫的呼叫：`publish-form` 先提醒，README 給 allowlist 範例。`PublishWorkflow.md` 補確認頁被關掉的處理。`DictionaryMemo.md` 加 Big5 替代字表。
+
+**頁籤與字典（PR #87）**
+
+- 頁籤欄位可以綁字典：平台 #150（2026-11-02 部署到 `/strucmed`）讓頁籤欄位依字典角色寫入 key-value。`form_add_control`、`form_validate` 的 `E_CELL_DICT` 改成只擋動態表格，`references/TablesTabsRules.md`、`LayoutPatterns.md`（含 L6）、`form-builder`、`form-reviewer` 同步修改。新增 `W_TAB_DICT_BY_NAME`：頁籤內只以名稱綁定時，匯入編輯器後角色維持 nohis、不會寫入，線上上架不受影響。舊站 `/go/` 要另外套用平台的 `deploy/go-tabkv`。以真實編輯器與 runtime 離線實測：角色存兩次都保留，沒切換到的分頁會寫入、被進一步選項隱藏的欄位不寫入；尚未實際寫入倉儲。
+- `dictionary_suggest`：比對範圍內還有名稱相近的其他字典時不判 high，改為 medium，`reasons` 列出相近的字典。回放評估中，`dose`、`indication` 這類通用說明的誤判多半是這種情況。
+
+## 3.9.0（MCP 2.7.0）— 2026-11-02（隨 3.9.1 一起發佈，未單獨發佈）：先建再看的預覽審閱流程，閘門只剩 G2 定稿
+
+MMSE 表單實跑時對話太長，編一張表單花了半天：使用者要在看不到表單時對著超長的計畫做決定，看到表單後的意見又要回頭改計畫、重新核准。draft 是本機檔，建錯重建只要一兩分鐘，所以改成先建 draft 再看預覽、在預覽頁討論，寫入線上或輸出前核准一次。平台不用改。
+
+尚未實測：BMI 與 MMSE 兩個情境的完整流程（對話行數與總時間）、預覽頁審閱模式、字典 CSV 在 Excel 與 Numbers 的往返、有待新建字典時的定稿與上架順序、離線 G2、Codex 與 Antigravity 走新流程、從市集更新、MaiAgent 平台。
+
+- **流程**：需求一次問完 → 草案直接建成 draft（不停下來核准）→ 預覽頁審閱迴圈 → 定稿閘門 G2（驗證、HIS 文字輸出、字典、上架一次核准）→ 上架或輸出 → 交付。沒有預覽頁時審閱迴圈退回對話，階段與 G2 不變。
+- **閘門**：閘門表只剩 G2「## 定稿」與 G4，G1、G3 編號停用、不重新編號。`publish-plan.md` 檔名與位置不變，前面加「### 驗證結果」「### HIS 文字輸出」「### 字典」三段。草案檔沿用 `strucmed-form-plan.md`，沒有「## 核准」段、不跑 `verify-plan.mjs`。hooks 的檢查邏輯、sidecar、瀏覽器確認頁、兩段式寫入都不動，只改訊息文字。`SecurityInvariants.md` 第 8 條隨 G1 停用移除「G1 前不建 draft」，「核准前不得寫入線上」不變。
+- **對話長度**：草案摘要 ≤ 15 行、審閱每輪 ≤ 5 行、G2 一次呈現＋一次提問、交付 ≤ 15 行；`review.md`、結構 tree、對照表、截圖、字典補述全文都不貼回對話。
+- **審閱迴圈**：`form_review_read` 的意見分三類：可直接套用的照 `suggested_calls`；能一對一轉工具呼叫的直接做，移除欄位仍等使用者同意；大改結構回草案、重建成新 draft，舊 draft 保留。每輪修改追加到草案的「### 審閱修改紀錄」，既有字典的補述修改存在 `memo-items.json`，G2 一起寫入。
+- **子代理**：`form-planner` 改產草案，不寫試算例、字典補述與 FHIR，新增「### 上架設定」；`form-builder` 不跑 `verify-plan.mjs`；`form-reviewer` 自己出試算例，結果與體系升級建議寫在 review.md，不貼回對話；`dictionary-annotator` 可起草待新建字典。
+- **`verify-runtime`**：預設只給連結與文字輸出（`GetJsonText()`），不截圖、不逐格設值；截圖只在使用者要求或開不了預覽頁時做，巨集實跑一次。
+- **`dictionary-assist` 模式 2**：改為 G2 前以 CSV 補述（`dictionary_plan_export` → 使用者編輯 → `dictionary_plan_import`）。新字典的補述由 AI 先起草。`DictionaryMemo.md` 加 CSV 欄位說明。
+- **修正**：有待新建字典時，`online_template_create` 第一次呼叫回 `E_DICT_PENDING`，取不到範本 plan，3.8.0 的 `publish-form` 只寫「回第 2 步」。改為定稿檔先列已知值，字典建好後再取範本 plan，比對相同才繼續。
+- **MCP 2.7.0**：新工具 `form_review_read`（讀預覽頁送出的意見，回 `suggested_calls`、`comments`、`memo_items`）、`dictionary_plan_export`／`dictionary_plan_import`（字典 CSV 往返）。`form_preview` 多寫 `<draft_id>.meta.json`，新參數 `applied_seq`、`formulas`。`form_create`／`form_update_meta` 新參數 `his_text_keys`，`form_validate` 新 warning `W_HIS_TEXT_KEYS`。`online_template_create`／`update`、`online_dictionary_*`、hooks 不變。
+
 ## 3.8.0（MCP 2.6.0）— 2026-10-31：字典流程：先找再建、補述不綁上架、計算式參考補述
 
 建表與改表時自動比對既有字典，補述可以不上架就寫入，計算式會對照字典補述檢查。平台不用改。
+
+發佈（2026-10-31）：strucmed-plugin `52a43da`（tag `v3.8.0`，由 strucmed-skill tag `v3.8.0-src`＝`c0faf73` 產生）。發佈時：`release-plugin.mjs` ok、掃描無發現；`npm test` 160 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.309 執行，通過。發佈後自 tag 重新 clone，以 HTTP 模式實跑 BMI 情境：`dictionary_suggest` 判 high、`W_DICT_CANDIDATE_EXISTS`、`W_REF_UNIT_MISMATCH`、`W_SAMPLE_OUT_OF_RANGE` 都正常。尚未實測：AI 實際走新的建表流程、非建立者線上補述、從市集更新、MaiAgent 平台。
 
 - 先找再建：create-form 自動建立字典索引；form-planner 每個存檔欄位都跑 `dictionary_suggest`，範圍內沒有候選才找他科；edit-form 加入同一套比對，小改動也要做。G1「待新建字典」新增「已查候選與不採用理由」。
 - `dictionary_suggest` 每筆回 `confidence`（high／medium／low），欄位說明去掉括號內單位後與字典同名也算同名。`form_validate` 新增 `W_DICT_CANDIDATE_EXISTS`：待新建字典已有高信心候選。

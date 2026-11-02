@@ -73,11 +73,13 @@ if (online) check('login', true, '登入：online_login 會以瀏覽器開啟站
 check('llmgateway', true, profile === 'external' ? 'LlmGateway：院外站台不可用（模型白名單使用內建靜態表）' : env.LLMGW_API_KEY ? 'LlmGateway：已設定金鑰' : 'LlmGateway：本 shell 未見 token（選用；/plugin configure 填「LlmGateway token」，院內才用得到；未設定時模型白名單使用內建靜態表）', 'ok');
 check('fmapi', true, profile === 'internal' || env.FMAPI_BASE_URL ? 'FMapi：可用（院內）' : 'FMapi：只有院內提供（選用）', 'ok');
 
-// runtime 驗證需要平台前端副本
-const runtimeWeb = env.STRUCMED_RUNTIME_WEB ? path.resolve(process.env.STRUCMED_RUNTIME_WEB) : path.join(workspace, 'repo', 'strucmed', 'web');
-const hasRuntime = fs.existsSync(path.join(runtimeWeb, 'TempHtml.html'));
-check('runtime_web', true, hasRuntime ? `runtime 驗證可用：${runtimeWeb}` : `runtime 驗證不可用：找不到 ${path.join(runtimeWeb, 'TempHtml.html')}（設定 STRUCMED_RUNTIME_WEB 指向平台 web/ 的本機副本）`, hasRuntime ? 'ok' : 'warning');
+// runtime 驗證需要平台前端副本，與 form_preview 同一份判斷。plugin 設定的「平台 web/ 副本」只傳給 MCP，這個 shell 看不到，所以這裡不下結論
+const { findRuntimeWeb } = await import(pathToFileURL(path.join(PLUGIN_ROOT, 'mcp', 'strucmed-mcp', 'src', 'runtime-web.mjs')).href);
+const web = findRuntimeWeb(workspace);
+const runtimeWeb = web.path, hasRuntime = web.available;
+const runtimeNote = '以 MCP form_preview 的 runtime_available 為準';
+check('runtime_web', true, hasRuntime ? `runtime 副本：${runtimeWeb}（${runtimeNote}）` : `本 shell 找不到 TempHtml.html（找過 ${web.tried.join('、')}），不代表預覽頁不可用：plugin 設定的「平台 web/ 副本」只有 MCP 讀得到，${runtimeNote}`, hasRuntime ? 'ok' : 'warning');
 
 const ok = checks.every(c => c.ok);
-console.log(JSON.stringify({ ok, plugin_root: PLUGIN_ROOT, workspace, mcp_version: mcpVersion, mode: online ? 'online' : 'offline', site: { profile, label: profile === 'custom' ? '自訂站台' : profile ? site.sites()[profile].label : '離線', reachable: reach, selected_by: explicit ? 'STRUCMED_ONLINE_BASE_URL' : siteMode === 'auto' ? 'auto' : `STRUCMED_SITE=${siteMode}` }, env_present: env, runtime_web: { path: runtimeWeb, available: hasRuntime }, checks }, null, 2));
+console.log(JSON.stringify({ ok, plugin_root: PLUGIN_ROOT, workspace, mcp_version: mcpVersion, mode: online ? 'online' : 'offline', site: { profile, label: profile === 'custom' ? '自訂站台' : profile ? site.sites()[profile].label : '離線', reachable: reach, selected_by: explicit ? 'STRUCMED_ONLINE_BASE_URL' : siteMode === 'auto' ? 'auto' : `STRUCMED_SITE=${siteMode}` }, env_present: env, runtime_web: { path: runtimeWeb, available: hasRuntime, note: runtimeNote }, checks }, null, 2));
 process.exit(ok ? 0 : 1);

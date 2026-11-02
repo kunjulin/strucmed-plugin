@@ -32,7 +32,7 @@ add(ft, { row: 1, col: 2 }, '日期：', { datatype: 'calendar', format: 'date' 
 // 垂直頁籤：兩頁
 const t1 = t.form_add_area({ draft_id, type: 'tab1', titles: ['病史', '用藥'] }).area_itemid;
 add(t1, { index: 0 }, '主訴：', { datatype: 'textarea' });
-add(t1, { index: 0 }, '天數：', { datatype: 'numberbox', minval: 0, maxval: 365 });
+add(t1, { index: 0 }, '天數：', { datatype: 'numberbox', minval: 0, maxval: 365, dictionary: { name: 'V1_HEIGHT' }, dicrole: 'tohis' });
 add(t1, { index: 1 }, '', { datatype: 'checkbox', options: ['aspirin', 'statin'] });
 
 // 水平頁籤

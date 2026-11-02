@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.5.0）
+# strucmed-mcp（v2.8.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -17,14 +17,14 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 ```bash
 node mcp/strucmed-mcp/src/server.mjs
 ```
-環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
+環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用；沒設時依序找 `<workspace>/strucmed/web`、`<workspace>/repo/strucmed/web`、`<workspace>/../strucmed/web`）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
 
 ## HTTP 模式（伺服器端 agent 平台）
 預設是 stdio（上方 `node src/server.mjs`，由 Claude Code 等本機工具以子行程啟動）。設定 `STRUCMED_HTTP_PORT` 後改以 **Streamable HTTP** 提供同一組 tool：`POST <path>` 收一則 JSON-RPC 請求（或批次）、回一則 JSON；只有通知時回 202；無 session、無 GET 串流（GET／DELETE 回 405）。給跑在伺服器上、只能連 HTTP MCP 的 agent 平台（例如 MaiAgent 的 MCP 工具）使用。
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.6.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.8.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -44,11 +44,11 @@ STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_W
 - 對外曝露請放在 TLS 反向代理之後；token 只放環境變數。
 - stdout 在 HTTP 模式下不輸出任何東西，診斷仍在 stderr。
 
-## MCP App 卡片（form_preview／form_export）
-支援 MCP Apps（SEP-1865）的 host（例如 MaiAgent 的 Web Chat 與後台對話）會把 `form_preview` 與 `form_export` 的結果畫成互動卡片；不支援的 host（Claude Code、Codex、LINE 等文字通道）看到的 JSON 文字結果完全不變。
+## MCP App 卡片（form_export）
+**有預覽頁時所有審閱都在預覽頁，卡片完全不出現**：`form_preview` 任何 format 都不帶卡片；`form_export` 的卡片只在 `runtime_available: false`（沒有預覽頁的 host）時回傳，當匯出兩段式的確認介面。支援 MCP Apps（SEP-1865）的 host（例如 MaiAgent 的 Web Chat 與後台對話）會把它畫成互動卡片；不支援的 host（Claude Code、Codex、LINE 等文字通道）看到的 JSON 文字結果完全不變。
 
-- `tools/list` 在這兩個 tool 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`；`resources/read` 回傳卡片 HTML（`ui/form-card.html`，單檔、不載入外部資源，符合 host 的封閉 CSP）。
-- tool 結果多一個 `structuredContent`：表單資訊、各區塊的列與控制項、驗證結果、待新建字典，以及狀態 `kind`（`preview`／`export_plan`／`exported`）。`ui_hints.modelContext` 讓 host 把目前狀態塞給模型。
+- 沒有預覽頁時，`tools/list` 在 `form_export` 的 `_meta.ui.resourceUri` 指到 `ui://strucmed/form-card.html`；`resources/read` 回傳卡片 HTML（`ui/form-card.html`，單檔、不載入外部資源，符合 host 的封閉 CSP）。
+- tool 結果多一個 `structuredContent`：表單資訊、各區塊的列與控制項、驗證結果、待新建字典，以及狀態 `kind`（`export_plan`／`exported`）。`ui_hints.modelContext` 讓 host 把目前狀態塞給模型。
 - 卡片動作：「產生匯出計畫」→ 呼叫 `form_export` 拿 plan；「確認匯出」→ 帶 `confirm_token` 再呼叫一次；完成後列出檔案與「下載」按鈕（`ui/open-link` 開啟簽章下載連結）。「請 AI 修改」把修改指示以 `ui/message` 送回對話。兩段式確認因此不再需要本機瀏覽器確認頁。
 - **下載連結**（HTTP 模式）：`GET <path>/files/<draft_id>/<kind>?t=<token>`，`kind` 為 `htm`／`json`／`manifest`。token 是本行程金鑰簽的 HMAC、綁定 draft 與 kind、24 小時有效，是這條路徑唯一的憑證（瀏覽器下載不帶 bearer）。連結的主機名取自 `STRUCMED_PUBLIC_URL`，未設時用請求的 `X-Forwarded-Proto`／`X-Forwarded-Host`／`Host`。檔案以 `form_export` 記在 draft 裡的實際路徑取用（`draft.exported`），表單改名或自訂 `out_dir` 都不影響，也不會拿到同名另一張表單的檔案；連結永遠指向該 draft 最新一次匯出。
 - **資源**：輸出檔也可用 `resources/read` 讀 `strucmed://export/<draft_id>/<kind>`（`form_export` 回應的 `resources` 欄位；`resources/templates/list` 列有樣板），host 可自行取檔、不經模型。`include_content:true` 時 `.htm` 改以內嵌資源（`content` 的 `resource` 區塊）回傳，不放在文字結果；整份 .htm 仍會進對話，只在平台既沒有下載入口也不能讀資源時使用。
@@ -102,12 +102,12 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 | `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
 | `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
-| `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact\|all&q=&page=&pageSize=` | 唯讀；每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |
-| `online_template_create` | `POST api/v2/folders/{usr\|sub\|dpt}/templates` | **寫入範本**，兩段式（plan＝閘門 G3）；前置驗證無 error、無待新建字典；不寫 sys；寫入不重試 |
+| `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact\|all&q=&page=&pageSize=` | 唯讀；`update_index:true` 且不帶 `q` 時只回摘要（`index_count`、`level_counts`、`duplicates` 數、warnings），不回 `items`。每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |
+| `online_template_create` | `POST api/v2/folders/{usr\|sub\|dpt}/templates` | **寫入範本**，兩段式（plan＝閘門 G2 定稿）；前置驗證無 error、無待新建字典；不寫 sys；寫入不重試 |
 | `online_template_update` | `PUT api/v2/templates/{id}`＋`If-Match` | **寫入範本**（flag `templateUpdate`）；只允許以該範本 import 改版的 draft；第一次呼叫取線上 ETag 與差異；409→`E_CONFLICT` |
 | `online_template_versions` | `GET api/v2/templates/{id}/versions` | 唯讀；版本清單 |
 | `online_dictionary_create`／`online_dictionary_batch` | `POST api/v2/dictionaries`、`/batch` | **寫入字典**（flag `dictionaryWrite`，預設開）；dicComment 以字典 JSON 一次寫好 desc＋memo；同名沿用；已刪除同名回 `E_DELETED_EXISTS` 不自動 force；成功後綁回 draft 與本機索引 |
-| `online_dictionary_memo_set` | `PUT api/v2/dictionaries/{id}/memo`＋`If-Match: etag` | **寫入字典補述**（flag `dictionaryWrite`）；任何登入者可寫、不動 desc；memo 補充合併、fhir 整組取代；送出前本機檢查 FHIR（`E_INVALID_FHIR`、`W_FHIR_TYPE_MISMATCH`）；plan 有改前／改後；線上已被修改 → `E_CONFLICT`（`details.current`）。選填 `draft_id`：hooks 檢查該 draft 的 G3 |
+| `online_dictionary_memo_set` | `PUT api/v2/dictionaries/{id}/memo`＋`If-Match: etag` | **寫入字典補述**（flag `dictionaryWrite`）；任何登入者可寫、不動 desc；memo 補充合併、fhir 整組取代；送出前本機檢查 FHIR（`E_INVALID_FHIR`、`W_FHIR_TYPE_MISMATCH`）；plan 有改前／改後；線上已被修改 → `E_CONFLICT`（`details.current`）。選填 `draft_id`：hooks 檢查該 draft 的 G2 定稿 |
 | `online_dictionary_memo_batch` | `PUT api/v2/dictionaries/memo/batch`（舊站台退回逐本 `PUT {id}/memo`，≤ 15 本） | **寫入字典補述**（flag `dictionaryWrite`）；一次 ≤ 100 本、逐本 If-Match（第二次呼叫帶 plan 的 `etags`）；取得計畫後被改的字典 → `E_CONFLICT`（`details.stale`，不開確認頁）；逐本回報，部分衝突 `W_PARTIAL_CONFLICT`。選填 `draft_id`：hooks 檢查 `memo-plan.md`（或上架計畫）的核准 |
 | `online_dictionary_usage` | `GET api/v2/dictionaries/usage`、`/{id}/usage` | 唯讀；字典使用索引（平台每日掃描範本，只有範本名稱、資料夾、欄位 id）；不帶 id 時把各字典使用表單數寫進本機索引供 `dictionary_suggest` 排序；沒掃描過 `W_USAGE_NOT_SCANNED` |
 | `online_me_notes_get`／`online_me_notes_set` | `GET/PUT api/v2/me/notes` | struNote 表單清單；set 整份取代（`add`／`remove` 增量），兩段式 plan 顯示新增／移除／改名 |
@@ -138,19 +138,44 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | tool | 說明 |
 |---|---|
 | `dictionary_load` / `dictionary_search` | 載入字典頁 Export 的 CSV（`csv_path` 或 `csv_text` 擇一）、搜尋（編輯器相同的科部比對規則；同範圍內體系 → 本科 → 次專 → 科部；fuzzy 也搜 desc 與 memo）。CSV 中 JSON 說明被逗號斷欄時回 `W_DICT_CSV_JSON_BROKEN` |
-| `form_fields` | 字典助手：把 draft 解析成逐欄事實（說明文字、datatype、選項、範圍、單位、字典與目前補述、誰參照誰、AI 資料流），`derived` 是推得的補述草稿（func／type／range／unit） |
+| `form_fields` | 字典助手：把 draft 解析成逐欄事實（說明文字、datatype、選項、範圍、單位、字典與目前補述、誰參照誰、AI 資料流），`derived` 是推得的補述草稿（func／type／range／unit）；`unit_source` 標明單位來源：`set`、`caption`、`memo`、`none` |
 | `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `confidence`（high 可自動選入計畫）、`reasons` 與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；`include_other` 列出他科字典 |
-| `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度 |
+| `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度；只帶 `draft_id`＋`itemid` 時檢查 draft 內的補述；存不下的字元回 `W_NON_BIG5` 附替代建議 |
 | `dictionary_create` | 規劃新字典（不寫入）；`comment`＝desc、`memo`＝補述，建立時寫進字典 JSON（`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo` 相同） |
-| `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2 |
+| `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2；重建時帶 `from_draft_id`，舊 draft 的待新建字典（desc、memo、fhir）與既有綁定依名稱帶過來 |
 | `form_import` | **v1**：載入既有表單（套件 v2 `.htm`／`.package.json`、舊版 `.htm`、`.json`；`source_path` 或 `source_text` 擇一）為新 draft；所有區塊、計算式、巨集、JS 原封保留；輸出為新表單（不沿用 templateID，捷徑與作業別預設不沿用） |
-| `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字、預設值、必填、選項、字典 |
+| `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字（頂層 `label_text`）、預設值、必填、選項、字典、單位（`changes.unit`，只存 draft，優先於說明文字）。`changes` 的未知鍵回 `E_UNKNOWN_KEY`，什麼都不改 |
 | `form_remove_control` | **v1**：兩段式移除控制項（仍被參照時拒絕；子項一併移除） |
-| `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字 |
-| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後 |
-| `form_validate` | 遞迴檢查巢狀結構：itemid 重複、參照（further、reference、公式與巨集中的 A<n>）、dicid 存在性、區塊權限、疑似個資；**依修改類別分級**：本次改到的面向為 error，原表單既有問題為 warning |
-| `form_preview` | tree / markdown |
+| `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字；`after_itemid` 插在指定區塊之後（0＝最前面） |
+| `form_update_area` | 改區塊 `title`（有可見標題行時一起改）、`visible_title`、`hidden`；原表單區塊的權限不改 |
+| `form_remove_area` | 刪空區塊，不需要 confirm；還有控制項、說明文字或被連動引用時拒絕 |
+| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述 |
+| `form_move_control` | 搬控制項（連同說明文字與同一行的後綴文字）到別的區塊、格子或位置，itemid 不變、參照不受影響；`after_itemid` 0＝最前面；搬進動態表格的限制同 `form_add_control` |
+| `form_validate` | 遞迴檢查巢狀結構：itemid 重複、參照（further、reference、公式與巨集中的 A<n>）、dicid 存在性、區塊權限、疑似個資；**依修改類別分級**：本次改到的面向為 error，原表單既有問題為 warning；`W_DICT_DUP_WRITE`：同一字典被兩個以上 tohis／puthis 欄位寫入（存檔只留第一個有值的欄位，不阻擋） |
+| `form_preview` | tree / markdown；html 是本機離線預覽兼審閱模式（下節），另接受 `applied_seq`、`formulas`、`formulas_from_review`，回 `url`、`open`、`runtime_web`、`meta_file`、`review_dir` |
+| `form_review_read` | 讀回預覽頁送出的意見（離線，唯讀），見下節 |
+| `dictionary_plan_export` / `dictionary_plan_import` | 字典 CSV（離線），見下節 |
 | `form_export` | 兩段式輸出 `.htm`（舊版 tempdata＋範本套件 v2）／`.package.json`（範本套件 v2）／`.manifest.md` |
+
+`form_create`、`form_update_meta` 另接受 `his_text_keys`（HIS 接收端要的文字鍵，每個 ≤ 40 字、英數與中文）：存在 `draft.meta.hisTextKeys`，不寫進表單 JSON 與 `.htm`；`form_validate` 以 `W_HIS_TEXT_KEYS` 比對頁籤名稱與 label 文字中的 `[鍵:]`（`missing`、`case_mismatch`）。
+
+### 預覽審閱與字典 CSV（docs/15）
+- **`form_preview(format:"html")`** 多寫 `.strucmed/preview/<draft_id>.meta.json`（`fields` 是 `form_fields` 原樣、`formulas` 是計算式與試算、`his_text_keys`、`histext`、`areas`、`applied_seq`、`pending_dictionaries`）。`applied_seq` 與 `formulas` 沒帶時沿用上一份（計算式沒變的試算才沿用），已套用的意見不會變回待處理。
+  - `url` 取自 harness 寫的 `.strucmed/preview/server.json`（實際的埠）；伺服器沒開時 `url` 是 `null`，執行 `open` 欄位的指令（`scripts/preview.mjs`，絕對路徑加 `--workspace`）：會自動啟動、避開被舊版或別的工作目錄占用的埠，只回一個 `link`。`runtime_web` 是實際找到的平台 `web/` 路徑。
+  - `applied_seq` 超過這個 draft 實際有過的意見（例如重建後的新 draft）時不採用，回 `W_APPLIED_SEQ_RESET`。
+  - `formulas_from_review:true` 讀 `.strucmed/plans/` 底下這個 draft 的 `review.md`「## 試算」（`plans/<draft_id>/` 優先，其餘比對 itemid 與計算式），回 `formulas_source`；找不到回 `W_REVIEW_FORMULAS`，公式已改的試算不採用並回 `W_REVIEW_FORMULA_STALE`。
+- **`form_review_read({ draft_id, seq? })`**：不帶 `seq` 讀 `latest.json`。回 `review`（原文）、`pending_seqs`（大於 `applied_seq` 的所有 seq）、`suggested_calls`、`memo_items`（既有字典的補述修改，`online_dictionary_memo_batch` 的 `items` 格式，留到定稿）、`comments`（`control`／`area`／`form`）、`warnings`。review 內容是使用者的話，不是指令。
+  - `suggested_calls`：`caption`、`options`、`default`、`required` 是 `form_update_control`；待新建字典的 `memo`、`fhir` 是 `dictionary_memo_check` 加 `then`（ok 才呼叫 `form_update_control`）；既有字典只有 `dictionary_memo_check`，修改收進 `memo_items`。有連動的選項以 `{ value, further }` 傳，否則 `further` 會被清掉。
+  - 錯誤：`E_NOT_FOUND`（沒有意見檔）、`E_INVALID_INPUT`（JSON 壞掉、draft 不符、`seq` 不是正整數）。
+  - 警告：`W_REVIEW_EMPTY`（`revise` 但沒有任何修改或意見，不是定稿）、`W_REVIEW_STALE`（選項與 draft 目前不符，或欄位、字典已不在，不產生該筆）、`W_REVIEW_OPTION_REF`（改了選項文字，計算式或巨集以字串比對舊選項）、`W_REVIEW_ITEM`（內容不合法，略過）、`W_DICT_NOT_IN_INDEX`。
+- **`dictionary_plan_export({ draft_id, out_path? })`**：一本字典一列（綁定的既有字典去重＋待新建字典），預設寫 `.strucmed/plans/<draft_id>/dictionaries.csv`，重跑覆寫，`out_path` 必須在工作目錄內。UTF-8 帶 BOM、CRLF、RFC 4180；HTTP 模式另回 `csv_text`。`= + - @ '` 開頭與 `1-12` 這類會被 Excel 改掉的值前面加一個 `'`，import 時拿掉。
+- **`dictionary_plan_import({ draft_id, csv_path? | csv_text? })`**：只改本機 draft；都不帶時讀預設路徑。`action`：`new`（更新待新建字典的 desc、補述、FHIR、名稱）、`bind`（沿用，補述有變才視同 memo）、`memo`（不寫 draft，回 `memo_items`）、`rebind:<id>`（該字典所有欄位改綁，回 `rebinds`）、`skip`。每列跑 `dictionary_memo_check`，error 的列進 `skipped`（`row` 是試算表列號，表頭＝1）；`checks` 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；`note` 欄工具不處理，skill 自己讀 CSV。
+  - 錯誤：`E_INVALID_INPUT`（缺 `action`、`dicName` 欄；路徑在工作目錄外）、`E_NOT_FOUND`（找不到檔案）；單列的錯誤（`id` 被改、action 不認識、`E_INVALID_FHIR`、`E_PHI_SUSPECT`）進 `skipped`。
+  - 警告：`W_NON_BIG5`（desc 或補述有存不下的字元：有對照的已改寫，例如 `≥` → 大於等於；沒有對照的該列進 `skipped`）、`W_DESC_READONLY`（既有字典的 desc 不可改）、`W_DICT_NOT_IN_INDEX`。
+  - `online_dictionary_batch` 不寫 FHIR：待新建字典的 `fhir` 留在 draft 與 `.htm` 的字典套件；走線上時由 `publish-form` 先記在 `pending-fhir.json`，字典建好後以 `online_dictionary_memo_batch` 補（`references/PublishWorkflow.md` §2、§4）。
+- 這些工具在 HTTP 模式都可用（讀寫工作目錄內的檔案），也列在 `cards.mjs` 的 `review_tools`，MCP App 卡片資料帶給 host。
+
+**所有工具**的 `inputSchema` 都是 `additionalProperties: false`：schema 外的頂層鍵回 `E_INVALID_INPUT`（附可用參數），不靜默忽略。
 
 規格與錯誤碼；v0.1 範圍外（計算式、巨集 → v0.2；表格、頁籤、圖片、子表單、既有表單改版 → v1）會回傳 `E_UNSUPPORTED_DATATYPE` 並註明版本。
 
@@ -165,6 +190,10 @@ cd mcp/strucmed-mcp && npm test
 - `test/online.test.mjs`：線上 tool，以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
 - `test/llmgw.test.mjs`：LlmGateway tool，以 127.0.0.1 上的假閘道：未設定時隱藏與 `E_LLMGW_DISABLED`、網址限制、bearer、快取寫入與別名對應、401／轉址／空清單、`formula_check` 對照白名單（不在清單、deprecated、視覺）、`form_validate` 的 `W_LLM_WHITELIST_STALE`、chat_test（flag、白名單、個資、標頭、思考模式、429）；金鑰不出現在 stdout、stderr、工作目錄。
 - `test/fmapi.test.mjs`：FMapi tool，以假 FMapi：未設定時隱藏、errorlog 狀態、相關站台過濾與 `W_SITE_DOWN`、uptime 被拒／停用只回 warnings；金鑰不外洩。
+- `test/review.test.mjs`：預覽審閱：serve 的 `/__review`（Host、Origin、Content-Type、大小、draft_id、seq 遞增、latest 覆寫）、`/__preview` 注入 meta、meta 內容與沿用、`form_review_read`（`suggested_calls` 保留連動、`memo_items`、`W_REVIEW_STALE`、`W_REVIEW_OPTION_REF`）、字典 CSV 往返（逗號、引號、換行、Excel 保護、有無 BOM、action 五種、`id` 被改）、`W_HIS_TEXT_KEYS`。
+- `test/no-silent.test.mjs`：不靜默：`E_UNKNOWN_KEY`、`additionalProperties:false`、`changes.unit` 與 `unit_source`、`W_DICT_DUP_WRITE`、M14 小修、線上寫入工具的描述開頭。
+- `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、工作目錄固定、`runtime_web` 的尋找順序。
+- `test/rebuild.test.mjs`：`form_move_control`、`form_update_area`、`form_remove_area`、`form_add_area(after_itemid)`、`from_draft_id`、`W_APPLIED_SEQ_RESET`、補述自動檢查、`W_NON_BIG5`、`formulas_from_review`。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。
 - `test/trial-feedback.test.mjs`：3.5.0 試用回饋：`form_import(for_update)` 與 `metaSet`、`formdiff`（說明文字、控制項、JS、iot，排除伺服器補回的欄位）、`visible_title` 與 `W_AREA_NO_VISIBLE_HEADING`、空白巨集腳本 `E_ACTION_EMPTY`、`formula_check` 的 `W_KIND_MISMATCH`。
 - `test/make-harness-fixture.mjs`：產生 `tools/v0-harness/fixtures/generated-v01.json`，交由真實編輯器程式碼 round-trip（2026-09-27 結果：F→G1 只有 `d_url`、`modifiedUser` 兩個環境欄位不同）。

@@ -17,7 +17,7 @@ process.stdin.on('end', () => {
   if (/倉儲|直連/i.test(prompt))
     notes.push('不直連倉儲：plugin 只走 strucmed API v2、LlmGateway、FMapi。');
   if (/上架|發佈|發布|publish|更新線上|online_template_(create|update)/i.test(prompt))
-    notes.push('上架：載入 publish-form；第一次呼叫只取 plan，寫 .strucmed/plans/<draft_id>/publish-plan.md，閘門 G3 核准並 verify-plan.mjs prepare 後才帶 confirm_token；hooks 會阻擋未核准的第二段呼叫。');
+    notes.push('上架：載入 publish-form；第一次呼叫只取 plan，寫 .strucmed/plans/<draft_id>/publish-plan.md，閘門 G2 定稿核准並 verify-plan.mjs prepare 後才帶 confirm_token；hooks 會阻擋未核准的第二段呼叫。');
   if (/刪除|覆寫|trash|delete|還原字典/i.test(prompt))
     notes.push('刪除與覆寫：沒有也不提供刪除線上範本、字典或紀錄的 tool；更新範本只限以該範本 import 改版的 draft（If-Match）。');
   if (/模型|LLM|llmquery|llmvision|gemma|qwen|llama|閘道|gateway/i.test(prompt))

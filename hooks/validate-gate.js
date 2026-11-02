@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse（Claude Code、Copilot CLI、Codex）：線上寫入 tool 的第二段呼叫（帶 confirm_token）前，檢查閘門 G3 的核准 sidecar。
+// PreToolUse（Claude Code、Copilot CLI、Codex）：線上寫入 tool 的第二段呼叫（帶 confirm_token）前，檢查閘門 G2 定稿的核准 sidecar。
 // 檢查本身在 gate-check.js（與 Antigravity 版 antigravity/validate-gate.js 共用）；計畫檔在 <cwd>/.strucmed/plans/<draft_id>/。
 // exit 0＝放行；exit 2＝阻擋（stderr 是原因）。無法確認核准時（含 hook 自身錯誤）一律阻擋：寫入線上必須確定已核准。
 'use strict';

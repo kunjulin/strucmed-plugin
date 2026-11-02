@@ -36,10 +36,10 @@ before(async () => {
 });
 after(() => { proc.kill(); fs.rmSync(ws, { recursive: true, force: true }); });
 
-test('tools/list links the card to form_preview and form_export only; resources expose the card HTML', async () => {
+test('tools/list links the card to form_export only; resources expose the card HTML', async () => {
   const { tools } = await rpc('tools/list', {});
   const byName = Object.fromEntries(tools.map(t => [t.name, t]));
-  assert.equal(byName.form_preview._meta.ui.resourceUri, 'ui://strucmed/form-card.html');
+  assert.equal(byName.form_preview._meta, undefined, 'form_preview 不再帶卡片');
   assert.equal(byName.form_export._meta.ui.resourceUri, 'ui://strucmed/form-card.html');
   assert.equal(byName.form_create._meta, undefined);
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
@@ -50,6 +50,7 @@ test('tools/list links the card to form_preview and form_export only; resources 
   assert.match(read.contents[0].text, /ui\/initialize/);
   assert.match(read.contents[0].text, /__MCP_INITIAL_RENDER_DATA__/);
   assert.match(read.contents[0].text, /snakeKeys/, 'card accepts camelCased structured data');
+  assert.ok(!read.contents[0].text.includes('form_preview'), 'form_preview 不回卡片資料，卡片不能呼叫它');
   const missing = await post({ jsonrpc: '2.0', id: ++seq, method: 'resources/read', params: { uri: 'ui://nope' } });
   assert.equal(missing.error.code, -32002);
 });
@@ -60,10 +61,18 @@ test('preview and export carry structuredContent; export plan → confirm → fi
   await call('form_add_control', { draft_id, area_itemid, label_text: '跌倒史：', control: { datatype: 'radiobutton', options: ['有', '無'] } });
   await call('form_add_control', { draft_id, area_itemid, label_text: '備註：', control: { datatype: 'textarea' } });
 
-  const pv = await call('form_preview', { draft_id, format: 'markdown' });
-  assert.equal(pv._meta.ui.resourceUri, 'ui://strucmed/form-card.html');
-  const card = pv.structuredContent;
-  assert.equal(card.kind, 'preview');
+  for (const format of ['tree', 'markdown', 'html']) {
+    const pv = await call('form_preview', { draft_id, format });
+    assert.equal(pv.structuredContent, undefined, format);
+    assert.equal(pv._meta, undefined, format);
+  }
+  assert.equal((await call('form_validate', { draft_id })).structuredContent, undefined, 'non-card tools stay text-only');
+
+  const plan = await call('form_export', { draft_id });
+  assert.equal(plan.structuredContent.kind, 'export_plan');
+  assert.ok(plan.structuredContent.confirm_token);
+  assert.ok(plan.structuredContent.plan.files.length === 3);
+  const card = plan.structuredContent;
   assert.equal(card.form.name, '卡片測試單');
   assert.equal(card.areas.length, 1);
   const controls = card.areas[0].rows.flat().filter(i => i.type === 'control');
@@ -71,13 +80,7 @@ test('preview and export carry structuredContent; export plan → confirm → fi
   assert.deepEqual(controls[0].options, ['有', '無']);
   assert.equal(card.validation.valid, true);
   assert.match(card.ui_hints.modelContext, /卡片測試單/);
-  assert.equal((await call('form_preview', { draft_id, format: 'html' })).structuredContent, undefined, 'html preview has no card');
-  assert.equal((await call('form_validate', { draft_id })).structuredContent, undefined, 'non-card tools stay text-only');
-
-  const plan = await call('form_export', { draft_id });
-  assert.equal(plan.structuredContent.kind, 'export_plan');
-  assert.ok(plan.structuredContent.confirm_token);
-  assert.ok(plan.structuredContent.plan.files.length === 3);
+  assert.match(card.ui_hints.modelContext, /有預覽頁時所有審閱都在預覽頁/);
 
   const done = await call('form_export', { draft_id, confirm_token: plan.structuredContent.confirm_token, include_content: true });
   const d = text(done).data;
@@ -118,6 +121,26 @@ test('preview and export carry structuredContent; export plan → confirm → fi
   assert.equal(res2.status, 200);
   assert.match(res2.headers.get('content-disposition'), /%E6%94%B9%E5%90%8D\.htm/, 'file is named after the renamed draft');
   assert.equal(await (await fetch(d.download.htm)).text(), await res2.text(), 'an older link of the same draft serves the latest export');
+});
+
+test('有預覽頁（runtime 可用）時 form_export 不帶卡片：tools/list 沒有 _meta，結果沒有 structuredContent', async () => {
+  const web = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-cards-web-'));
+  fs.writeFileSync(path.join(web, 'TempHtml.html'), '<html></html>');
+  const s = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: '', STRUCMED_RUNTIME_WEB: web });
+  const ask = async (method, params) => (await (await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
+  try {
+    assert.equal((await ask('tools/list', {})).tools.find(t => t.name === 'form_export')._meta, undefined);
+    const { draft_id } = text(await ask('tools/call', { name: 'form_create', arguments: { name: '有預覽頁', dept_no: 'TEST0' } })).data;
+    const { area_itemid } = text(await ask('tools/call', { name: 'form_add_area', arguments: { draft_id } })).data;
+    await ask('tools/call', { name: 'form_add_control', arguments: { draft_id, area_itemid, label_text: 'x', control: { datatype: 'textbox' } } });
+    const plan = await ask('tools/call', { name: 'form_export', arguments: { draft_id } });
+    assert.equal(plan.structuredContent, undefined);
+    assert.equal(plan._meta, undefined);
+    assert.ok(text(plan).data.plan.files.length === 3, '文字結果不變');
+    const done = await ask('tools/call', { name: 'form_export', arguments: { draft_id, confirm_token: text(plan).data.confirm_token } });
+    assert.equal(done.structuredContent, undefined);
+    assert.ok(text(done).data.files.htm);
+  } finally { s.p.kill(); fs.rmSync(web, { recursive: true, force: true }); }
 });
 
 test('STRUCMED_PUBLIC_URL overrides the derived origin in download links', async () => {

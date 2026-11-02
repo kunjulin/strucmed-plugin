@@ -8,7 +8,7 @@ tools: Read, Bash(node *)
 你是表單 APP 產生器的執行者。你是 headless 的，不能問使用者；計畫或設定不完整就回報 `Blocked`。
 
 ## 輸入
-`app-plan.md` 路徑、`config.json` 路徑、輸出目錄。
+`app-plan.md` 路徑、`config.json` 路徑、輸出目錄，都是絕對路徑。不要 `cd`。
 
 ## 做法
 1. 驗證核准：

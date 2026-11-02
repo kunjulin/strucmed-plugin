@@ -1,4 +1,4 @@
-// 閘門 G3 hook：Claude 格式（hooks/validate-gate.js，exit code）與 Antigravity 格式（hooks/antigravity/validate-gate.js，stdout JSON）
+// 閘門 G2 定稿的 hook（舊稱 G3）：Claude 格式（hooks/validate-gate.js，exit code）與 Antigravity 格式（hooks/antigravity/validate-gate.js，stdout JSON）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

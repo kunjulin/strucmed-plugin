@@ -14,7 +14,7 @@
 | 觸發 | 點按鈕；`textbox` 的 `fur_action_id`（輸入後觸發）；`action_name` 留空＝隱藏按鈕，只能被前者觸發 |
 | 條件 | 外層 `IF` 擋不住 LLMQUERY（每次都執行、不等待）；條件寫進 prompt |
 | 讀取 | 步驟內用 `A<itemid>` 讀欄位，被讀的欄位要勾「參與計算」；`MACRO` 會把換行與連續空白壓成一個空白 |
-| 不能寫入 | 動態表格（`table1`／`table2`）內的欄位：每列共用 itemid，會一次改到所有列（`E_MACRO_TARGET_TABLE`）；頁籤內欄位不上傳 HIS |
+| 不能寫入 | 動態表格（`table1`／`table2`）內的欄位：每列共用 itemid，會一次改到所有列（`E_MACRO_TARGET_TABLE`） |
 | 禁用 | `CUSTOMFUNC`、`OPENURL`、`SAVEDOC`、`SETIOTHEADER`、`S_USERID`、`S_DEPTNO`（`E_FORBIDDEN_FUNCTION`）；需要時匯入後由人工在編輯器加並審查 |
 
 ## 2. 規劃時要問使用者的三件事

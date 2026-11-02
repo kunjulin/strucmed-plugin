@@ -9,6 +9,6 @@
 5. **禁止產生的函數**：CUSTOMFUNC、OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO；不寫表單 JS（只放產生器標記註解）；不嵌入圖片。使用者需要時，請其匯入後在編輯器由人工加入並審查。
 6. **模型名稱不得憑記憶**：只用 `references/FormulaMacroRules.md` 的清單（Phase 3 起改用 `llmgateway_models` 的快取）；拼錯平台會靜默改用預設模型。
 7. **AI 資料流必須揭露**：有 LLM／語音巨集的表單，計畫與交付都要列 `W_AI_DATAFLOW`（哪些欄位會送出）。2026-10-22 決定：含 AI 巨集的上架不另設審查，但告知不可省略。
-8. **核准前不得寫入**：G1 前不建 draft；G3 前不呼叫任何線上寫入；核准 sidecar（`verify-plan.mjs`）不符時拒絕建置。
+8. **核准前不得寫入**：G2 定稿前不呼叫任何線上寫入；核准 sidecar（`verify-plan.mjs`）不符時拒絕寫入。
 9. **不刪除、不覆寫線上範本與字典**：沒有也不會提供 trash、字典刪除、硬刪除紀錄的 tool。`templateUpdate` 開啟時只能更新「以該範本 import 後改版」的 draft，且帶 `If-Match`。
 10. **runtime 驗證只在本機**：`STRUCMED_RUNTIME_WEB` 是本機副本，harness 的 CSP 封鎖對外連線；不在 HIS 終端機上跑。

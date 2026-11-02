@@ -21,6 +21,7 @@
 **一定要避開的陷阱**：
 - 比較運算子兩側**加空白**：`A5 > 3`，不要寫 `A5>3`（會語法錯誤）。
 - 不能用 `&`，改用 `CONCATENATE`；小數寫 `0.5`；文字一律加引號。
+- `ROUND`／`ROUNDUP`／`ROUNDDOWN` 一定要寫位數（`ROUND(x, 0)`），少了位數 runtime 會算出 NaN。
 - 巨集步驟的字串裡**不要放半形括號**（會打亂步驟切分），需要時用 `CHAR(40)`／`CHAR(41)`。
 - 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`…）。拼錯時平台會靜默改用預設模型。

@@ -9,6 +9,7 @@ export class ToolError extends Error {
 
 export const E = {
   INVALID_INPUT: 'E_INVALID_INPUT',
+  UNKNOWN_KEY: 'E_UNKNOWN_KEY',
   NOT_FOUND: 'E_NOT_FOUND',
   UNSUPPORTED: 'E_UNSUPPORTED_DATATYPE',
   REF_BROKEN: 'E_REF_BROKEN',

@@ -71,11 +71,15 @@ test('controls in cells: addressing, stream format, per-kind rules', () => {
   assert.equal(h.dicid, 'v1t-dic-1');
   assert.equal(h.dicrole, 'puthis');
   add(ft, { row: 0, col: 0 }, { datatype: 'textbox' }, '備註：');
-  // 頁籤：不能綁字典；可參與計算
-  assert.throws(() => add(tab, { index: 0 }, { datatype: 'textbox', dictionary: { name: 'V1T_H' } }), /不上傳 HIS/);
-  assert.throws(() => add(tab, { index: 0 }, { datatype: 'textbox', dicrole: 'tohis' }), /不上傳 HIS/);
+  // 頁籤：可綁字典（依角色上傳 HIS）；可參與計算
+  const tabDict = add(tab, { index: 0 }, { datatype: 'textbox', dictionary: { name: 'V1T_H' }, dicrole: 'puthis' });
+  assert.equal(tabDict.dicid, 'v1t-dic-1');
+  assert.equal(tabDict.dicrole, 'puthis');
+  assert.throws(() => add(tab, { index: 0 }, { datatype: 'textbox', dicrole: 'tohis' }), /需要綁定字典/);
   const tx = add(tab, { index: 1 }, { datatype: 'textbox' });
-  // 動態表格：tocalc 強制 false；不能放計算式／巨集
+  // 動態表格：不能綁字典；tocalc 強制 false；不能放計算式／巨集
+  assert.throws(() => add(tbl, { index: 0 }, { datatype: 'textbox', dictionary: { name: 'V1T_H' } }), /不上傳 HIS/);
+  assert.throws(() => add(tbl, { index: 0 }, { datatype: 'textbox', dicrole: 'tohis' }), /不上傳 HIS/);
   assert.throws(() => add(tbl, { index: 0 }, { datatype: 'textbox', tocalc: true }), /不能參與計算/);
   assert.throws(() => add(tbl, { index: 0 }, { datatype: 'label', format: 'formula', formula: '1 + 1' }), /計算式/);
   assert.throws(() => add(tbl, { index: 0 }, { datatype: 'action', action_script: 'SETVALUEBYID(1, 1)' }), /巨集/);
@@ -84,6 +88,7 @@ test('controls in cells: addressing, stream format, per-kind rules', () => {
   const f = out(d);
   const cell0 = f[0].item[0].item[0].item;
   assert.deepEqual(cell0.map(x => x.datatype), ['text', 'numberbox', 'newline', 'text', 'textbox'], '前面補換行、結尾不留換行');
+  assert.equal(f[1].item[0].item[0].dicrole, 'puthis', '頁籤欄位保留字典角色');
   assert.equal(f[1].item[1].item[0].tocalc, true);
   assert.equal(f[2].item[0].item[0].tocalc, false);
   assert.equal(f[2].item[0].item[0].dicrole, 'nohis');
@@ -112,13 +117,28 @@ test('controls in cells: addressing, stream format, per-kind rules', () => {
   assert.ok(t.form_validate({ draft_id: d }).warnings.some(w => w.code === 'W_EMPTY_AREA' && /劑量/.test(w.message)));
 });
 
+test('tab fields bound only by name warn that the editor keeps them nohis (W_TAB_DICT_BY_NAME)', () => {
+  const d = newDraft('頁籤字典');
+  const tab = t.form_add_area({ draft_id: d, type: 'tab2', titles: ['一'] }).area_itemid;
+  const form = t.form_add_area({ draft_id: d, type: 'form' }).area_itemid;
+  const add = (area, cell, name) => t.form_add_control({ draft_id: d, area_itemid: area, cell, control: { datatype: 'textbox', dictionary: { name, comment: '測試' } } });
+  const pending = add(tab, { index: 0 }, 'V1T_NEW_TAB');
+  assert.equal(pending.dicrole, 'tohis');
+  const outside = add(form, undefined, 'V1T_NEW_FORM');
+  const bound = add(tab, { index: 0 }, 'V1T_H');
+  const hit = t.form_validate({ draft_id: d }).warnings.filter(w => w.code === 'W_TAB_DICT_BY_NAME');
+  assert.deepEqual(hit.map(w => w.itemid), [pending.itemid], '只提醒頁籤內只有名稱的欄位');
+  assert.ok(bound.dicid);
+  assert.ok(outside.itemid);
+});
+
 test('imported forms: existing tables and tabs accept new controls; cell rules check original items as warnings', () => {
   const form = [
     { itemtype: 'form', authread: ['doctor'], authwrite: ['doctor'], gettext: true, item: [{ datatype: 'text', datavalue: 'x' }], itemid: '1' },
     { itemtype: 'tab1', authread: ['doctor'], authwrite: ['doctor'], gettext: true, item: [
       { itemtype: 'td', datatitle: '甲', item: [{ ...model.buildControl(3, { datatype: 'textbox' }), dicrole: 'tohis', dictionary: 'X', dicid: 'abc' }] }], itemid: '2' },
     { itemtype: 'table2', authread: ['doctor'], authwrite: ['doctor'], gettext: true, item: [
-      { itemtype: 'td', datatitle: '列', item: [model.buildControl(5, { datatype: 'textbox' })] }], itemid: '4' },
+      { itemtype: 'td', datatitle: '列', item: [{ ...model.buildControl(5, { datatype: 'textbox' }), dicrole: 'tohis', dictionary: 'X', dicid: 'abc' }] }], itemid: '4' },
     { itemtype: 'javascript', content: '' },
     { itemtype: 'iot', editorver: '1.6', sheetid: 's', templateID: 's', d_url: '', modifiedUser: 'u', modifiedDept: '', modifiedDate: 1 }
   ];
@@ -126,7 +146,9 @@ test('imported forms: existing tables and tabs accept new controls; cell rules c
   const r = t.form_import({ source_path: 'imp.json', name: '匯入改版', dept_no: 'TEST0' });
   const v = t.form_validate({ draft_id: r.draft_id });
   assert.equal(v.valid, true, '原表單既有問題只列 warning');
-  assert.ok(v.warnings.some(w => w.code === 'E_CELL_DICT' && /原表單既有/.test(w.message)));
+  const cellDict = v.warnings.filter(w => w.code === 'E_CELL_DICT');
+  assert.equal(cellDict.length, 1, '頁籤內綁字典不再列為問題，只有動態表格');
+  assert.match(cellDict[0].message, /#5：動態表格.*原表單既有/);
   assert.ok(v.warnings.some(w => w.code === 'E_TABLE_TOCALC' && /原表單既有/.test(w.message)));
   const a = t.form_add_control({ draft_id: r.draft_id, area_itemid: 2, cell: { index: 0 }, label_text: '新：', control: { datatype: 'numberbox', minval: 0, maxval: 9 } });
   assert.equal(a.itemid, 6);

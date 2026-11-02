@@ -23,7 +23,7 @@ function dictionaryOf(c, idx, draft) {
   const e = (c.dicid && entries.find(x => x.id === c.dicid)) || null;
   const pend = (draft.pendingDictionaries || []).find(p => p.name === c.dictionary);
   if (e) { const x = dc.enrich(e, idx.deptNo); return { id: x.id, name: x.dicName, level: x.level, desc: x.desc || '', memo: x.memo || null, fhir: x.fhir || [], memo_by: x.memo_by || '', pending: false }; }
-  if (pend) return { id: '', name: pend.name, level: '', desc: pend.comment || '', memo: pend.memo || null, fhir: [], pending: true };
+  if (pend) return { id: '', name: pend.name, level: '', desc: pend.comment || '', memo: pend.memo || null, fhir: pend.fhir || [], pending: true };
   return { id: c.dicid || '', name: c.dictionary || '', level: '', desc: '', memo: null, fhir: [], pending: false, unknown: true };
 }
 
@@ -76,11 +76,13 @@ export function fieldMap(draft, idx, policy = {}) {
     if (n.required) roles.push('必填');
     if (!roles.length && !['action', 'action2'].includes(n.datatype)) roles.push('使用者輸入');
     const min = n.minval !== undefined && n.minval !== '' ? String(n.minval) : '', max = n.maxval !== undefined && n.maxval !== '' ? String(n.maxval) : '';
-    const unit = unitOf(caption) || (dict && dict.memo && dict.memo.unit) || '';
+    // 單位的優先順序：form_update_control 設定的（draft.units）→ 說明文字推得 → 字典補述
+    const unitSet = (draft.units || {})[id] || '', unitCaption = unitOf(caption), unitMemo = (dict && dict.memo && dict.memo.unit) || '';
+    const unit = unitSet || unitCaption || unitMemo;
     return {
       itemid: Number(n.itemid), caption, datatype: n.datatype,
       area: { itemid: node.itemid !== undefined ? String(node.itemid) : '', type: node.itemtype, label: AREA_LABEL[node.itemtype] || node.itemtype, title: area.title || '' },
-      ...(opts.length && { options: opts }), ...(min || max ? { min, max } : {}), ...(unit && { unit }),
+      ...(opts.length && { options: opts }), ...(min || max ? { min, max } : {}), ...(unit && { unit }), unit_source: unitSet ? 'set' : unitCaption ? 'caption' : unitMemo ? 'memo' : 'none',
       ...(n.format && { format: n.format }), required: !!n.required, tocalc: n.tocalc !== false, dicrole: n.dicrole || 'nohis',
       dictionary: dict, refs_out: out, refs_in: inn, ai: aiRole.get(id) || [],
       derived: {
@@ -118,7 +120,7 @@ export function refChecks(fields, refs, { formula, samples } = {}) {
     const key = `A${id}`, who = `${key}「${f.caption || f.dictionary.name}」`, m = f.dictionary.memo;
     if (!m) { ref_dictionary[key] = { dictionary: f.dictionary.name }; warn('W_REF_NO_MEMO', `${who} 綁的字典「${f.dictionary.name}」沒有補述，無法確認單位與範圍`); continue; }
     ref_dictionary[key] = { dictionary: f.dictionary.name, ...Object.fromEntries(['unit', 'range', 'type', 'calx', 'llm'].filter(k => m[k]).map(k => [k, m[k]])) };
-    const unit = unitOf(f.caption);
+    const unit = f.unit_source === 'set' ? f.unit : unitOf(f.caption);
     const cmp = unit && m.unit ? compareUnits(unit, m.unit) : { kind: 'same' };
     if (cmp.kind === 'convertible') warn('W_REF_UNIT_MISMATCH', `${who} 的單位是 ${unit}，字典補述是 ${m.unit}（1 ${unit} = ${cmp.factor} ${m.unit}）：請確認計算式的換算`);
     else if (cmp.kind === 'different') warn('W_REF_UNIT_MISMATCH', `${who} 的單位是 ${unit}，字典補述是 ${m.unit}，兩者不是同一種量，不能直接換算`);

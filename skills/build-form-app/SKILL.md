@@ -11,6 +11,8 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 
 # build-form-app
 
+> **不要 `cd`**：工作區＝工作目錄，`.strucmed/`、hooks、`preview.mjs` 都靠它找檔案。Bash 一律寫絕對路徑（`<workspace>/.strucmed/…`），`cd` 之後 hook 會找不到定稿檔。
+
 規則：`references/ModelWhitelist.md`、`references/SecurityInvariants.md`；B2 流程：`references/AppBuildWorkflow.md`；閘門：`references/Gates.md`（G4）。
 
 ## B1：HIS 內執行、AI 走 LlmGateway（執行清單，不產生程式碼）

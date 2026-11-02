@@ -105,6 +105,15 @@ export function refsTo(draft, itemid) {
   return out;
 }
 
+// 區塊內放控制項的串流：文字區塊本身、固定表格的每一格、頁籤與動態表格的每一格。圖形等區塊回空陣列
+export function streamsOf(a) {
+  if (!a.imported && !a.structured) return [a.items];
+  const n = a.area;
+  if (n.itemtype === 'form') return [n.item];
+  if (n.itemtype === 'formtable') return n.item.flatMap(r => r.item.map(c => c.item));
+  return ['tab1', 'tab2', 'table1', 'table2'].includes(n.itemtype) ? n.item.map(c => c.item) : [];
+}
+
 // 可在其中新增控制項的清單。
 //   文字區塊 form：整個區塊；固定表格：cell {row, col}；頁籤／動態表格：cell {index}。
 // 回傳 { items, type, where, tail }：tail=true 表示這個串流「結尾不留換行」（編輯器的 Quill／舊版格子都是如此），

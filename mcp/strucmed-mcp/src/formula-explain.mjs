@@ -6,8 +6,10 @@
 import { tokenize, check } from './calx.mjs';
 import { walk, isControl } from './formtree.mjs';
 
+// 欄位名稱：說明文字去掉結尾的冒號。開頭有空白是固定表格的寫法：前一格的單位接這一格的名稱（「 cm 體重：」，references/LayoutPatterns.md §3），取最後一段；
+// 其他情形單一空白是名稱的一部分（「BMI 計算」），只有兩個以上空白或全形空白才視為分段
 const lastPiece = s => {
-  const parts = String(s).replace(/[：:＝=]\s*$/, '').trim().split(/\s+/).filter(Boolean);
+  const parts = String(s).replace(/[：:＝=]\s*$/, '').trim().split(/^\s/.test(String(s)) ? /\s+/ : /\s{2,}|　+|\t+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1].replace(/[：:]$/, '') : '';
 };
 

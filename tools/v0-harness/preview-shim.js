@@ -63,7 +63,7 @@
   };
 
   // ── 橫幅 ──
-  var bar;
+  var bar, info;
   function render() {
     if (!document.body) return;
     if (!bar) {
@@ -71,6 +71,13 @@
       bar.id = 'strucmed-preview-bar';
       bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#fff8e1;border-top:2px solid #f9a825;' +
         'font:13px/1.5 sans-serif;color:#333;padding:6px 12px;max-height:40vh;overflow:auto';
+      // 審閱工具列獨立一層：info 每 1.5 秒重畫，按鈕與 review-mode.js 的輸入框放在裡面會被洗掉
+      var tools = document.createElement('div');
+      tools.id = 'strucmed-review-tools';
+      tools.innerHTML = '<button type="button" data-review-toggle="review">審閱</button> <button type="button" data-review-toggle="text">文字輸出</button>';
+      info = document.createElement('div');
+      bar.appendChild(tools);
+      bar.appendChild(info);
       document.body.appendChild(bar);
     }
     var blocked = window.__blocked || [];
@@ -82,7 +89,7 @@
     });
     var summary = Object.keys(kinds).map(function (k) { return k + ' ×' + kinds[k]; }).join('、') || '無';
     var esc = function (s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
-    bar.innerHTML = '<b>離線預覽（不連線、不存檔）</b>｜以 HIS 端 runtime（TempHtml）呈現；網路由 CSP 與 guard 封鎖。' +
+    info.innerHTML = '<b>離線預覽（不連線、不存檔）</b>｜以 HIS 端 runtime（TempHtml）呈現；網路由 CSP 與 guard 封鎖。' +
       '<br>已封鎖的請求：' + esc(summary) +
       (simulated.length ? '<br>已模擬（未實際呼叫）：<ul style="margin:2px 0 0 18px;padding:0">' +
         simulated.map(function (s) { return '<li>' + esc(s.kind) + '：' + esc(s.detail) + '</li>'; }).join('') + '</ul>' : '');

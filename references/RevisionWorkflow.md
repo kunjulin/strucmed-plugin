@@ -19,13 +19,14 @@
    - `form_update_meta`：名稱、捷徑、作業別、Info
    - `form_update_control`：說明文字、預設值、必填、選項、字典；計算式、HIS 參照、巨集腳本（v0.2，見 §3b）
    - `form_add_control`：只能加在文字區塊。itemid 自動接續原表單最大值
-   - `form_add_area`：新增文字區塊
+   - `form_add_area`：新增文字區塊；`after_itemid` 插在指定區塊之後
+   - `form_move_control`：搬欄位（itemid 不變）；`form_update_area`：改區塊標題；`form_remove_area`：刪空區塊
    - `form_remove_control`：兩段式確認；仍被參照的控制項會被拒絕，須先改參照方
 4. `form_validate`：
    - **本次改到的面向**有問題 → error，必須修正。
    - 原表單既有的問題 → warning（標示「原表單既有」）。要逐條告知使用者，但不擋輸出。
    - `W_CUSTOM_JS`：原表單有自訂 JS，本工具未審查。要明確告知使用者。
-5. `form_export` 兩段式。manifest 會列出「改版自」與本次改動的控制項（✎）。
+5. 定稿 G2 後 `form_export` 兩段式。manifest 會列出「改版自」與本次改動的控制項（✎）。
 
 **v1 限制**（告訴使用者，請其匯入後在編輯器調整）：
 - 圖形、雙欄區塊內**不能新增**控制項（可以修改既有控制項的屬性）。表格與頁籤見 §3c。

@@ -10,7 +10,7 @@
 // 本模組不連線、不碰倉儲；只做解析、組裝與檢查，供 dictionary.mjs、tools.mjs、export.mjs 與 online 工具共用。
 import crypto from 'node:crypto';
 import { E, fail } from './errors.mjs';
-import { firstUnstorable } from './cp950.mjs';
+import { firstUnstorable, SUBSTITUTES } from './cp950.mjs';
 
 export const MAX_CHARS = 1800;                 // 平台 V2:DictionaryCommentMax 預設值；正式倉儲實測中文 1800 字完整保留
 export const DESC_MAX = 300;
@@ -112,8 +112,8 @@ export function build(parts = {}, { forceJson = false } = {}) {
 // 與平台 DictComment.CheckStorable 相同：只允許 ASCII 與 CP950 存得下的字（cp950.mjs），其他一律拒絕並指出字元、碼位與位置。
 export function checkStorable(text, what = '字典說明') {
   const bad = firstUnstorable(s(text));
-  if (bad) fail(E.INVALID_INPUT, `${what}含有倉儲（Big5／CP950）無法保存的字元「${bad.char}」（${bad.code}，第 ${bad.index + 1} 字）；會被換掉並可能弄壞整段內容。請改用文字，例如「²」寫成「^2」或「平方」，emoji 請刪除`,
-    { char: bad.char, code: bad.code, index: bad.index });
+  if (bad) fail(E.INVALID_INPUT, `${what}含有倉儲（Big5／CP950）無法保存的字元「${bad.char}」（${bad.code}，第 ${bad.index + 1} 字）；會被換掉並可能弄壞整段內容。${SUBSTITUTES[bad.char] ? `建議改成「${SUBSTITUTES[bad.char]}」` : '請改用文字，例如「²」寫成「^2」或「平方」，emoji 請刪除'}`,
+    { char: bad.char, code: bad.code, index: bad.index, ...(SUBSTITUTES[bad.char] && { suggestion: SUBSTITUTES[bad.char] }) });
   return text;
 }
 
