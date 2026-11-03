@@ -153,3 +153,30 @@ test('gate: online_dictionary_memo_batch checks memo-plan.md when present, other
   // Antigravity 格式也涵蓋
   assert.equal(decision(run(AGY_HOOK, agy('online_dictionary_memo_batch', { items: [], confirm_token: 't', draft_id: DRAFT }), { env: { STRUCMED_WORKSPACE: workspace('pending') } })).decision, 'deny');
 });
+
+test('verify-plan prepare 自己填「## 核准」段：Status、Approved-Revision、Approved-At、Approved-By（3.9.1 實跑 F-09）', () => {
+  const ws = workspace('pending');
+  const plan = path.join(ws, '.strucmed', 'plans', DRAFT, 'publish-plan.md');
+  fs.writeFileSync(plan, PLAN.replace('Status: Approved\nApproved-Revision: 1\n', 'Status: Pending          ← Pending | Approved\nApproved-Revision:\nApproved-At:\nApproved-By:\n\n備註：核准段之後的文字保留\n'));
+  const before = Date.now();
+  const r = spawnSync(process.execPath, [VERIFY, 'prepare', plan, '--by', 'OL5'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout);
+  const out = JSON.parse(r.stdout);
+  const text = fs.readFileSync(plan, 'utf8');
+  const section = text.split(/^## 核准$/m)[1];
+  assert.match(section, /^Status: Approved$/m);
+  assert.match(section, /^Approved-Revision: 1$/m);
+  assert.match(section, /^Approved-By: OL5$/m);
+  const at = section.match(/^Approved-At: (.+)$/m)[1];
+  assert.equal(at, out.approved_at);
+  assert.ok(Date.parse(at) >= before - 1000 && Date.parse(at) <= Date.now() + 1000, '時間是執行當下');
+  assert.equal((section.match(/^Status:/gm) || []).length, 1, '舊的 Status 行換掉，不重複');
+  assert.match(section, /備註：核准段之後的文字保留/);
+  assert.equal(JSON.parse(spawnSync(process.execPath, [VERIFY, 'verify', plan], { encoding: 'utf8' }).stdout).ok, true, '雜湊是填完之後的內容');
+  const tool_input = { draft_id: DRAFT, confirm_token: 't' };
+  assert.equal(run(CLAUDE_HOOK, { tool_name: 'mcp__plugin_strucmed_strucmed__online_template_create', tool_input, cwd: ws }).status, 0, 'hook 放行');
+  // 沒有「## 核准」段：加在檔尾
+  fs.writeFileSync(plan, PLAN.split('## 核准')[0]);
+  assert.equal(spawnSync(process.execPath, [VERIFY, 'prepare', plan]).status, 0);
+  assert.match(fs.readFileSync(plan, 'utf8'), /\n## 核准\nStatus: Approved\nApproved-Revision: 1\nApproved-At: \S+\nApproved-By: local\n$/);
+});

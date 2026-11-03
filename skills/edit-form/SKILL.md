@@ -41,7 +41,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 - `form_add_control`：只能加在文字區塊與表格／頁籤的格子；itemid 自動接續原表單最大值；`after_itemid` 指定位置
 - `form_add_area`：新增文字、表格、頁籤區塊（`references/TablesTabsRules.md`）；`after_itemid` 插在指定區塊之後
 - `form_move_control`：搬欄位到別的區塊或位置（itemid 不變，參照不受影響）
-- `form_update_area`：改區塊標題、可見標題、隱藏；`form_remove_area`：刪空區塊
+- `form_update_area`：改區塊標題、可見標題、隱藏；`titles` 改頁籤名稱（HIS 文字鍵）、增減頁籤；`form_remove_area`：刪空區塊
 - `form_remove_control`：兩段式確認；仍被參照的控制項會被拒絕，須先改參照方
 
 `form_validate`：**本次改到的面向**有問題 → error，必須修正；原表單既有的問題 → warning（標示「原表單既有」），在 G2 逐條列出但不擋輸出；`W_CUSTOM_JS`：原表單有自訂 JS，本工具未審查，G2 要明確告知。計算式帶 `draft_id` 跑 `formula_check`，依 `ref_dictionary` 與 `W_REF_*`、`W_SAMPLE_OUT_OF_RANGE` 確認。

@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.8.0）
+# strucmed-mcp（v2.9.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.8.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.9.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -139,7 +139,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 |---|---|
 | `dictionary_load` / `dictionary_search` | 載入字典頁 Export 的 CSV（`csv_path` 或 `csv_text` 擇一）、搜尋（編輯器相同的科部比對規則；同範圍內體系 → 本科 → 次專 → 科部；fuzzy 也搜 desc 與 memo）。CSV 中 JSON 說明被逗號斷欄時回 `W_DICT_CSV_JSON_BROKEN` |
 | `form_fields` | 字典助手：把 draft 解析成逐欄事實（說明文字、datatype、選項、範圍、單位、字典與目前補述、誰參照誰、AI 資料流），`derived` 是推得的補述草稿（func／type／range／unit）；`unit_source` 標明單位來源：`set`、`caption`、`memo`、`none` |
-| `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `confidence`（high 可自動選入計畫）、`reasons` 與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；`include_other` 列出他科字典 |
+| `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `confidence`（high 可自動選入計畫）、`reasons`（含型別或單位不一致時為什麼降為 low）與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；預設 5 筆、memo 只回 meaning，`full_memo:true` 回完整補述；`include_other` 列出他科字典 |
 | `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度；只帶 `draft_id`＋`itemid` 時檢查 draft 內的補述；存不下的字元回 `W_NON_BIG5` 附替代建議 |
 | `dictionary_create` | 規劃新字典（不寫入）；`comment`＝desc、`memo`＝補述，建立時寫進字典 JSON（`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo` 相同） |
 | `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2；重建時帶 `from_draft_id`，舊 draft 的待新建字典（desc、memo、fhir）與既有綁定依名稱帶過來 |
@@ -147,7 +147,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字（頂層 `label_text`）、預設值、必填、選項、字典、單位（`changes.unit`，只存 draft，優先於說明文字）。`changes` 的未知鍵回 `E_UNKNOWN_KEY`，什麼都不改 |
 | `form_remove_control` | **v1**：兩段式移除控制項（仍被參照時拒絕；子項一併移除） |
 | `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字；`after_itemid` 插在指定區塊之後（0＝最前面） |
-| `form_update_area` | 改區塊 `title`（有可見標題行時一起改）、`visible_title`、`hidden`；原表單區塊的權限不改 |
+| `form_update_area` | 改區塊 `title`（有可見標題行時一起改，依標記找，不限第一行）、`visible_title`、`hidden`；`titles` 改頁籤（tab1／tab2）的頁籤名稱與動態表格的欄列標題：完整清單，同名保留、其餘依序改名、多的新增、少的刪除（有控制項時拒絕並列出 itemid），回 `mapping`；原表單區塊的權限不改 |
 | `form_remove_area` | 刪空區塊，不需要 confirm；還有控制項、說明文字或被連動引用時拒絕 |
 | `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述 |
 | `form_move_control` | 搬控制項（連同說明文字與同一行的後綴文字）到別的區塊、格子或位置，itemid 不變、參照不受影響；`after_itemid` 0＝最前面；搬進動態表格的限制同 `form_add_control` |
@@ -193,6 +193,7 @@ cd mcp/strucmed-mcp && npm test
 - `test/review.test.mjs`：預覽審閱：serve 的 `/__review`（Host、Origin、Content-Type、大小、draft_id、seq 遞增、latest 覆寫）、`/__preview` 注入 meta、meta 內容與沿用、`form_review_read`（`suggested_calls` 保留連動、`memo_items`、`W_REVIEW_STALE`、`W_REVIEW_OPTION_REF`）、字典 CSV 往返（逗號、引號、換行、Excel 保護、有無 BOM、action 五種、`id` 被改）、`W_HIS_TEXT_KEYS`。
 - `test/no-silent.test.mjs`：不靜默：`E_UNKNOWN_KEY`、`additionalProperties:false`、`changes.unit` 與 `unit_source`、`W_DICT_DUP_WRITE`、M14 小修、線上寫入工具的描述開頭。
 - `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、工作目錄固定、`runtime_web` 的尋找順序。
+- `test/v392.test.mjs`：3.9.1 實跑的發現：`form_update_area(titles)` 改名、增減、調換頁籤與拒絕刪除有欄位的頁籤、可見標題行被搬動後仍找得到（`W_BEFORE_TITLE`）、`dictionary_suggest` 預設 5 筆與 `full_memo`、型別不一致的降級理由。
 - `test/rebuild.test.mjs`：`form_move_control`、`form_update_area`、`form_remove_area`、`form_add_area(after_itemid)`、`from_draft_id`、`W_APPLIED_SEQ_RESET`、補述自動檢查、`W_NON_BIG5`、`formulas_from_review`。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。
 - `test/trial-feedback.test.mjs`：3.5.0 試用回饋：`form_import(for_update)` 與 `metaSet`、`formdiff`（說明文字、控制項、JS、iot，排除伺服器補回的欄位）、`visible_title` 與 `W_AREA_NO_VISIBLE_HEADING`、空白巨集腳本 `E_ACTION_EMPTY`、`formula_check` 的 `W_KIND_MISMATCH`。

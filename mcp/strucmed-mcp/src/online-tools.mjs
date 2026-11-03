@@ -45,6 +45,10 @@ function summarize(pkg, chars) {
     presets: Array.isArray(pkg && pkg.presets) ? pkg.presets.length : 0, dictionaries: Array.isArray(pkg && pkg.dictionaries) ? pkg.dictionaries.length : 0, chars };
 }
 
+// token 的科部取自登入時帶的 dept_no（online_login 參數或登入頁的科部欄），不是由 HIS 帳號推得（平台 V2NoteEndpoints.VerifyAsync）
+const NO_DEPT = 'W_NO_DEPT：這次登入沒有帶科部，所以 dept_no 是空白（科部取自登入時填的科部代碼，不是由 HIS 帳號推得）。' +
+  '字典比對、科部資料夾與 form_create 都需要科部：請 online_logout 後重新 online_login，由使用者在登入頁填科部（要自己輸入，淡色預填字不會送出）';
+
 export const ONLINE_TOOLS = [
   {
     name: 'online_login',
@@ -58,7 +62,11 @@ export const ONLINE_TOOLS = [
     async handler({ dept_no, hospital }) {
       if (dept_no !== undefined) checkCode(dept_no, 'dept_no');
       if (hospital !== undefined) checkCode(hospital, 'hospital');
-      return online.login({ dept_no, hospital });
+      const r = await online.login({ dept_no, hospital });
+      // 瀏覽器已有 SSO 時不顯示登入頁，或使用者沒填登入頁的科部欄（預填值只是提示字）：登入成功但沒有科部，在這裡就講清楚，不等 online_me
+      if (r.logged_in && !r.dept_no) return { ...r, warnings: [NO_DEPT],
+        next: '請使用者 online_logout 後重新 online_login，並在登入頁的「科部」欄位自己輸入科部代碼（淡色的預填字只是提示，不會送出）' };
+      return r;
     }
   },
   {
@@ -111,9 +119,7 @@ export const ONLINE_TOOLS = [
       const r = await online.call('GET', 'api/v2/me', {}, '讀取登入者');
       const out = { user_id: String(r.userId || ''), name: String(r.name || ''), dept_no: String(r.deptNo || ''),
         folders: r.folders && typeof r.folders === 'object' ? r.folders : {}, is_admin: !!r.isAdmin, token_expires_at: r.tokenExpiresAt || null };
-      // token 的科部取自登入時帶的 dept_no（online_login 參數或登入頁的科部欄），不是由 HIS 帳號推得（平台 V2NoteEndpoints.VerifyAsync）
-      if (!out.dept_no) out.warnings = ['W_NO_DEPT：這次登入沒有帶科部，所以 dept_no 是空白（科部取自登入時填的科部代碼，不是由 HIS 帳號推得）。' +
-        '字典比對、科部資料夾與 form_create 都需要科部：請 online_logout 後重新 online_login，由使用者在登入頁填科部'];
+      if (!out.dept_no) out.warnings = [NO_DEPT];
       return out;
     }
   },

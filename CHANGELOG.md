@@ -14,11 +14,43 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.9.2（MCP 2.9.0）— 未發佈：頁籤改名不必重建、HIS 文字鍵在需求階段問
+
+3.9.1 以市集版完整實跑一張頁籤表單（2026-11-03，7.5／10）後的調整。主流程 2 次重建都是因為頁籤名稱不能改：使用者在預覽頁要改 HIS 文字鍵，就只能重建。發現編號對應實跑紀錄的 F-01～F-13。MCP 新增工具參數（`form_update_area` 的 `titles`、`dictionary_suggest` 的 `full_memo`），所以升 2.9.0。
+
+平台配合（另開）：登入頁的科部欄位改成必填、用 `value` 預填（F-01），瀏覽器已有 SSO 時不要靜默核發沒有科部的 token（F-02）。本版只在 MCP 與 skill 端把狀況講清楚。
+
+尚未實測：本版的完整流程、頁籤改名後的 HIS 文字輸出與上架。
+
+**少重建**
+- F-03：`form_update_area` 新增 `titles`，可改頁籤（tab1／tab2）名稱、增減頁籤、調換順序，動態表格的欄或列標題也用同一個參數。`titles` 是改完後的完整清單：名稱相同的保留原頁籤，其餘依序改名，多的新增空白頁籤，少的刪除。要刪的頁籤裡還有控制項就拒絕並列出 itemid，什麼都不改。回傳 `mapping` 列出每個頁籤原本是哪一個；有 `his_text_keys` 而改名後對不上時回 `W_HIS_TEXT_KEYS`。「HIS 文字鍵不對」改成審閱迴圈內直接處理，不再重建。工具描述、`references/TablesTabsRules.md`、`agents/form-builder.md` 第 3 步、`create-form` 審閱表、`edit-form`、`RevisionWorkflow.md` 一併更新。
+- F-06：`form_update_area` 依標記（區塊的 visible_title 與標題文字）找可見標題行，不再只看第一行：欄位被 `form_move_control(after_itemid: 0)` 搬到最前面後，改標題仍會改到標題行，`visible_title: false` 也拿得掉。`form_move_control` 放到可見標題行之前時回 `W_BEFORE_TITLE`，並說明怎麼讓標題回到第一行。
+
+**需求與草案**
+- F-04：`create-form` 階段 1 的需求加「HIS 文字輸出的鍵名」，有頁籤或要回 HIS 時必問，建議鍵名＝頁籤名稱；`TablesTabsRules.md`、`form-planner` 寫明頁籤之後的區塊文字會併入最後一個鍵，以及怎麼分開。
+- F-07：`form-planner` 寫明「可見標題」只標在文字區塊；頁籤、固定表格、動態表格的標題放在前一個文字區塊的最後一行，或第一格控制項的說明文字。`form-builder` 遇到草案這樣寫時改放文字區塊並記到 Issues。
+- F-08：`form-builder` 的工具清單加 `form_fields`（`mcp__strucmed__` 與 `mcp__plugin_strucmed_strucmed__` 兩種前綴）。
+
+**閘門**
+- F-09：`scripts/verify-plan.mjs prepare` 自己把「## 核准」段填成 `Approved`，寫入 `Approved-Revision`、`Approved-At`（執行當下的時間）與 `Approved-By`，再以填好的內容算雜湊、寫 sidecar。`publish-form`、`dictionary-assist`、`Gates.md`、`PublishWorkflow.md` 改成「使用者核准後只執行 prepare」，不再要求手填核准段。
+
+**字典助手**
+- F-11：`dictionary_suggest` 預設回 5 筆（原本 8 筆），候選的 `memo` 只回 `meaning`，引用方式仍在 `cite`；新參數 `full_memo: true` 回完整補述。`dictionary-annotator`、`dictionary-assist` 寫 `interop` 時帶 `full_memo: true`。
+- F-10：補述的型別或單位與欄位不一致時，`reasons` 多一條「補述型別（…）與欄位不一致，信心降為 low」，說明同一本字典用說明文字查是 high、用 draft＋itemid 查是 low 的原因。
+
+**登入**
+- F-01（配合）：`online_login` 成功但 `dept_no` 空白時，回傳就帶 `W_NO_DEPT` 與 `next`（請 `online_logout` 後重登並在登入頁填科部），已登入時再呼叫也一樣，不必等到 `online_me`。`connect-strucmed` 寫明科部要自己輸入、淡色預填字不會送出。
+
+**不處理**
+- F-02：屬平台（授權端）。F-05：預覽頁空送時頁面先攔截，`W_REVIEW_EMPTY` 是後備，不修。F-12、F-13：資訊。
+
 ## 3.9.1（MCP 2.8.0）— 2026-11-02：不靜默、少重建、預覽頁是唯一的審閱介面
 
 3.9.0 實跑 BMI 與 MMSE 兩張表單後的調整。實測：BMI 27 分；MMSE 扣除等待 1 小時 17 分、3 次重建、使用者輸入 12 次；兩張都只有 G2 一個閘門。使用者在預覽頁用眼睛發現問題這件事成立，時間主要花在重建、工具靜默與環境陷阱。
 
 需要平台配合：授權登入頁的科部欄位。部署前 `W_NO_DEPT` 會要使用者在登入頁填一個還不存在的欄位，所以**平台要先上線**。
+
+發佈（2026-11-02）：strucmed-plugin `7ea79b5`（tag `v3.9.1`，由 strucmed-skill tag `v3.9.1-src`＝`775d750` 產生；3.9.0 隨本版一起發佈）。發佈時：`release-plugin.mjs` ok、222 檔、掃描無發現；`npm test` 208 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.309 執行，通過。平台兩站（LVAIW `/strucmed`、cgmh.ddns.net）已先部署登入頁科部欄位與頁籤 key-value。發佈前停掉占用 8765、8766 的舊 harness。尚未：從市集更新與 3.9.1 完整流程實跑。
 
 尚未實測：3.9.1 的完整流程、`from_draft_id` 與 CSV 匯回的重建、頁籤欄位實際寫入倉儲、auto mode 下的 allowlist、從市集更新。
 

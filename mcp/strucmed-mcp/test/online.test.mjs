@@ -49,7 +49,7 @@ function issue(withUser) {
   const a = `acc-${++tokenSeq}-xyz`, r = `ref-${tokenSeq}-xyz`;
   validAccess.add(a); validRefresh.add(r); issued.push(a, r);
   return { ok: true, accessToken: a, refreshToken: r, expiresAt: '2026-10-19T12:00:00Z',
-    userInfo: withUser ? { userId: USER_ID, name: '測試醫師', deptNo: 'APP', loc: 'LK' } : null };
+    userInfo: withUser ? { userId: USER_ID, name: '測試醫師', deptNo: behavior.noDept ? '' : 'APP', loc: 'LK' } : null };
 }
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 const err = (res, status, code, message) => json(res, status, { ok: false, error: { code, message } });
@@ -448,6 +448,24 @@ test('online_me explains an empty dept_no (試用回饋 #11)', async () => {
   const r = await mcp.call('online_me', {});
   assert.equal(r.data.dept_no, '');
   assert.match(r.data.warnings[0], /^W_NO_DEPT：.*重新 online_login.*登入頁填科部/);
+  delete behavior.noDept;
+});
+
+test('online_login 成功但科部空白時當場提示登出重登並在登入頁填科部（3.9.1 實跑 F-01）', async () => {
+  await mcp.call('online_logout', {});
+  behavior.noDept = true;
+  try {
+    const r = await browserLogin(mcp, {});
+    assert.equal(r.data.logged_in, true);
+    assert.equal(r.data.dept_no, '');
+    assert.match(r.data.warnings[0], /^W_NO_DEPT：/);
+    assert.match(r.data.next, /online_logout.*online_login.*登入頁.*科部/);
+    const again = await mcp.call('online_login', {});
+    assert.equal(again.data.already, true);
+    assert.match(again.data.warnings[0], /^W_NO_DEPT：/, '已登入時也提示');
+  } finally { delete behavior.noDept; await mcp.call('online_logout', {}); }
+  const ok = await browserLogin(mcp, { dept_no: 'APP' });
+  assert.equal(ok.data.warnings, undefined);
 });
 
 test('online_features aggregates health, runtime features and llm-config without the gateway token', async () => {

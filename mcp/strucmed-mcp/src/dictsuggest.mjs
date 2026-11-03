@@ -89,6 +89,8 @@ export function suggest(idx, field, opts = {}) {
     if (used) add(Math.min(10, Math.round(2 * Math.log2(1 + used))), `${used} 張表單在用`);
     if (!e.memo) add(-3, '沒有補述（引用前建議先補）');
     if (e.alias_of) reasons.push(`別名：綁定時會改綁 ${e.alias_of}`);
+    // 型別或單位衝突時信心一律 low（名稱再像也不選）：寫明原因，免得同一本字典用 caption 查是 high、用 draft＋itemid 查是 low 卻看不出為什麼
+    if (typeConflict || unitConflict) reasons.push(`補述${[typeConflict && `型別（${m.type}）`, unitConflict && `單位（${m.unit}）`].filter(Boolean).join('與')}與欄位不一致，信心降為 low；若是補述寫錯，改補述後再查`);
     results.push({
       id: e.id, name: e.dicName, dic_type: e.dicType, level, desc: e.desc || '', memo: e.memo || null, fhir: e.fhir || [], alias_of: e.alias_of || '', used_by: used,
       score, confidence: confidence({ sameName, conflict: typeConflict || unitConflict, level, score }), reasons,

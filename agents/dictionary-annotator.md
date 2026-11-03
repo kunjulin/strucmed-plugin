@@ -17,7 +17,7 @@ tools: Read, Write, mcp__strucmed__form_fields, mcp__strucmed__dictionary_search
 2. `form_fields`（`draft_id`、`only: "dictionary"`）。不在本機索引的字典（`W_DICT_NOT_IN_INDEX`）用 `online_dictionary_search`（`scope: "all"`、`q`: 名稱）讀它的目前內容（不要帶 `update_index`，索引由 skill 管理）。
 3. 每本字典：
    - `online_dictionary_usage(dic_id)`：還有哪些表單在用（`usecase` 寫共通情境、`func` 寫共通角色）。
-   - `dictionary_suggest`（`draft_id`、`itemid`、`include_other: true`）：相似字典（同義、不同單位、不同選項集）寫進 `interop`。
+   - `dictionary_suggest`（`draft_id`、`itemid`、`include_other: true`、`full_memo: true`）：相似字典（同義、不同單位、不同選項集）寫進 `interop`。不帶 `full_memo` 時候選的 memo 只有 meaning，比不出單位與範圍。
    - 起草：**只補缺的欄位**；既有內容不改。覺得既有內容有誤時列「建議修改」：哪一格、原文、建議、理由。
    - `dictionary_memo_check`（`memo`＝要補的鍵、`dic_id`、`draft_id`、`itemid`）：error 必須修到沒有；warning 處理或在草稿寫理由。
 4. 寫草稿檔：每本一節，內容是 `online_dictionary_memo_batch` 可直接使用的 `items` 項目（JSON：`{ "dic_id": …, "memo": { 只放要補的鍵 }, "fhir": […]（有改才給）}`），再附一行人看的摘要與「建議修改」。最後一節是全部 `items` 的 JSON 陣列。

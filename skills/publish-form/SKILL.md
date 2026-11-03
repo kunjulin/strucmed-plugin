@@ -44,7 +44,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - 有 LLM／語音巨集：W_AI_DATAFLOW 必列（不需另行審查，但不可省略）。
 
    對話中呈現同一份內容（略去 `<!-- gate: … -->` 註解），一次 `AskUserQuestion`：核准（建議）／要求修改／取消，選項描述加「有疑問請先在對話問，不要在這裡選」。使用者在對話提問時回答後再問一次，定稿內容不重貼。
-5. **核准**：改「## 核准」為 Approved → `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user_id>`（離線 `--by local`）。沒有這一步，hooks 會阻擋第二次呼叫。不要自己把計畫標成 Approved；核准後不再改定稿檔。
+5. **核准**：使用者核准後執行 `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user_id>`（離線 `--by local`）。prepare 會自己把「## 核准」段填成 Approved、寫入核准時間與核准者，**不要手填** `Approved-At`／`Approved-By`。沒有這一步，hooks 會阻擋第二次呼叫。使用者沒有核准就不要執行 prepare；核准後不再改定稿檔。
 
 ## 執行
 

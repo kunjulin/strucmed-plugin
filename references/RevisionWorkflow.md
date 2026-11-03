@@ -20,7 +20,7 @@
    - `form_update_control`：說明文字、預設值、必填、選項、字典；計算式、HIS 參照、巨集腳本（v0.2，見 §3b）
    - `form_add_control`：只能加在文字區塊。itemid 自動接續原表單最大值
    - `form_add_area`：新增文字區塊；`after_itemid` 插在指定區塊之後
-   - `form_move_control`：搬欄位（itemid 不變）；`form_update_area`：改區塊標題；`form_remove_area`：刪空區塊
+   - `form_move_control`：搬欄位（itemid 不變）；`form_update_area`：改區塊標題，`titles` 改頁籤名稱、增減頁籤；`form_remove_area`：刪空區塊
    - `form_remove_control`：兩段式確認；仍被參照的控制項會被拒絕，須先改參照方
 4. `form_validate`：
    - **本次改到的面向**有問題 → error，必須修正。

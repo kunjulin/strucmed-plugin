@@ -147,8 +147,8 @@ Approved-By:
 
 - 雜湊涵蓋整份，內容都是確定值。**沒有修改不重寫**：核准後改任何一行都會讓核准失效（`hooks/gate-check.js` 與 `verify-plan.mjs` 相同）。
 - `Status: Ready` 才可核准；`Blocked` 要列出缺的輸入。
-- 核准：skill 把「## 核准」改為 `Approved`、填 `Approved-Revision`（＝目前 Revision）、`Approved-At`（ISO 時間）、`Approved-By`（`online_me.user_id` 或 `local`），然後執行
-  `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user>` 產生 sidecar `.approved-publish-plan.md`（sha256＋revision）。
+- 核准：使用者核准後，skill 只執行
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user>`（`online_me.user_id`，離線 `local`）。prepare 自己把「## 核准」段填成 `Approved`，寫入 `Approved-Revision`（＝目前 Revision）、`Approved-At`（執行當下的 ISO 時間）、`Approved-By`，再產生 sidecar `.approved-publish-plan.md`（sha256＋revision）。**核准段不要手填**：寫定稿檔時保持 `Pending` 與空白欄位。
 - 線上寫入的第二次呼叫由 hooks 檢查 sidecar；離線的 `form_export` 沒有 hook，同樣先呈現、先 prepare 再呼叫。
 - 要求修改：改 draft 或 CSV，重新取得 plan，`Revision` +1 重寫定稿檔再呈現；已核准的 sidecar 隨之失效。
 - 例外：`verify-plan.mjs` 與 `hooks/gate-check.js` 計算雜湊時排除「### 建置對照表」段（G4 的應用程式計畫與舊計畫檔用得到；定稿檔沒有這一段）。

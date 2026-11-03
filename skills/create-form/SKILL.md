@@ -50,7 +50,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 是否正式上架 | ✓ | 否 → 不設捷徑與作業別，資料夾預設 usr，**不問**這三項 |
 | 作業別 | 上架才問 | 門／住／急／手術／檢查／助手／All；**測試表單不設** |
 | 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
-| HIS 接收端需要的鍵 | 選填 | 表單文字要照固定 JSON 鍵（例 `Report`、`Impression`）回 HIS 時才填；帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對 |
+| HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
@@ -60,7 +60,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 選項 | 說明要講的規則 |
 |---|---|
 | 固定表格或文字區塊 | 欄位可綁字典、寫 key-value，他表單引用得到；列數固定 |
-| 頁籤 | 欄位可綁字典、寫 key-value（包含沒切換到的分頁；被進一步選項隱藏的欄位不寫入） |
+| 頁籤 | 欄位可綁字典、寫 key-value（包含沒切換到的分頁；被進一步選項隱藏的欄位不寫入）；頁籤名稱是 HIS 文字輸出的鍵，頁籤後面的區塊文字併入最後一個鍵 |
 | 動態表格 | 可按＋加列，但列內欄位不綁字典、不寫 key-value、不參與計算，他表單引用不到；值仍在 XML 文件與報告文字 |
 
 同一本字典給兩個以上欄位寫入時，存檔只留第一個有值的欄位（`form_validate` 回 `W_DICT_DUP_WRITE`，不阻擋）。
@@ -102,8 +102,8 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 | 類別 | 做法 | 要不要問 |
 |---|---|---|
 | 可直接套用：`caption`、`options`、`default`、`required`、`memo`、`fhir` | 照 `suggested_calls` 依序呼叫；有 `then` 的先跑 `tool`（`dictionary_memo_check`），error 時不套用、列給使用者。回傳的 `memo_items`（既有字典的補述，draft 裡沒有）依 `dic_id` 合併寫進 `<workspace>/.strucmed/plans/<draft_id>/memo-items.json`，G2 一起寫入。`W_REVIEW_STALE` 的項目沒有產生呼叫：告訴使用者那一項看的是舊版。自己寫呼叫時：說明文字用 `form_update_control` 頂層的 `label_text`（`changes` 內沒有 caption），單位用 `changes.unit` | 不問 |
-| 需要判斷：`comments`（欄位、區塊、整體） | 能一對一轉成工具呼叫的直接做：加欄位 `form_add_control`（`after_itemid`）、換型別或改計算式 `form_update_control`（先 `formula_check`）、改名 `form_update_meta`、搬欄位 `form_move_control`（`to_area_itemid`、`after_itemid`；itemid 不變，參照不受影響）、改區塊標題 `form_update_area`、插入區塊 `form_add_area`（`after_itemid`）、刪空區塊 `form_remove_area`（只能刪空區塊，不需確認）。要移除欄位：其他修改做完後 `form_remove_control` 第一次呼叫，plan 原樣列進本輪回報，同意後才帶 `confirm_token`（`SecurityInvariants.md` 第 2 條；token 綁 draft 內容，多個欄位逐一重取）。意思不明確的列出來問 | 不明確或要移除才問，一次問完 |
-| 大改結構（區塊對調順序、拆併區塊、換成表格或頁籤） | 回階段 2，重建成新 draft，照下方〈重建流程〉。只搬幾個欄位、插入或刪除區塊不算，走上一列 | 告知即可 |
+| 需要判斷：`comments`（欄位、區塊、整體） | 能一對一轉成工具呼叫的直接做：加欄位 `form_add_control`（`after_itemid`）、換型別或改計算式 `form_update_control`（先 `formula_check`）、改名 `form_update_meta`、搬欄位 `form_move_control`（`to_area_itemid`、`after_itemid`；itemid 不變，參照不受影響）、改區塊標題 `form_update_area`（`title`）、改頁籤名稱或增減頁籤 `form_update_area`（`titles`，改完後的完整清單；「HIS 文字鍵不對」就是這一項，不重建）、插入區塊 `form_add_area`（`after_itemid`）、刪空區塊 `form_remove_area`（只能刪空區塊，不需確認）。要移除欄位：其他修改做完後 `form_remove_control` 第一次呼叫，plan 原樣列進本輪回報，同意後才帶 `confirm_token`（`SecurityInvariants.md` 第 2 條；token 綁 draft 內容，多個欄位逐一重取）。意思不明確的列出來問 | 不明確或要移除才問，一次問完 |
+| 大改結構（區塊對調順序、拆併區塊、換成表格或頁籤） | 回階段 2，重建成新 draft，照下方〈重建流程〉。只搬幾個欄位、插入或刪除區塊、改頁籤名稱或增減頁籤不算，走上一列 | 告知即可 |
 
 3. 實際做的修改追加到草案檔「### 審閱修改紀錄」（itemid、種類、改前→改後，不抄意見原文），最後一輪 reviewer 靠它比對。
 4. `form_validate`：error 要修，修不掉的列給使用者。說「已修」之前以 `form_fields` 或 `form_validate` 確認真的改到；`E_UNKNOWN_KEY` 表示參數寫錯，照提示改。

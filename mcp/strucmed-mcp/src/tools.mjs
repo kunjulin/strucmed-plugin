@@ -7,8 +7,8 @@ import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE } from './model.mjs';
-import { validateDraft, scriptFindings, tableControlIds, DEFERRABLE } from './validate.mjs';
+import { buildControl, toFormJson, buildStructuredArea, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE } from './model.mjs';
+import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE } from './validate.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
 import { preview } from './preview.mjs';
@@ -212,11 +212,46 @@ function checkTableCell(where, { dict, dicrole, tocalc, datatype, script }) {
   if (tocalc === true) fail(E.UNSUPPORTED, `${where}：動態表格每一列共用同一個 itemid，欄位不能參與計算（tocalc 必須 false）`);
   if (['action', 'action2'].includes(datatype) || script) fail(E.UNSUPPORTED, `${where}：動態表格每一列會複製同一組欄位，計算式、HIS 參照與巨集請放在表格外`);
 }
-// 區塊第一行的可見標題（form_add_area 的 visible_title）：文字＋換行；回 items 或 null
+// 區塊的可見標題行（form_add_area 的 visible_title）：獨立一行的文字＋換行；回 { items, at } 或 null。
+// 有 visibleTitle 標記時依內容（＝區塊 title）找，不限第一行：欄位被 form_move_control 搬到最前面後，標題行就不在第一行了
 function titleLine(a) {
   const items = areaNode(a).itemtype === 'form' ? streamsOf(a)[0] : null;
-  if (!items || items[0]?.datatype !== 'text' || !(items.length === 1 || items[1].datatype === 'newline')) return null;
-  return a.visibleTitle || (a.title && String(items[0].datavalue).trim() === String(a.title).trim()) ? items : null;
+  if (!items) return null;
+  const want = String(a.title || '').trim();
+  const alone = i => items[i]?.datatype === 'text' && (i === 0 || items[i - 1].datatype === 'newline') && (i + 1 === items.length || items[i + 1].datatype === 'newline');
+  if (a.visibleTitle && want) {
+    const at = items.findIndex((n, i) => alone(i) && String(n.datavalue).trim() === want);
+    if (at >= 0) return { items, at };
+  }
+  return alone(0) && (a.visibleTitle || (want && String(items[0].datavalue).trim() === want)) ? { items, at: 0 } : null;
+}
+// 拿掉標題行：文字連同後面的換行；在串流結尾時改拿前面的換行
+function dropTitleLine({ items, at }) {
+  if (items[at + 1]?.datatype === 'newline') items.splice(at, 2);
+  else if (items[at - 1]?.datatype === 'newline') items.splice(at - 1, 2);
+  else items.splice(at, 1);
+}
+// form_update_area 的 titles：頁籤（tab1/tab2）與動態表格（table1/table2）的格子標題。titles 是改完後的完整清單：
+// 名稱相同的保留原格子（含欄位），其餘依序沿用剩下的格子（改名），多出來的新增空白格子，沒用到的舊格子刪除（裡面有控制項就拒絕）
+function retitleCells(a, type, titles) {
+  if (!['tab1', 'tab2', 'table1', 'table2'].includes(type)) fail(E.UNSUPPORTED, `titles 只適用頁籤（tab1／tab2）與動態表格（table1／table2）；區塊 #${areaNode(a).itemid} 是 ${type}${type === 'form' ? '，標題請用 title' : '，固定表格的格子沒有標題'}`);
+  if (!Array.isArray(titles) || !titles.length) fail(E.INVALID_INPUT, 'titles 至少要有一個');
+  if (titles.length > 20) fail(E.INVALID_INPUT, `${type} 最多 20 個標題`);
+  const want = titles.map(t => { const s = checkTitle(t); if (!s.trim()) fail(E.INVALID_INPUT, 'titles 不可有空白的標題'); return s; });
+  const dup = want.filter((t, i) => want.indexOf(t) !== i);
+  if (dup.length) fail(E.INVALID_INPUT, `titles 不可重複（${[...new Set(dup)].join('、')}）：${cellKind(type) === 'tab' ? '頁籤名稱是 HIS 文字輸出的鍵' : '欄列標題重複會分不清'}`);
+  const old = a.area.item, used = new Set();
+  const from = want.map(t => { const i = old.findIndex((c, j) => !used.has(j) && c.datatitle === t); if (i >= 0) used.add(i); return i; });
+  const rest = old.map((c, j) => j).filter(j => !used.has(j));
+  for (let k = 0; k < from.length; k++) if (from[k] < 0 && rest.length) { from[k] = rest.shift(); used.add(from[k]); }
+  const removed = rest.map(j => ({ index: j, title: old[j].datatitle || '', controls: old[j].item.filter(isControl).map(n => Number(n.itemid)), texts: old[j].item.filter(n => n.datatype === 'text' && String(n.datavalue || '').trim()).length }));
+  const busy = removed.filter(r => r.controls.length);
+  if (busy.length) fail(E.INVALID_INPUT, `要刪的${cellKind(type) === 'tab' ? '頁籤' : '格子'}還有控制項：${busy.map(r => `「${r.title}」#${r.controls.join('、#')}`).join('；')}；請先 form_move_control 搬走或 form_remove_control，這次什麼都沒有改`, { removed: busy });
+  const cells = want.map((t, k) => (from[k] >= 0 ? { ...old[from[k]], datatitle: t } : { itemtype: 'td', datatitle: t, item: [] }));
+  const mapping = want.map((t, k) => ({ index: k, title: t, from: from[k] >= 0 ? from[k] : null, ...(from[k] >= 0 && old[from[k]].datatitle !== t && { was: old[from[k]].datatitle || '' }) }));
+  const warnings = removed.filter(r => r.texts).map(r => `W_CELL_TEXT_REMOVED：刪除的「${r.title}」裡有 ${r.texts} 段說明文字，一併刪除`);
+  if (mapping.some(m => m.from === null)) warnings.push('W_EMPTY_CELL：新增的格子是空的，請用 form_add_control 帶 cell: {index} 加欄位');
+  return { cells, mapping, removed: removed.map(({ index, title }) => ({ index, title })), warnings };
 }
 const AFTER_ZERO = '0＝放到最前面';
 function placeArea(d, entry, after) {
@@ -436,7 +471,7 @@ export const TOOLS = [
   {
     name: 'dictionary_suggest',
     description: '（離線，唯讀；字典助手）為一個欄位找合適的字典：帶 draft_id＋itemid（用 form_fields 的事實），或 field:{ caption, datatype, unit, options, intent }。' +
-      '每筆回 confidence（high＝名稱或補述別名 asr 與欄位說明相同、在比對範圍內、型別與單位不衝突、比對範圍內沒有名稱相近的其他字典，可自動選入計畫）。從本機字典索引計分排序（名稱、說明與補述命中、控制項型別、單位、選項、層級體系優先、使用表單數），每筆附 reasons（為什麼推薦）與 cite（引用方式：綁定用的 dictionary.id、' +
+      '每筆回 confidence（high＝名稱或補述別名 asr 與欄位說明相同、在比對範圍內、型別與單位不衝突、比對範圍內沒有名稱相近的其他字典，可自動選入計畫）。從本機字典索引計分排序（名稱、說明與補述命中、控制項型別、單位、選項、層級體系優先、使用表單數），預設回 5 筆、memo 只回 meaning（full_memo:true 回完整補述）。每筆附 reasons（為什麼推薦、為什麼降級）與 cite（引用方式：綁定用的 dictionary.id、' +
       '寫 LLM prompt 可用的欄位描述 memo.llm、計算式說明 memo.calx、計算式與巨集用的 A<itemid>）。要找別科的字典：先 online_dictionary_search(scope:"all", q, update_index:true)，再帶 include_other:true。' +
       '使用表單數來自 online_dictionary_usage（不帶 dic_id）寫進索引的計數。',
     inputSchema: { type: 'object', properties: {
@@ -445,8 +480,9 @@ export const TOOLS = [
         options: { type: 'array', items: { type: 'string' } }, intent: str('用途或要存的語意（例：門診初診體重，供 BMI 計算）'),
         aliases: { type: 'array', items: { type: 'string' }, description: '欄位的同義詞與英文縮寫（例：["BW","weight"]）；與字典名稱或補述 asr 完全相同時加分，最高 medium' } } },
       aliases: { type: 'array', items: { type: 'string' }, description: '同 field.aliases（與 draft 一起用時）' },
-      intent: str('補充用途（與 draft 一起用時）'), include_other: bool('也列出他科、他體系的字典（level=other）'), limit: { type: 'number', description: '最多幾筆（預設 8，最多 30）' } } },
-    handler({ draft_id, itemid, field, aliases, intent, include_other, limit }) {
+      intent: str('補充用途（與 draft 一起用時）'), include_other: bool('也列出他科、他體系的字典（level=other）'), limit: { type: 'number', description: '最多幾筆（預設 5，最多 30）' },
+      full_memo: bool('候選附完整補述（預設 false：memo 只回 meaning；寫 interop 要比對單位、範圍、選項時才帶 true）') } },
+    handler({ draft_id, itemid, field, aliases, intent, include_other, limit, full_memo }) {
       const idx = store.loadDictIndex();
       if (!idx) fail(E.INVALID_INPUT, '沒有本機字典索引：請先 online_dictionary_search(update_index:true) 或 dictionary_load');
       let f = field ? { ...field, unit: field.unit || unitOf(field.caption) } : null, current = null;
@@ -459,7 +495,9 @@ export const TOOLS = [
         current = x.dictionary;
       }
       if (!f || !String(f.caption || f.intent || '').trim()) fail(E.INVALID_INPUT, '請帶 draft_id＋itemid，或 field.caption／field.intent');
-      const candidates = suggest(idx, f, { deptNo: idx.deptNo, usage: idx.usage, include_other: !!include_other, limit });
+      // 回傳要短（Indication 這類通用名稱 8 本完整補述約 5 千字）：預設 5 筆、memo 只留 meaning，引用方式在 cite
+      const candidates = suggest(idx, f, { deptNo: idx.deptNo, usage: idx.usage, include_other: !!include_other, limit: limit || 5 })
+        .map(c => (full_memo || !c.memo ? c : { ...c, memo: c.memo.meaning ? { meaning: c.memo.meaning } : {} }));
       const warnings = [];
       if (!idx.usage) warnings.push('W_NO_USAGE：索引沒有使用表單數（online_dictionary_usage 不帶 dic_id 可寫入）；排序未考慮多少表單在用');
       if (!candidates.length) warnings.push('W_NO_CANDIDATE：本機索引沒有相關字典；可試 online_dictionary_search(scope:"all", q:關鍵字, update_index:true) 找別科，或規劃新建字典');
@@ -889,7 +927,7 @@ export const TOOLS = [
   {
     name: 'form_move_control',
     description: '（離線）把控制項（連同前方說明文字與同一行的後綴文字）搬到另一個區塊、格子，或同一區塊的其他位置。itemid 不變，計算式、巨集、選項連動的參照都不受影響；不需要重建 draft。' +
-      'after_itemid 指定放在目標串流的哪個控制項之後（0＝最前面），不帶則放在末端；目標是表格或頁籤時帶 cell（同 form_add_control）。' +
+      'after_itemid 指定放在目標串流的哪個控制項之後（0＝最前面，文字區塊有可見標題行時會排在標題之前並回 W_BEFORE_TITLE），不帶則放在末端；目標是表格或頁籤時帶 cell（同 form_add_control）。' +
       '搬進動態表格時比照 form_add_control：有字典、計算式或巨集，或被計算式、巨集引用的欄位會被拒絕；其餘自動 tocalc:false。群組與彈出片語的子項不能搬。',
     inputSchema: { type: 'object', required: ['draft_id', 'itemid', 'to_area_itemid'], properties: {
       draft_id: str('draft id'), itemid: { type: 'number', description: '要搬的控制項' }, to_area_itemid: { type: 'number', description: '目標區塊（可與目前相同）' },
@@ -916,6 +954,9 @@ export const TOOLS = [
       const first = Number(after_itemid) === 0 && after_itemid !== null && after_itemid !== undefined;
       const anchor = first ? 'first' : after_itemid === undefined || after_itemid === null ? -1 : items.findIndex(x => isControl(x) && Number(x.itemid) === Number(after_itemid));
       if (anchor === -1 && !first && after_itemid !== undefined && after_itemid !== null) fail(E.NOT_FOUND, `${target.where} 沒有控制項 #${after_itemid}`);
+      // after_itemid:0 放在串流最前面，也就是可見標題行之前（form_update_area 仍找得到標題行，但 HIS 畫面上標題在欄位下方）
+      const titled = anchor === 'first' ? titleLine(area) : null;
+      if (titled && titled.items === items) warnings.push(`W_BEFORE_TITLE：#${itemid} 排在可見標題行「${String(items[titled.at].datavalue).trim()}」之前；要讓標題回到第一行，請 form_update_area(visible_title:false) 再 (visible_title:true)`);
       insertLine(items, target, anchor, line, true);
       markTouched(d, itemid, ['moved']);
       store.saveDraft(d);
@@ -924,24 +965,32 @@ export const TOOLS = [
   },
   {
     name: 'form_update_area',
-    description: '（離線）修改區塊：title（改標題；有可見標題行時一起改）、visible_title（文字區塊第一行的可見標題：true 加上、false 拿掉）、hidden（刻意隱藏）。itemid 不變。原表單（form_import）區塊的權限不在這裡改，請在編輯器調整。',
+    description: '（離線）修改區塊：title（改標題；有可見標題行時一起改，不論它目前在第幾行）、visible_title（文字區塊的可見標題行：true 加上、false 拿掉）、hidden（刻意隱藏）、' +
+      'titles（頁籤 tab1／tab2 的頁籤名稱，動態表格 table1／table2 的欄或列標題：改名、增減、調換順序）。itemid 不變，不需要重建 draft。' +
+      'titles 是改完後的完整清單：名稱與現有頁籤相同的保留原頁籤（含裡面的欄位），其餘依序沿用剩下的頁籤（改名），多出來的是新的空白頁籤，沒有用到的舊頁籤刪除；' +
+      '要刪的頁籤裡還有控制項時拒絕並列出 itemid，請先 form_move_control 搬走或 form_remove_control。頁籤名稱就是 HIS 文字輸出的鍵（[頁籤名稱:]），回傳的 mapping 列出每個頁籤的來源。' +
+      '原表單（form_import）區塊的權限不在這裡改，請在編輯器調整。',
     inputSchema: { type: 'object', required: ['draft_id', 'itemid'], properties: {
       draft_id: str('draft id'), itemid: { type: 'number', description: '區塊 itemid' }, title: str('區塊標題'),
-      visible_title: bool('文字區塊（form）第一行的可見標題：true 加上（內容＝title）、false 拿掉'), hidden: bool('刻意隱藏的區塊（authread 設為空）；false 恢復所有人可顯示') } },
-    handler({ draft_id, itemid, title, visible_title, hidden }) {
-      if (title === undefined && visible_title === undefined && hidden === undefined) fail(E.INVALID_INPUT, 'title、visible_title、hidden 至少要給一個');
+      visible_title: bool('文字區塊（form）的可見標題行：true 加上（內容＝title，放在第一行）、false 拿掉'), hidden: bool('刻意隱藏的區塊（authread 設為空）；false 恢復所有人可顯示'),
+      titles: { type: 'array', items: { type: 'string' }, description: 'tab1/tab2：改完後的頁籤名稱（完整清單，即 HIS 文字鍵）；table1/table2：欄或列標題。不可含半形單引號、不可重複，1–20 個' } } },
+    handler({ draft_id, itemid, title, visible_title, hidden, titles }) {
+      if (title === undefined && visible_title === undefined && hidden === undefined && titles === undefined) fail(E.INVALID_INPUT, 'title、visible_title、hidden、titles 至少要給一個');
       const d = store.loadDraft(draft_id);
       const a = findArea(d, itemid), type = areaNode(a).itemtype;
-      if (title !== undefined) { checkText(title, 'title'); a.title = title; }
       if (visible_title !== undefined && type !== 'form') fail(E.UNSUPPORTED, `visible_title 只適用文字區塊（form）；${type} 的標題請放在前一個文字區塊的最後一行，或第一格控制項的說明文字`);
-      const line = titleLine(a), shown = String(a.title || '').trim();
+      if (title !== undefined) checkText(title, 'title');
+      const retitled = titles !== undefined ? retitleCells(a, type, titles) : null;
+      const line = titleLine(a);            // 依改名前的標題找
+      if (title !== undefined) a.title = title;
+      const shown = String(a.title || '').trim();
       if (visible_title === true || (line && visible_title !== false)) {
         if (!shown) fail(E.INVALID_INPUT, 'visible_title 需要 title');
-        if (line) line[0].datavalue = shown;
+        if (line) line.items[line.at].datavalue = shown;
         else { const items = streamsOf(a)[0]; items.unshift({ datatype: 'text', datavalue: shown }, ...(items.length || !a.imported ? [{ datatype: 'newline' }] : [])); }
         a.visibleTitle = true;
       } else if (visible_title === false) {
-        if (line) line.splice(0, 2);
+        if (line) dropTitleLine(line);
         a.visibleTitle = false;
       }
       if (hidden !== undefined) {
@@ -950,8 +999,16 @@ export const TOOLS = [
         a.authread = hidden ? [] : [RUNTIME_ROLE];
         if (a.structured) a.area.authread = a.authread;
       }
+      if (retitled) {
+        a.area.item = retitled.cells;
+        const keys = d.meta.hisTextKeys || [];
+        const { missing, case_mismatch } = keys.length && cellKind(type) === 'tab' ? hisTextKeyFindings(d, keys) : { missing: [], case_mismatch: [] };
+        if (missing.length || case_mismatch.length) retitled.warnings.push(`W_HIS_TEXT_KEYS：HIS 接收端要的文字鍵（form_update_meta 的 his_text_keys）在頁籤名稱與 label 文字中找不到：${[...missing, ...case_mismatch.map(x => x.want)].join('、')}；鍵改了的話請一併 form_update_meta(his_text_keys)`);
+      }
       store.saveDraft(d);
-      return { area_itemid: Number(itemid), title: a.title || '', visible_title: !!titleLine(a), hidden: a.imported ? undefined : !!a.hidden };
+      const now = titleLine(a);
+      return { area_itemid: Number(itemid), title: a.title || '', visible_title: !!now, ...(now && now.at > 0 && { title_line: now.at }), hidden: a.imported ? undefined : !!a.hidden,
+        ...(retitled && { titles: retitled.cells.map(c => c.datatitle), mapping: retitled.mapping, removed: retitled.removed, warnings: retitled.warnings }) };
     }
   },
   {
@@ -965,7 +1022,7 @@ export const TOOLS = [
       const controls = [], titled = titleLine(a), texts = [];
       walk({ areas: [a] }, (n, arr, i) => {
         if (isControl(n)) controls.push(Number(n.itemid));
-        else if (n.datatype === 'text' && String(n.datavalue || '').trim() && !(titled && arr === titled && i === 0)) texts.push(String(n.datavalue));
+        else if (n.datatype === 'text' && String(n.datavalue || '').trim() && !(titled && arr === titled.items && i === titled.at)) texts.push(String(n.datavalue));
       });
       if (controls.length) fail(E.INVALID_INPUT, `區塊 #${itemid} 還有 ${controls.length} 個控制項：form_remove_area 只刪空區塊，請先 form_move_control 搬走或 form_remove_control`, { controls });
       if (texts.length) fail(E.INVALID_INPUT, `區塊 #${itemid} 還有說明文字：${texts.slice(0, 3).join('、')}`, { texts });

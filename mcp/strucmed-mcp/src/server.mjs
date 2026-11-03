@@ -34,7 +34,7 @@ const INSTRUCTIONS =
   '產生長庚結構化病歷 2.0（StrucMed）可匯入的表單定義檔。預設離線：不連線、不處理帳密、不寫入編輯器或倉儲。' +
   '流程：dictionary_load（選用）→ form_create → form_add_area → form_add_control… → form_validate → form_preview → ' +
   'form_export（兩段式確認，plan 必須先給使用者看）。產出的 .htm 由使用者本人在編輯器匯入並保存。' +
-  '改版面不必重建：form_move_control（搬欄位，itemid 不變）、form_update_area、form_remove_area（空區塊）、form_add_area(after_itemid)；要重建時 form_create 帶 from_draft_id，字典補述會帶過去。' +
+  '改版面不必重建：form_move_control（搬欄位，itemid 不變）、form_update_area（區塊標題；titles 改頁籤名稱＝HIS 文字鍵、增減頁籤）、form_remove_area（空區塊）、form_add_area(after_itemid)；要重建時 form_create 帶 from_draft_id，字典補述會帶過去。' +
   '未知參數一律回錯誤：說明文字用頂層 label_text、單位用 changes.unit。有預覽頁時所有審閱都在預覽頁；form_preview(html) 的 url 是 null 時執行 open 欄位的指令取得 link。';
 const ONLINE_INSTRUCTIONS =
   ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（開啟瀏覽器登入頁，使用者在頁面輸入 HIS 帳密，絕不在對話中索取密碼；' +

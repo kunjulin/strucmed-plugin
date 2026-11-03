@@ -46,7 +46,7 @@ create-form 階段 2（builder 建完、reviewer 之前）跑第 1、2 步，讓
 1. `dictionary_plan_export`（`draft_id`）→ `<workspace>/.strucmed/plans/<draft_id>/dictionaries.csv`，回 `file`、`rows`（HTTP 模式另回 `csv_text`）。一列一本字典，重跑會覆寫，不走兩段式。
 2. **AI 先起草新字典**：新字典的補述只有建立時一次機會，所以 `action=new` 且補述是空的列要先寫。
    - `form_fields`（`draft_id`、`only: "dictionary"`）找 `dictionary.pending: true` 的欄位。超過 5 本時以 `Task` 啟動 `dictionary-annotator`，給它字典名稱清單；5 本以內自己寫。
-   - 每本依 `DictionaryMemo.md` 寫滿 11 個欄位，只用 Big5 字（§3 的替代字表）：`func` 以 `derived.func` 為底改寫、`usecase` 依表單用途與作業別、`interop` 參考 `dictionary_suggest` 找到的相似字典（同義、不同單位、不同選項集要寫出差別）；可對應 FHIR 的寫 `fhir`（驗證規則見 FormDesignRules）。
+   - 每本依 `DictionaryMemo.md` 寫滿 11 個欄位，只用 Big5 字（§3 的替代字表）：`func` 以 `derived.func` 為底改寫、`usecase` 依表單用途與作業別、`interop` 參考 `dictionary_suggest`（`full_memo: true`）找到的相似字典（同義、不同單位、不同選項集要寫出差別）；可對應 FHIR 的寫 `fhir`（驗證規則見 FormDesignRules）。
    - `dictionary_memo_check`（`memo`、`fhir`、`draft_id`、`itemid`）：error 修到沒有，warning 逐條處理或寫理由。
    - `dictionary_plan_import`（`draft_id`、`csv_text`＝完整表頭＋起草的列）寫進 draft，再 `dictionary_plan_export` 更新 CSV。
    - 既有字典不主動起草：補述缺的列在 G2 的「### 字典」標出，使用者要補才寫（`action` 改 `memo`，只補缺的鍵），這樣 G2 前不會多一大段工作。
@@ -94,7 +94,7 @@ create-form 階段 2（builder 建完、reviewer 之前）跑第 1、2 步，讓
    ```
 
    先以 `online_dictionary_memo_batch`（`items`、`draft_id`，不帶 `confirm_token`）取得 plan，把 plan 的逐本改前／改後與 `no_change` 對照寫進計畫檔。在對話中呈現同一份內容，`AskUserQuestion`：核准（建議）／要求修改／取消。
-6. **核准**：改「## 核准」為 Approved → `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/memo-plan.md --by <user_id>`。沒有這一步，hooks 會阻擋第二次呼叫。不要自己把計畫標成 Approved。
+6. **核准**：使用者核准後執行 `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/memo-plan.md --by <user_id>`，它會自己把「## 核准」段填成 Approved 並寫入時間與核准者（不要手填）。沒有這一步，hooks 會阻擋第二次呼叫。使用者沒有核准就不要執行 prepare。
 7. **執行**：`online_dictionary_memo_batch`（同一份 `items`、`draft_id`、plan 的 `etags`、`confirm_token`）。回 `pending`（附 `approve_url`）時，請使用者在瀏覽器確認頁核對後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次；**不要替使用者確認**。回 `E_CONFLICT`（有字典在取得計畫後被改）：以 `details.stale` 的目前內容合併，Revision 加 1，重新給使用者核准。部分衝突（`W_PARTIAL_CONFLICT`）只對失敗的字典重做。
 8. **收尾**：逐本回報成功與失敗；`online_dictionary_search`（`update_index: true`）重建索引；提醒「字典頁與編輯器的補述視窗看得到新內容；之後的表單用 dictionary_suggest 會引用它們」。有跨科共用的字典時，把它列進「體系升級建議」交給體系字典管理者（AI 不升級）。
 

@@ -61,7 +61,7 @@
 ```
 
 5. 在對話中呈現同一份內容（含 Trigger／Why we ask／Cancel leaves），`AskUserQuestion` 三選項：核准（建議）／要求修改／取消；選項描述加「有疑問請先在對話問，不要在這裡選」。使用者在對話提問時回答後再問一次，定稿內容不重貼。
-6. 核准 → 改「## 核准」為 `Approved`（填 Revision、時間、`online_me.user_id`，離線用 `local`）→
+6. 核准 → 執行 prepare（`--by` 帶 `online_me.user_id`，離線用 `local`）；prepare 自己把「## 核准」段填成 `Approved`、寫入 Revision、時間與核准者，不要手填 →
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user_id>
    ```

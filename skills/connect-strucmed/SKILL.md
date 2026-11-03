@@ -23,7 +23,8 @@ allowed-tools: Read, Bash(node *)
    ```
    `runtime_web` 只是這個 shell 看到的結果，不是結論（第 7 步）。`site.profile: null`（兩邊都連不到）→ 告知只能離線作業（`.htm` 由使用者匯入），結束線上步驟；接上院內網路或 VPN 後重新執行本 skill。
 2. `mode: online`：呼叫 `online_login`（參數只有 `dept_no`、`hospital`，都選填；**沒有帳密參數**）。科部由使用者在登入頁填，`dept_no` 只是預填值；**不在對話中問科部**。
-   - MCP 會以系統瀏覽器開啟 strucmed 站台的登入頁。告訴使用者：確認網址是 strucmed 站台後，在頁面輸入 HIS 帳號密碼、填科部代碼，按「登入並同意」，完成後回到這裡說一聲。
+   - MCP 會以系統瀏覽器開啟 strucmed 站台的登入頁。告訴使用者：確認網址是 strucmed 站台後，在頁面輸入 HIS 帳號密碼、**自己輸入**科部代碼（欄位裡淡色的預填字只是提示，不會送出），按「登入並同意」，完成後回到這裡說一聲。
+   - 回 `logged_in: true` 但 `dept_no` 空白（回應帶 `W_NO_DEPT` 與 `next`）：常見於瀏覽器已有 SSO、沒顯示登入頁，或使用者沒在科部欄位輸入。把這句原樣告訴使用者：「請 `online_logout` 後重登並在登入頁填科部」，取得同意後 `online_logout` → `online_login`，等使用者在登入頁輸入科部再呼叫一次。不要帶著空白科部往下做。
    - 回 `pending: true`：把 `authorize_url` 給使用者（`browser_opened: false` 時請其自行開啟），等使用者說完成後**再呼叫一次** `online_login`（會接著等同一個登入，不會重開）。
    - 回 `E_AUTH`「拒絕」：使用者在登入頁按了拒絕，問是否要重新登入。
    - 登入頁顯示「帳號或密碼錯誤」或「嘗試次數過多」是在瀏覽器裡處理的事（HIS 密碼每三個月變更；同一帳號連續 5 次錯誤鎖 15 分鐘），不要在對話中索取密碼。

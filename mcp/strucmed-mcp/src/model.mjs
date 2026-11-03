@@ -128,7 +128,7 @@ export function cellKind(areaType) {
   return 'form';
 }
 
-const checkTitle = t => {
+export const checkTitle = t => {
   const s = String(t === undefined || t === null ? '' : t);
   if (/[\r\n]/.test(s)) fail(E.INVALID_INPUT, `標題不可包含換行：${s}`);
   if (s.includes("'")) fail(E.INVALID_INPUT, `標題不可包含半形單引號（runtime 直接插入 HTML 屬性，會破壞版面）：${s}`);

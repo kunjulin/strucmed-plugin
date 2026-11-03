@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 閘門核准的來源保護：計畫檔核准後產生 sidecar，建置前比對計畫檔是否仍是核准的那份。
-//   node scripts/verify-plan.mjs prepare <plan.md> [--by <user>]   核准時：寫 .approved-<basename>（sha256、revision、時間、核准者）
+//   node scripts/verify-plan.mjs prepare <plan.md> [--by <user>]   核准時：把計畫檔的「## 核准」段填成 Approved（含時間、核准者），再寫 .approved-<basename>（sha256、revision、時間、核准者）
 //   node scripts/verify-plan.mjs verify  <plan.md>                 建置前：比對 sha256 與 Revision；不符＝核准失效
 //   node scripts/verify-plan.mjs status  <plan.md>                 只讀狀態
 // 輸出一律 JSON；exit 0＝ok，1＝未核准或不符，2＝用法錯誤。
@@ -20,7 +20,20 @@ const text = fs.readFileSync(plan, 'utf8');
 export function canonical(t) {
   return String(t).replace(/\r\n/g, '\n').replace(/\n### 建置對照表[^\n]*\n[\s\S]*?(?=\n##? |\n### |$)/, '\n');
 }
-const sha256 = crypto.createHash('sha256').update(canonical(text)).digest('hex');
+// 「## 核准」段由 prepare 填（3.9.2）：Approved-At 是執行當下的時間，skill 不必、也不要手寫（手寫的時間常與實際核准不符）。
+// 段內其他行保留；沒有這一段時加在檔尾
+export function stamp(t, fields) {
+  const lines = String(t).replace(/\r\n/g, '\n').split('\n');
+  const want = Object.entries(fields).map(([k, v]) => `${k}: ${v}`);
+  const at = lines.findIndex(l => /^## 核准\s*$/.test(l));
+  if (at < 0) return `${lines.join('\n').replace(/\n*$/, '\n')}\n## 核准\n${want.join('\n')}\n`;
+  let end = lines.findIndex((l, j) => j > at && /^## /.test(l));
+  if (end < 0) end = lines.length;
+  const keep = lines.slice(at + 1, end).filter(l => !/^(Status|Approved-Revision|Approved-At|Approved-By):/.test(l));
+  return [...lines.slice(0, at + 1), ...want, ...keep, ...lines.slice(end)].join('\n');
+}
+const hash = t => crypto.createHash('sha256').update(canonical(t)).digest('hex');
+const sha256 = hash(text);
 const revMatch = text.match(/^Revision:\s*(\d+)\s*$/m);
 const revision = revMatch ? Number(revMatch[1]) : null;
 const statusMatch = text.match(/^Status:\s*(Ready|NeedsRevision|Blocked)\s*$/m);
@@ -36,8 +49,11 @@ if (cmd === 'prepare') {
   if (statusMatch && statusMatch[1] !== 'Ready') out({ ok: false, message: `計畫 Status 是 ${statusMatch[1]}，只有 Ready 可以核准` }, 1);
   const by = rest.includes('--by') ? String(rest[rest.indexOf('--by') + 1] || 'local') : 'local';
   const at = new Date().toISOString();
-  fs.writeFileSync(sidecar, `sha256: ${sha256}\nrevision: ${revision}\napproved_at: ${at}\napproved_by: ${by}\nplan: ${path.basename(plan)}\n`);
-  out({ ok: true, approved: true, revision, sha256, approved_at: at, approved_by: by, sidecar });
+  const stamped = stamp(text, { Status: 'Approved', 'Approved-Revision': revision, 'Approved-At': at, 'Approved-By': by });
+  fs.writeFileSync(plan, stamped);
+  const sha = hash(stamped);
+  fs.writeFileSync(sidecar, `sha256: ${sha}\nrevision: ${revision}\napproved_at: ${at}\napproved_by: ${by}\nplan: ${path.basename(plan)}\n`);
+  out({ ok: true, approved: true, revision, sha256: sha, approved_at: at, approved_by: by, sidecar, note: '「## 核准」段已由 prepare 填成 Approved（時間、核准者）；之後不要再改計畫檔' });
 }
 
 const s = readSidecar();

@@ -67,7 +67,7 @@ export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_
 
 // 文字輸出（GetJsonText）的鍵：[鍵:] 標記，來自頁籤名稱（GetText2 以「[頁籤名稱:]」分段）與說明文字、label
 const HIS_KEY_RE = /\[([^\]\r\n]+):\]/g;
-function hisTextKeyFindings(draft, want) {
+export function hisTextKeyFindings(draft, want) {
   const have = new Set();
   const scan = t => { for (const m of String(t || '').matchAll(HIS_KEY_RE)) have.add(m[1].trim()); };
   walk(draft, (n, arr, idx, area) => {
