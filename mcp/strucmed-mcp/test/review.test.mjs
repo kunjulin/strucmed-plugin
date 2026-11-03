@@ -295,7 +295,7 @@ test('dictionary_plan_export：BOM、CRLF、欄位、候選、唯讀欄', () => 
   assert.equal(r.rows, 2);
   assert.equal(r.csv_text, undefined, 'stdio 模式不回 csv_text');
   const text = fs.readFileSync(path.join(ws, r.file), 'utf8');
-  assert.ok(text.startsWith('﻿action,id,dicType,dicName,level,role,used_by,desc,meaning,type,unit,range,func,usecase,interop,asr,calx,llm,scope,fhir_res,fhir_path,fhir_code,fhir_display,fhir_ucum,fhir_more,fhir_status,memo_by,candidates,note\r\n'));
+  assert.ok(text.startsWith('﻿action,id,dicType,dicName,level,role,used_by,desc,meaning,type,unit,range,func,usecase,interop,asr（多值以／分隔）,calx,llm,scope,fhir_res,fhir_path,fhir_code,fhir_display,fhir_ucum,fhir_more,fhir_status,memo_by,candidates,note\r\n'));
   const lines = text.trim().split('\r\n');
   assert.equal(lines.length, 3);
   const bound = cols(lines[1]), pend = cols(lines[2]);
@@ -335,6 +335,33 @@ test('dictionary_plan：往返不變（含逗號、引號、換行；有 BOM 與
   assert.equal(rows[1].scope, "'引號開頭");
   assert.equal(rows[1].asr, '體重／BW');
   assert.ok(toCsv(rows).includes("\"有逗號, 引號\"\"與\n換行\""));
+});
+
+// 3.9.3 F-05：asr 用 ; 起草，匯入後變成一筆「A;B;C」
+test('dictionary_plan_import：asr 的 ; , | 都拆成多筆並回 W_ASR_DELIMITER；／不警告；「、」拆不開時提醒；舊表頭 asr 也認得', async () => {
+  const f = bmi();
+  t.dictionary_plan_export({ draft_id: f.draft_id });
+  const asrOf = () => store.loadDraft(f.draft_id).pendingDictionaries.find(p => p.name === 'BW_NEW').memo.asr;
+  const put = async v => t.dictionary_plan_import({ draft_id: f.draft_id, csv_text: await editCsv(f.draft_id, rows => { rows[1].asr = v; }) });
+  for (const [v, want] of [['體質量指數;BMI;body mass index', ['體質量指數', 'BMI', 'body mass index']], ['甲, 乙', ['甲', '乙']], ['丙|丁｜戊', ['丙', '丁', '戊']], ['己；庚，辛', ['己', '庚', '辛']]]) {
+    const r = await put(v);
+    assert.deepEqual(asrOf(), want, v);
+    assert.ok(r.warnings.some(w => w.startsWith('W_ASR_DELIMITER') && w.includes(`${want.length} 筆`)), JSON.stringify(r.warnings));
+    assert.ok(r.checks.find(c => c.name === 'BW_NEW').warnings.includes('W_ASR_DELIMITER'));
+  }
+  const slash = await put('體重／BW');
+  assert.deepEqual(asrOf(), ['體重', 'BW']);
+  assert.ok(!slash.warnings.some(w => w.startsWith('W_ASR_DELIMITER')));
+  const unit = await put('kg/m2');
+  assert.ok(!unit.warnings.some(w => w.startsWith('W_ASR_DELIMITER')), '/ 是單位，不算分隔符');
+  const comma = await put('體重、BW');
+  assert.deepEqual(asrOf(), ['體重、BW']);
+  assert.ok(comma.warnings.some(w => w.startsWith('W_ASR_DELIMITER') && w.includes('只有一筆')));
+  // 舊表頭（3.9.2 以前匯出的 CSV）
+  const old = (await editCsv(f.draft_id, rows => { rows[1].asr = '甲;乙'; })).replace('asr（多值以／分隔）', 'asr');
+  assert.ok(!old.includes('asr（'));
+  t.dictionary_plan_import({ draft_id: f.draft_id, csv_text: old });
+  assert.deepEqual(asrOf(), ['甲', '乙']);
 });
 
 test('dictionary_plan_import：action 五種與 id 被改', async () => {

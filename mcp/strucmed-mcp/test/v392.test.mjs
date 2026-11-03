@@ -88,6 +88,17 @@ test('F-03 titles：輸入檢查與適用的區塊類型、HIS 文字鍵提醒',
   const r = t.form_update_area({ draft_id, itemid: tab, titles: ['report', '結論'] });
   assert.ok(r.warnings.some(w => w.startsWith('W_HIS_TEXT_KEYS') && w.includes('impression')));
   assert.ok(!t.form_update_area({ draft_id, itemid: tab, titles: ['report', 'impression'] }).warnings.some(w => w.startsWith('W_HIS_TEXT_KEYS')));
+  // 3.9.3 F-08：改名後直接說是哪個頁籤改成什麼，給改好的清單
+  const renamed = t.form_update_area({ draft_id, itemid: tab, titles: ['report', 'note'] });
+  const w = renamed.warnings.find(x => x.startsWith('W_HIS_TEXT_KEYS'));
+  assert.ok(w && w.includes('頁籤 impression 已改名 note'), w);
+  assert.ok(w.includes('form_update_meta(his_text_keys: ["report","note"])'), w);
+  // 刪掉的頁籤（空的）：說已刪除，建議清單拿掉
+  t.form_update_area({ draft_id, itemid: tab, titles: ['report', 'note', 'tmp'] });
+  t.form_update_meta({ draft_id, his_text_keys: ['report', 'note', 'tmp'] });
+  const removed = t.form_update_area({ draft_id, itemid: tab, titles: ['report', 'note'] });
+  const w2 = removed.warnings.find(x => x.startsWith('W_HIS_TEXT_KEYS'));
+  assert.ok(w2 && w2.includes('頁籤 tmp 已刪除') && w2.includes('["report","note"]'), w2);
 });
 
 test('F-03 titles：原表單（form_import）的頁籤也能改名', async () => {

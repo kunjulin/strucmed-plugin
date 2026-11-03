@@ -48,7 +48,7 @@ create-form 階段 2（builder 建完、reviewer 之前）跑第 1、2 步，讓
    - `form_fields`（`draft_id`、`only: "dictionary"`）找 `dictionary.pending: true` 的欄位。超過 5 本時以 `Task` 啟動 `dictionary-annotator`，給它字典名稱清單；5 本以內自己寫。
    - 每本依 `DictionaryMemo.md` 寫滿 11 個欄位，只用 Big5 字（§3 的替代字表）：`func` 以 `derived.func` 為底改寫、`usecase` 依表單用途與作業別、`interop` 參考 `dictionary_suggest`（`full_memo: true`）找到的相似字典（同義、不同單位、不同選項集要寫出差別）；可對應 FHIR 的寫 `fhir`（驗證規則見 FormDesignRules）。
    - `dictionary_memo_check`（`memo`、`fhir`、`draft_id`、`itemid`）：error 修到沒有，warning 逐條處理或寫理由。
-   - `dictionary_plan_import`（`draft_id`、`csv_text`＝完整表頭＋起草的列）寫進 draft，再 `dictionary_plan_export` 更新 CSV。
+   - `dictionary_plan_import`（`draft_id`、`csv_text`＝完整表頭＋起草的列）寫進 draft，再 `dictionary_plan_export` 更新 CSV。`asr`（語音別名）多值以 `／` 分隔，表頭照匯出的 `asr（多值以／分隔）` 原樣保留；寫成 `;`、`,`、`|` 也會拆，但回 `W_ASR_DELIMITER`。
    - 既有字典不主動起草：補述缺的列在 G2 的「### 字典」標出，使用者要補才寫（`action` 改 `memo`，只補缺的鍵），這樣 G2 前不會多一大段工作。
 3. **使用者編輯**：把 CSV 路徑告訴使用者，一句話說明能改什麼（`action`：`bind`／`new`／`memo`／`rebind:<id>`／`skip`；`desc` 只有新建可改；補述 11 格與 FHIR 可改；`note` 帶進 G2）。使用者不改就往下走，**不等**；Excel 與 Numbers 存回的 CSV 都能匯回。
 4. **匯回**：使用者說改好時 `dictionary_plan_import`（`draft_id`、`csv_path`；HTTP 模式 `csv_text`）。只改本機 draft：

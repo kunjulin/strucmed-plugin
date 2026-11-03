@@ -99,7 +99,8 @@
 | `E_CONFLICT` | 線上內容在取得計畫後被改（更新的第二次呼叫會先重讀線上，ETag 不同就不開確認頁） | 重新 `online_template_get(save:true)` → `form_import(for_update:true)` 改版 |
 | `E_CONFIRM_MISMATCH`（更新） | 取得計畫後線上的名稱、捷徑、作業別或 Info 被改 | 重新取得計畫，`plan.meta` 重新給使用者看 |
 | `E_LIMIT` | 本文過大或頻率（每分鐘 20 次寫入） | 等候或精簡 |
-| `E_UPSTREAM` 且 `details.pending` | 倉儲寫入中途失敗 | **不要重複保存**；用 `online_template_versions`、`online_folder_list` 看狀態，請管理者在管理頁處理待重送 |
+| `E_UPSTREAM` 且 `details.pending` | 範本：倉儲寫入中途失敗 | **不要重複保存**；用 `online_template_versions`、`online_folder_list` 看狀態，請管理者在管理頁處理待重送 |
+| 字典 `E_UPSTREAM`（`online_dictionary_batch` 回 `succeeded 0`／`pending_left` 非空，或錯誤的 `details.next`） | 站台或倉儲失敗，字典沒有建立；`confirm_token` 已用掉 | 照回傳的 `next`：重做第一次呼叫取 plan（只列尚未建立的字典），每本內容與定稿相同就**不必重核准**（sidecar 仍有效，hooks 放行），帶新的 `confirm_token` 再做第二次呼叫；不同才 `Revision` +1 重新呈現。同名字典已存在時伺服器回 reused，重做是安全的。倉儲仍失敗就告知使用者稍後再試，或改走 `form_export` |
 | `W_DIVERGED` | 上次經 API 保存後曾被其他方式修改 | 已保存；告知使用者 |
 
 字典已建好、範本失敗時，字典留著不用重建：修好後從範本的第一次呼叫重來。

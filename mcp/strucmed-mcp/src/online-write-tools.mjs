@@ -6,7 +6,7 @@
 //   - 不提供 trash／字典刪除／硬刪除；update 只允許「來源就是該範本」的 draft，且帶 If-Match；名稱／捷徑／作業別預設沿用線上值
 //   - feature flags：templateUpdate（online_template_update）、dictionaryWrite（online_dictionary_create／batch／memo_set／memo_batch）
 //   - 字典說明是 JSON 容器（dictcomment.mjs，docs/14）：新建時一次寫好 desc＋memo；memo_set 帶 If-Match（etag），409 回目前內容讓 AI 合併後重來；體系升級／降級只由體系字典管理者在字典頁操作（寫入 sys 標記，id 不變），不提供 MCP 工具
-import { E, fail } from './errors.mjs';
+import { E, fail, ToolError } from './errors.mjs';
 import * as store from './store.mjs';
 import * as confirm from './confirm.mjs';
 import * as approve from './approve.mjs';
@@ -59,6 +59,24 @@ function mapWriteError(r, what) {
     case 502: fail(E.UPSTREAM, `${what}失敗：倉儲寫入在步驟「${(err.details && err.details.step) || '?'}」中斷${msg}。**請勿重複保存**（寫入不冪等），請以 online_template_versions 與 online_folder_list 確認狀態`,
       { ...det, pending: !!(err.details && err.details.pending), step: err.details && err.details.step, templateID: err.details && err.details.templateID });
     default: fail(r.status === 401 ? E.AUTH : E.UPSTREAM, `${what}失敗（HTTP ${r.status} ${err.code || ''}）${msg}`, det);
+  }
+}
+
+// 字典寫入在站台或倉儲失敗後怎麼續做（F-03）：確認已用掉，但字典同名會沿用既有（reused），重做是安全的。
+// sidecar 核准的是定稿檔，不是這次的 plan，所以 plan 與定稿相同就不必重新核准
+const dictRetryNext = (tool, left) => `${left.length} 本未建立（${left.join('、')}）：重新做 ${tool} 第一次呼叫取 plan（只會列尚未建立的字典）；每本內容與定稿相同時不必重新核准，帶新的 confirm_token 再做第二次呼叫；不同才 Revision +1 重新呈現。倉儲仍失敗時稍後再試，或改走 form_export`;
+// 整個請求失敗（HTTP 非 2xx、連線失敗）：E_UPSTREAM 加上 next 與 pending_left；502 不沿用範本的「請勿重複保存」
+async function dictWrite(tool, d, what, send) {
+  try {
+    const r = await send();
+    if (r.status !== 200 && r.status !== 201) mapWriteError(r, what);
+    return r;
+  } catch (e) {
+    if (!(e instanceof ToolError) || e.code !== E.UPSTREAM) throw e;
+    const left = (d.pendingDictionaries || []).map(p => p.name);
+    const det = e.details || {};
+    const msg = det.status === 502 ? `${what}失敗：站台或倉儲回 HTTP 502${det.code ? ` ${det.code}` : ''}，字典沒有建立` : e.message;
+    throw new ToolError(E.UPSTREAM, msg, { ...det, pending_left: left, next: dictRetryNext(tool, left) });
   }
 }
 
@@ -238,6 +256,7 @@ export const ONLINE_WRITE_TOOLS = [
       'dicComment 以字典 JSON 一次寫好：comment＝desc（一行語意）、memo＝補述（預設用規劃時 dictionary_create／form_add_control 給的）。' +
       '兩段式：先取得 plan 給使用者確認，再帶 confirm_token。同名未刪除字典存在時伺服器回 reused（沿用既有 id）；有自己可還原的同名已刪除字典時回 E_DELETED_EXISTS（候選列在 details），' +
       '**不自動 force**，由使用者決定還原（請管理者在字典頁操作）或帶 force:true 建立新的。成功後把 draft 內使用該名稱的控制項綁上 id、移出待新建清單、更新本機字典索引。' +
+      '站台或倉儲失敗（E_UPSTREAM）時錯誤的 details 帶 next 與 pending_left：重新第一次呼叫取 plan，plan 與定稿相同時不必重核准。' +
       SECOND_CALL,
     inputSchema: { type: 'object', required: ['draft_id', 'name'], properties: {
       draft_id: str('draft id'), name: str('待新建字典名稱（必須在 draft 的 pendingDictionaries 內）'), comment: str('一行說明 desc（選填；預設用規劃時的 comment）'),
@@ -270,11 +289,13 @@ export const ONLINE_WRITE_TOOLS = [
       const ok = await approve.awaitApproval('online_dictionary_create', h);
       if (ok.pending) return ok;
       const body = { dicName: name, dicComment, scope: 'dept', ...(force ? { force: true } : {}) };
-      const r = await online.callRaw('POST', 'api/v2/dictionaries', { body }, '新增字典');
-      if (r.status === 409 && r.json && r.json.error && r.json.error.code === 'E_DELETED_EXISTS')
-        fail(E.DELETED_EXISTS, `有已刪除的同名字典「${name}」：請使用者決定「還原」（在字典頁垃圾桶操作後重新搜尋綁定）或「建立新的」（再呼叫一次並帶 force:true，需重新取得 plan）`,
-          { candidates: r.json.error.details && r.json.error.details.candidates });
-      if (r.status !== 200 && r.status !== 201) mapWriteError(r, '新增字典');
+      const r = await dictWrite('online_dictionary_create', d, '新增字典', async () => {
+        const x = await online.callRaw('POST', 'api/v2/dictionaries', { body }, '新增字典');
+        if (x.status === 409 && x.json && x.json.error && x.json.error.code === 'E_DELETED_EXISTS')
+          fail(E.DELETED_EXISTS, `有已刪除的同名字典「${name}」：請使用者決定「還原」（在字典頁垃圾桶操作後重新搜尋綁定）或「建立新的」（再呼叫一次並帶 force:true，需重新取得 plan）`,
+            { candidates: x.json.error.details && x.json.error.details.candidates });
+        return x;
+      });
       const j = r.json || {};
       const id = String(j.id || '');
       if (!id) fail(E.UPSTREAM, '伺服器回應缺少字典 id');
@@ -288,6 +309,7 @@ export const ONLINE_WRITE_TOOLS = [
     flag: 'dictionaryWrite',
     description: TWO_STEP + '（online，寫入字典，flag dictionaryWrite）把 draft 的全部「待新建字典」一次建立（POST api/v2/dictionaries/batch，最多 500 筆，逐筆回報）。兩段式：先取得 plan 給使用者確認。' +
       '成功的字典會綁回 draft 並更新本機索引；失敗的留在待新建清單並回 warnings（例如 E_DELETED_EXISTS 需改用 online_dictionary_create 逐一決定）。' +
+      'pending_left 非空（例如倉儲失敗 E_UPSTREAM）時回 next：重新第一次呼叫取 plan，plan 與定稿相同時不必重核准；整個請求失敗時 next 在錯誤的 details。' +
       SECOND_CALL,
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'), confirm_token: str('第二次呼叫帶入') } },
     async handler({ draft_id, confirm_token }) {
@@ -314,8 +336,7 @@ export const ONLINE_WRITE_TOOLS = [
       confirm.verify('online_dictionary_batch', h, confirm_token);
       const ok = await approve.awaitApproval('online_dictionary_batch', h);
       if (ok.pending) return ok;
-      const r = await online.callRaw('POST', 'api/v2/dictionaries/batch', { body: { rows } }, '批次新增字典');
-      if (r.status !== 200) mapWriteError(r, '批次新增字典');
+      const r = await dictWrite('online_dictionary_batch', d, '批次新增字典', () => online.callRaw('POST', 'api/v2/dictionaries/batch', { body: { rows } }, '批次新增字典'));
       const results = Array.isArray(r.json && r.json.results) ? r.json.results : [];
       const done = [], warnings = [];
       results.forEach((x, i) => {
@@ -323,7 +344,8 @@ export const ONLINE_WRITE_TOOLS = [
         if (x && x.ok && x.id && name) { done.push({ name, id: String(x.id), action: x.action, bound_itemids: bindDictionary(d, name, { id: String(x.id), dicType: user.deptNo, dicName: name, dicComment: rows[i].dicComment, createUser: user.userId }) }); }
         else warnings.push(`「${name || '?'}」未建立：${(x && x.code) || '?'} ${(x && x.message) || ''}`);
       });
-      return { total: rows.length, succeeded: done.length, done, pending_left: d.pendingDictionaries.map(p => p.name), warnings };
+      const left = d.pendingDictionaries.map(p => p.name);
+      return { total: rows.length, succeeded: done.length, done, pending_left: left, warnings, ...(left.length && { next: dictRetryNext('online_dictionary_batch', left) }) };
     }
   },
   {

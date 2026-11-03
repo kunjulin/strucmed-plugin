@@ -115,7 +115,9 @@ function handler(req, res) {
       return json(res, 201, { ok: true, id, dicName: body.dicName, dicType: 'APP', dicComment: body.dicComment || '', createUser: USER_ID, created: true, reused: false });
     }
     if (req.method === 'POST' && p === 'api/v2/dictionaries/batch') {
-      const results = (body.rows || []).map((row, i) => row.dicName === '已刪除字典'
+      const results = (body.rows || []).map((row, i) => behavior.dictUpstream
+        ? { row: i + 1, ok: false, code: 'E_UPSTREAM', message: '倉儲連線失敗或逾時', dicName: row.dicName }
+        : row.dicName === '已刪除字典'
         ? { row: i + 1, ok: false, code: 'E_DELETED_EXISTS', message: '有已刪除的同名字典', dicName: row.dicName }
         : { row: i + 1, ok: true, action: 'create', id: 'D-' + (++dictSeq), dicName: row.dicName });
       return json(res, 200, { ok: true, total: results.length, succeeded: results.filter(x => x.ok).length, results });
@@ -349,6 +351,11 @@ test('folder list and template get send the bearer token', async () => {
   assert.equal(new URLSearchParams(reqs[0].search).get('q'), '跌倒');
   assert.equal(new URLSearchParams(reqs[0].search).get('pageSize'), '20');
   assert.match(reqs[0].auth, /^Bearer acc-/);
+  // 3.9.3 F-12：type 選填，預設 usr；錯的值仍拒絕
+  reqs = [];
+  assert.equal((await mcp.call('online_folder_list', {})).data.folder, 'usr');
+  assert.equal(reqs[0].path, '/strucmed/api/v2/folders/usr/templates');
+  assert.equal((await mcp.call('online_folder_list', { type: 'xyz' })).error.code, 'E_INVALID_INPUT');
 
   const t = await mcp.call('online_template_get', { template_id: 'T-1', save: true });
   assert.equal(t.data.package, undefined, 'save:true returns a summary only (試用回饋 #5)');
@@ -830,6 +837,59 @@ test('online_dictionary_batch (flag on): binds successes, leaves failures pendin
     assert.equal(done.data.succeeded, 1);
     assert.deepEqual(done.data.pending_left, ['已刪除字典']);
     assert.equal(done.warnings.length, 1);
+  } finally { m.stop(); fs.rmSync(flags, { force: true }); }
+});
+
+// 3.9.3 F-03：倉儲失敗後怎麼續做。實測（3.9.2 驗收 00:02）：重做第一次呼叫、plan 相同、不必重核准
+test('F-03：字典寫入在站台或倉儲失敗時回 next（重新第一次呼叫取 plan），pending_left 留著，重做的 plan 與原本相同', async () => {
+  const flags = path.join(os.tmpdir(), 'strucmed-flags5-' + process.pid + '.json');
+  fs.writeFileSync(flags, JSON.stringify({ dictionaryWrite: true }));
+  const m = startMcp({ ...ONLINE_ENV(), STRUCMED_FLAGS: flags });
+  try {
+    await browserLogin(m, {});
+    const c = await m.call('form_create', { name: '倉儲失敗', dept_no: 'APP' });
+    const id = c.data.draft_id;
+    const a = await m.call('form_add_area', { draft_id: id, type: 'form', title: 'x' });
+    for (const nm of ['倉儲甲', '倉儲乙'])
+      assert.equal((await m.call('form_add_control', { draft_id: id, area_itemid: a.data.area_itemid, label_text: nm, control: { datatype: 'textbox', dictionary: { name: nm } } })).ok, true);
+
+    // batch：站台回 200，逐筆 E_UPSTREAM（驗收時的情形）
+    const plan = await m.call('online_dictionary_batch', { draft_id: id });
+    behavior.dictUpstream = true;
+    const failed = await browserApprove(m, 'online_dictionary_batch', { draft_id: id, confirm_token: plan.data.confirm_token });
+    assert.equal(failed.ok, true, JSON.stringify(failed));
+    assert.equal(failed.data.succeeded, 0);
+    assert.deepEqual(failed.data.pending_left, ['倉儲甲', '倉儲乙']);
+    assert.ok(failed.warnings.every(w => w.includes('E_UPSTREAM')));
+    assert.match(failed.data.next, /重新做 online_dictionary_batch 第一次呼叫/);
+    assert.match(failed.data.next, /不必重新核准/);
+    behavior.dictUpstream = false;
+
+    // batch：整個請求 502（站台到倉儲失敗）→ E_UPSTREAM，details 帶 next 與 pending_left，不說「請勿重複保存」
+    const again = await m.call('online_dictionary_batch', { draft_id: id });
+    assert.deepEqual(again.data.plan.rows, plan.data.plan.rows, '重做第一次呼叫的 plan 與原本相同');
+    behavior.upstream500 = true;
+    const e = await browserApprove(m, 'online_dictionary_batch', { draft_id: id, confirm_token: again.data.confirm_token });
+    assert.equal(e.error.code, 'E_UPSTREAM');
+    assert.equal(e.error.details.status, 502);
+    assert.deepEqual(e.error.details.pending_left, ['倉儲甲', '倉儲乙']);
+    assert.match(e.error.details.next, /第一次呼叫取 plan/);
+    assert.doesNotMatch(e.error.message, /請勿重複保存/);
+
+    // create：同樣
+    const one = await (async () => { behavior.upstream500 = false; return m.call('online_dictionary_create', { draft_id: id, name: '倉儲甲' }); })();
+    behavior.upstream500 = true;
+    const e2 = await browserApprove(m, 'online_dictionary_create', { draft_id: id, name: '倉儲甲', confirm_token: one.data.confirm_token });
+    assert.equal(e2.error.code, 'E_UPSTREAM');
+    assert.match(e2.error.details.next, /重新做 online_dictionary_create 第一次呼叫/);
+    behavior.upstream500 = false;
+
+    // 恢復後重做：全部建立，沒有 next
+    const last = await m.call('online_dictionary_batch', { draft_id: id });
+    const ok = await browserApprove(m, 'online_dictionary_batch', { draft_id: id, confirm_token: last.data.confirm_token });
+    assert.equal(ok.data.succeeded, 2);
+    assert.deepEqual(ok.data.pending_left, []);
+    assert.equal(ok.data.next, undefined);
   } finally { m.stop(); fs.rmSync(flags, { force: true }); }
 });
 

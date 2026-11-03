@@ -70,6 +70,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
    - 字典**先找再建**：planner 為每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 的候選直接選入，範圍內沒有候選才找他科或列待新建。使用者選擇不提供索引時，草案要標明「未比對既有字典」。
    - `Blocked`（缺必要輸入，或需求與規則衝突）→ 把它列的問題與可選方案用一次 `AskUserQuestion` 問使用者後重跑，不要先建；`NeedsRevision` → 照它的建議值往下建，「### 待決」列在草案摘要之後。
+   - 「### 待決」列出**他科候選字典**時，交 builder 前先用一次 `AskUserQuestion` 問使用者要不要採用（其他要先問的待決一起問）。採用的以 `online_dictionary_search`（`scope: "all"`、`q`＝字典名稱、`update_index: true`）併入本機索引，把草案該欄改成綁這本字典，再交 builder；不採用就照草案列待新建。未登入時跳過，在待決註明。
    - 草案以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
 2. **建置**：`Task(form-builder)`，給它草案檔路徑、`dept_no`。單一 builder、依草案順序建：`form_create` → 逐區塊 `form_add_area` → 逐欄 `form_add_control`（說明文字＋控制項＋換行）→ 計算式與巨集 `form_update_control` → 表格／頁籤的格子最後。itemid 依建立順序分配（區塊與控制項共用、從 1 起），`further`／`A<itemid>`／`action_id` 都依賴順序，所以**不平行**。builder 把每個 `C*` 對應的 itemid 回填「### 建置對照表」。核對回覆的 `Calls`：至少要有 `form_create`＋區塊數＋控制項數，少了就是有漏，交回 builder。
 3. **補述預填**（有待新建字典時）：builder 建完、reviewer 之前，照 `dictionary-assist` 模式 2 第 1、2 步起草新字典補述（超過 5 本用 `dictionary-annotator`），以 `dictionary_plan_import`（`draft_id`、`csv_text`）寫進 draft。預覽卡片打開就有內容，使用者只改不對的地方，不用自己填。既有字典不主動起草。
@@ -135,7 +136,7 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 
 ## 5. 階段 4：定稿 G2
 
-1. `Task(form-reviewer)` 最後一輪（告訴它是最後一輪）。`NeedsRevision` 時修好再審，必要時回階段 3。warning 留到 G2 列；prompt 的 `W_PROMPT_*` 附 `references/PromptPatterns.md` 的改法，使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
+1. `Task(form-reviewer)` 最後一輪（告訴它是最後一輪）。**最後一輪必須在所有意見都套用到 draft 之後才啟動**，不要和改 draft、匯回 CSV 平行；之後又改了 draft 就要再審一次。`NeedsRevision` 時修好再審，必要時回階段 3。warning 留到 G2 列；prompt 的 `W_PROMPT_*` 附 `references/PromptPatterns.md` 的改法，使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
 2. 有巨集按鈕時依 `references/RuntimeVerification.md` §4 實跑一次，結果進「### 驗證結果」。
 3. 字典：§3 第 3 步已預填。審閱中新增的字典還缺補述時，依 `dictionary-assist` 模式 2 補起草（新字典的補述只有建立時一次機會）。
 4. 載入 `publish-form`，從「準備定稿」接手：`dictionary_plan_export` 出 CSV、取得字典與上架 plan（離線或不上架時換 `form_export` 的 plan）、寫 `publish-plan.md`、呈現 G2、核准、`verify-plan.mjs prepare`、依序執行。閘門名稱都是 G2。

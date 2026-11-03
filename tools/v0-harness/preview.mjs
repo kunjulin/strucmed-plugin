@@ -3,7 +3,7 @@
 // 先用 MCP form_preview（format: "html"）產生 .strucmed/preview/<draft_id>.json。
 // 起始埠被占用（舊版 harness、別的工作目錄、其他程式）時自動往後找，回報實際的埠；伺服器把埠寫到 .strucmed/preview/server.json。
 // 伺服器只監聽 127.0.0.1；啟動後會留著讓使用者點連結，要關閉時結束該 node 程序即可。
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,42 @@ async function probe(port, p, ms = 1500) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const parse = h => { try { return JSON.parse(h.text); } catch { return null; } };
-const isOurs = j => !!j && Array.isArray(j.features) && j.features.includes('review') && j.workspace === WORKSPACE && (!WEB || j.web === WEB);
+const real = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+// 這份 plugin 的 harness：serve.mjs 的路徑與版本（F-02：埠上是別版 plugin 留下的 harness 時不沿用）
+const SERVE = real(path.join(HERE, 'serve.mjs'));
+const pluginVersion = root => String((readJson(path.join(root, '.claude-plugin', 'plugin.json')) || {}).version || '');
+const VERSION = pluginVersion(path.resolve(HERE, '../..'));
+const sameWorkspace = j => j.workspace === WORKSPACE && (!WEB || j.web === WEB);
+const isOurs = j => !!j && Array.isArray(j.features) && j.features.includes('review') && sameWorkspace(j) && !!j.serve && real(j.serve) === SERVE;
+
+// 3.9.2 以前的 harness 不回 version／serve：找出監聽該埠的行程，從 cwd（preview.mjs 啟動時＝plugin 根目錄）或命令列的 serve.mjs 讀它的版本
+const run = (cmd, argv) => { try { return execFileSync(cmd, argv, { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return ''; } };
+function versionOnPort(port) {
+  if (process.platform === 'win32') return '';
+  const pid = run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']).split('\n').map(Number).find(n => n > 0);
+  if (!pid) return '';
+  const cwd = (/^n(.+)$/m.exec(run('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])) || [])[1];
+  if (cwd && fs.existsSync(path.join(cwd, 'tools', 'v0-harness', 'serve.mjs'))) return pluginVersion(cwd);
+  const args = run('ps', ['-o', 'args=', '-p', String(pid)]).trim();
+  const end = args.lastIndexOf(path.join('tools', 'v0-harness', 'serve.mjs'));
+  if (end < 0) return '';
+  // 路徑可能含空白：從每個空白之後試，取第一個存在的檔案
+  for (let i = 0; i < end; i = args.indexOf(' ', i) + 1 || end) {
+    const root = args.slice(i, end).replace(/[\\/]$/, '');
+    if (root && fs.existsSync(path.join(root, 'tools', 'v0-harness', 'serve.mjs'))) return pluginVersion(root);
+  }
+  return '';
+}
+const cmpVer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+function otherHarness(port, j) {
+  const v = String(j.version || versionOnPort(port) || '');
+  if (!v || !VERSION) return `舊版 harness（${v || '版本不明'}）`;
+  const c = cmpVer(v, VERSION);
+  if (c < 0) return `舊版 harness（${v}）`;
+  if (c > 0) return `新版 harness（${v}）`;
+  return `另一份 plugin 的 harness（${j.serve || v}）`;
+}
 
 // 這個埠上的東西為什麼不能用（回報給使用者）；null＝沒有東西在聽
 async function occupant(port) {
@@ -45,8 +80,8 @@ async function occupant(port) {
   if (h) {
     const j = h.status === 200 ? parse(h) : null;
     if (isOurs(j)) return { ours: true };
-    if (j && j.harness && j.workspace) return { why: `別的工作目錄（${j.workspace}）或別份 runtime 的 harness` };
-    if (j && j.harness) return { why: '舊版 harness' };
+    if (j && j.harness && j.workspace && !sameWorkspace(j)) return { why: `別的工作目錄（${j.workspace}）或別份 runtime 的 harness` };
+    if (j && j.harness) return { why: otherHarness(port, j) };
     return { why: '其他程式' };
   }
   return (await probe(port, '/')) ? { why: '其他程式' } : null;

@@ -151,3 +151,52 @@ test('M6：form_preview 回實際的 runtime_web 並寫進 notes；check-env 用
   assert.equal(up.json.runtime_web.available, true, '不再疊成雙 repo（F-03）');
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+// 3.9.3 F-02：3.9.1 驗收留下的 harness（另一份 plugin 快取、同工作目錄、同 runtime）占著埠時，不沿用、改啟下一個埠並說明版本
+test('F-02：埠上是別版 plugin 的 harness 時不沿用，server 註明「略過 <埠>：舊版 harness（3.9.1）」；form_preview 不拿它的埠', { skip: process.platform === 'win32' && 'lsof／ps 只在 macOS／Linux' }, async () => {
+  const id = draft();
+  t.form_preview({ draft_id: id, format: 'html' });
+  // 模擬 3.9.1 的 plugin 快取：/__health 回同一個工作目錄與 runtime，但沒有 version／serve；server.json 也沒有
+  const old = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-env-391-'));
+  fs.mkdirSync(path.join(old, '.claude-plugin'));
+  fs.writeFileSync(path.join(old, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'strucmed', version: '3.9.1' }));
+  fs.mkdirSync(path.join(old, 'tools', 'v0-harness'), { recursive: true });
+  fs.writeFileSync(path.join(old, 'tools', 'v0-harness', 'serve.mjs'), `
+import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path';
+const port = Number(process.argv[2]), ws = process.env.STRUCMED_WORKSPACE, web = process.env.STRUCMED_RUNTIME_WEB;
+http.createServer((q, r) => { r.writeHead(200, { 'Content-Type': 'application/json' }); r.end(JSON.stringify({ harness: 'v0', features: ['preview', 'snapshot', 'review', 'workspace'], workspace: ws, web })); })
+  .listen(port, '127.0.0.1', () => fs.writeFileSync(path.join(ws, '.strucmed', 'preview', 'server.json'), JSON.stringify({ v: 1, port, pid: process.pid, workspace: ws, web })));
+`);
+  const start = await freePort();
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, [path.join(old, 'tools', 'v0-harness', 'serve.mjs'), String(start)], { cwd: old, stdio: 'ignore', env: { ...process.env, STRUCMED_WORKSPACE: ws, STRUCMED_RUNTIME_WEB: web } });
+  pids.push(child.pid);
+  for (let i = 0; i < 50 && !(fs.existsSync(path.join(ws, '.strucmed', 'preview', 'server.json')) && serverInfo(ws).pid === child.pid); i++) await new Promise(x => setTimeout(x, 50));
+  assert.equal(serverInfo(ws).pid, child.pid);
+
+  const before = t.form_preview({ draft_id: id, format: 'html' });
+  assert.equal(before.url, null, '別版 harness 的埠不組網址');
+  assert.ok(before.warnings.some(w => w.startsWith('W_PREVIEW_OTHER_HARNESS')), JSON.stringify(before.warnings));
+
+  const r = await node(SCRIPT, [id, String(start), '--workspace', ws]);
+  assert.equal(r.json.ok, true, JSON.stringify(r.json));
+  assert.notEqual(r.json.port, start);
+  assert.match(r.json.server, new RegExp(`略過 ${start}：舊版 harness（3\\.9\\.1）`));
+  const info = serverInfo(ws);
+  pids.push(info.pid);
+  const own = JSON.parse(fs.readFileSync(path.resolve(HERE, '../../../.claude-plugin/plugin.json'), 'utf8')).version;
+  assert.equal(info.version, own);
+  assert.equal(fs.realpathSync(info.serve), fs.realpathSync(path.resolve(HERE, '../../../tools/v0-harness/serve.mjs')));
+  const health = await (await fetch(`http://127.0.0.1:${r.json.port}/__health`)).json();
+  assert.equal(health.version, own);
+  assert.equal(health.serve, info.serve);
+  assert.equal(t.form_preview({ draft_id: id, format: 'html' }).url, `http://127.0.0.1:${r.json.port}/__preview/${id}`);
+
+  // 再跑一次：沿用這一版的，舊的照樣略過
+  const again = await node(SCRIPT, [id, String(start), '--workspace', ws]);
+  assert.equal(again.json.port, r.json.port);
+  assert.match(again.json.server, /沿用/);
+  process.kill(info.pid, 'SIGTERM');
+  child.kill();
+  fs.rmSync(old, { recursive: true, force: true });
+});

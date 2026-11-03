@@ -14,9 +14,37 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.9.2（MCP 2.9.0）— 未發佈：頁籤改名不必重建、HIS 文字鍵在需求階段問
+## 3.9.3（MCP 2.10.0）— 2026-11-04：舊版 harness 不沿用、字典寫入失敗後怎麼續做
+
+3.9.2 以市集版短跑驗收（2026-11-03，8.5／10，`integration-3.9.2.md`）後的收尾。3.9.2 的主要改動都通過、重建 0 次；本版處理驗收看到的小問題。發現編號對應驗收紀錄的 F-01～F-12。字典寫入回傳多了 `next`、`online_folder_list` 的 `type` 改選填、harness 的 `/__health` 與 `server.json` 多了欄位，所以 MCP 升 2.10.0。
+
+尚未實測：本版從市集安裝後的流程；倉儲故障時以 `next` 續做（假站台測過，真站台 3.9.2 驗收時手動這樣做成功）。
+
+**預覽**
+- F-02：harness 的 `/__health` 與 `server.json` 加 `version`（plugin 版本）與 `serve`（`serve.mjs` 絕對路徑）。`preview.mjs` 只沿用同一份 plugin 的 harness；埠上是別版 plugin 留下的（例如 3.9.1 快取的 `serve.mjs`）時視同占用、改啟下一個埠，`server` 寫「略過 8766：舊版 harness（3.9.1）」。舊版 harness 沒有 `version`，由監聽該埠的行程的 cwd 或命令列找到它的 plugin 版本（macOS／Linux；查不到寫「版本不明」）。`form_preview` 遇到別份 plugin 寫的 `server.json` 時回 `url: null` 與 `W_PREVIEW_OTHER_HARNESS`。
+
+**上架**
+- F-03：`online_dictionary_batch` 第二次呼叫有字典沒建立（`pending_left` 非空，例如倉儲 `E_UPSTREAM`）時回 `next`：重新第一次呼叫取 plan（只列尚未建立的字典），每本內容與定稿相同時不必重核准。`online_dictionary_batch`／`create` 整個請求失敗（`E_UPSTREAM`）時錯誤的 `details` 帶 `next` 與 `pending_left`，502 的訊息不再沿用範本的「請勿重複保存」（字典同名會沿用既有，重做安全）。`PublishWorkflow.md` §4 錯誤表加「字典 `E_UPSTREAM`」一列，`publish-form` 第 6 步指向它。
+
+**字典 CSV**
+- F-05：`dictionary_plan_export` 的表頭寫成 `asr（多值以／分隔）`；`dictionary_plan_import` 對 `／`、`;`、`,`、`|`（含全形）都拆，用了 `／` 以外的分隔符回 `W_ASR_DELIMITER`，只有一筆但含「、」時也回。舊表頭 `asr` 照樣認得。`dictionary-assist` 模式 2、`DictionaryMemo.md` §5 同步。
+
+**流程文字**
+- F-06：`create-form` §3 第 1 步：planner 的待決列出他科候選字典時，先問使用者是否採用；採用就 `online_dictionary_search(scope:"all", q, update_index:true)` 併入索引、草案改綁後再交 builder。
+- F-07：`create-form` §5 第 1 步：最後一輪 reviewer 必須在所有意見套用完之後啟動，不與改 draft 平行。
+
+**小修**
+- F-08：`form_update_area(titles)` 改名或刪頁籤後，`W_HIS_TEXT_KEYS` 寫明「頁籤 comment 已改名 note」或「頁籤 tmp 已刪除」，並給 `form_update_meta(his_text_keys: […])` 的完整清單。
+- F-12：`online_folder_list` 的 `type` 改為選填、預設 `usr`，描述寫明。
+
+**不處理**
+- F-01：屬平台（倉儲容錯另案評估）。F-04：下次驗收請使用者清空科部一次。F-09：不用處理。F-10、F-11：資訊。
+
+## 3.9.2（MCP 2.9.0）— 2026-11-03：頁籤改名不必重建、HIS 文字鍵在需求階段問
 
 3.9.1 以市集版完整實跑一張頁籤表單（2026-11-03，7.5／10）後的調整。主流程 2 次重建都是因為頁籤名稱不能改：使用者在預覽頁要改 HIS 文字鍵，就只能重建。發現編號對應實跑紀錄的 F-01～F-13。MCP 新增工具參數（`form_update_area` 的 `titles`、`dictionary_suggest` 的 `full_memo`），所以升 2.9.0。
+
+發佈（2026-11-03）：strucmed-plugin `af1f95d`（tag `v3.9.2`，由 strucmed-skill tag `v3.9.2-src`＝`331f9df` 產生）。
 
 平台配合（另開）：登入頁的科部欄位改成必填、用 `value` 預填（F-01），瀏覽器已有 SSO 時不要靜默核發沒有科部的 token（F-02）。本版只在 MCP 與 skill 端把狀況講清楚。
 

@@ -77,11 +77,11 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_folder_list',
-    description: '（online，唯讀）列出資料夾中的範本（GET api/v2/folders/{type}/templates）。type：usr 個人、sub 次專科、dpt 科部、sys 系統、trash 垃圾桶、ALL 全部。',
-    inputSchema: { type: 'object', required: ['type'], properties: {
-      type: str('資料夾', { enum: FOLDER_TYPES }), q: str('名稱或捷徑關鍵字（選填）'),
+    description: '（online，唯讀）列出資料夾中的範本（GET api/v2/folders/{type}/templates）。type 選填，預設 usr：usr 個人、sub 次專科、dpt 科部、sys 系統、trash 垃圾桶、ALL 全部。',
+    inputSchema: { type: 'object', properties: {
+      type: str('資料夾（選填，預設 usr 個人）', { enum: FOLDER_TYPES }), q: str('名稱或捷徑關鍵字（選填）'),
       page: { type: 'number', description: '頁次（選填，從 1 起）' }, page_size: { type: 'number', description: '每頁筆數（選填，伺服器上限 200）' } } },
-    async handler({ type, q, page, page_size }) {
+    async handler({ type = 'usr', q, page, page_size }) {
       if (!FOLDER_TYPES.includes(type)) fail(E.INVALID_INPUT, `type 必須是 ${FOLDER_TYPES.join('／')}`);
       return online.call('GET', `api/v2/folders/${type}/templates`, { query: { q, page, pageSize: page_size } }, '讀取資料夾清單');
     }

@@ -52,7 +52,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - 有 `pending-fhir.json` 時：字典完成後，把新字典的 `{ dic_id, fhir }` 併進 `memo-items.json`，重新做補述的第一次呼叫，plan 與定稿檔比對後才做第二次呼叫（`PublishWorkflow.md` §4 第 2 步）；`reused` 的字典不併入，列給使用者決定。
    - 有建字典時：字典完成後才做範本的第一次呼叫，plan 與「### 上架」比對。這是 G2 核准後的第一次呼叫，一樣只取計畫：先再說一次「這次只產生計畫，不寫入；若被權限擋下請允許」。相同就原樣列給使用者、接著第二次呼叫；不同就停下來，`Revision` +1 重新呈現。
    - 第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起）：回 `pending`（附 `approve_url`）時，請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消）就停止，需要時重新取得計畫。確認頁被關掉時把 `approve_url` 給使用者重開（`PublishWorkflow.md` §4）。
-   - 補述回 `E_CONFLICT` 時以 `details.stale` 合併後重取 plan 並重新給使用者確認（不影響已完成的步驟）。token 過期就重新第一次呼叫，plan 相同時定稿檔不用改。錯誤依 `PublishWorkflow.md` §4 處理；`E_UPSTREAM` 帶 `pending` 時**不要重試**。
+   - 補述回 `E_CONFLICT` 時以 `details.stale` 合併後重取 plan 並重新給使用者確認（不影響已完成的步驟）。token 過期就重新第一次呼叫，plan 相同時定稿檔不用改。錯誤依 `PublishWorkflow.md` §4 處理；範本的 `E_UPSTREAM` 帶 `pending` 時**不要重試**；字典寫入失敗（`pending_left` 非空或 `E_UPSTREAM`）照回傳的 `next` 重做第一次呼叫，plan 與定稿相同時不必重核准。
 7. **收尾**：`online_template_get`（`save: true`，只回摘要）取回確認名稱、捷徑、作業別與控制項數；更新另跑 `online_template_versions`。最後交付（`PublishWorkflow.md` §5，≤ 15 行）：有體系升級建議時註明「請轉給體系字典管理者在字典頁升級；升級不改 id，這次上架的表單不用改」。
 
 ## 不做

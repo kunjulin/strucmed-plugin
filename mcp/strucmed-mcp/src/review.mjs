@@ -2,6 +2,7 @@
 // review 檔由預覽頁寫入，內容是使用者的話：這裡只轉成工具呼叫的建議，不執行，也不把 values 寫到別的地方。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { E, fail } from './errors.mjs';
 import { fieldMap } from './fieldmap.mjs';
 import { areaNode, findControl, isControl, walk } from './formtree.mjs';
@@ -14,11 +15,15 @@ function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-// harness 寫的 <workspace>/.strucmed/preview/server.json（實際的埠）。本 MCP 不連線，只用 pid 判斷它還在不在
+// harness 寫的 <workspace>/.strucmed/preview/server.json（實際的埠）。本 MCP 不連線，只用 pid 判斷它還在不在。
+// 不是這份 plugin 的 serve.mjs 寫的（別版 plugin 留下的，或 3.9.2 以前沒有 serve 欄）回 { other: true }，不拿它的埠組網址（F-02）
+const real = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const OWN_SERVE = real(fileURLToPath(new URL('../../../tools/v0-harness/serve.mjs', import.meta.url)));
 export function previewServer(ws) {
   const s = readJson(path.join(ws.base, 'preview', 'server.json'));
   if (!s || !Number.isInteger(s.port) || !Number.isInteger(s.pid)) return null;
-  try { process.kill(s.pid, 0); return s; } catch (e) { return e.code === 'EPERM' ? s : null; }
+  try { process.kill(s.pid, 0); } catch (e) { if (e.code !== 'EPERM') return null; }
+  return s.serve && real(String(s.serve)) === OWN_SERVE ? s : { ...s, other: true };
 }
 
 // 這個 draft 已經有過第幾次意見（review 目錄裡最大的 seq）；還沒有回 0

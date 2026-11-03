@@ -8,6 +8,9 @@ const FHIR_COLS = ['res', 'path', 'code', 'display', 'ucum'];
 export const COLUMNS = ['action', 'id', 'dicType', 'dicName', 'level', 'role', 'used_by', 'desc', ...dc.MEMO_KEYS,
   ...FHIR_COLS.map(k => 'fhir_' + k), 'fhir_more', 'fhir_status', 'memo_by', 'candidates', 'note'];
 const REQUIRED = ['action', 'dicName'];
+// 表頭寫明 asr 的分隔符（F-05）；讀回時去掉結尾的全形括號註解，舊 CSV 的 asr 也認得
+const HEADER = { asr: 'asr（多值以／分隔）' };
+const headerName = h => h.trim().replace(/（[^）]*）$/, '');
 
 // Excel 開 CSV 時會把 = + - @ 開頭當公式、1-3 當日期，存回去內容就換了（補述常有「=體重/身高^2」「1-12」）。
 // 這些值前面加一個 '：Excel 原樣顯示與存回，import 再拿掉；本來就以 ' 開頭的值也加，才能往返
@@ -18,13 +21,13 @@ const quote = v => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 export function toCsv(rows) {
   const line = cells => cells.map(c => quote(guard(String(c ?? '')))).join(',');
-  return '﻿' + [line(COLUMNS), ...rows.map(r => line(COLUMNS.map(k => r[k])))].join('\r\n') + '\r\n';
+  return '﻿' + [line(COLUMNS.map(k => HEADER[k] || k)), ...rows.map(r => line(COLUMNS.map(k => r[k])))].join('\r\n') + '\r\n';
 }
 
 // CSV 文字 → [{ row（試算表列號，表頭＝1）, <欄名>: 值 }]；缺必要欄回 E_INVALID_INPUT
 export function parsePlan(text) {
   const [head, ...body] = parseCsv(String(text));
-  const names = (head || []).map(h => h.trim());
+  const names = (head || []).map(headerName);
   const missing = REQUIRED.filter(k => !names.includes(k));
   if (missing.length) fail(E.INVALID_INPUT, `CSV 表頭缺少必要欄：${missing.join('、')}`, { missing });
   return body.map((cells, i) => {
@@ -32,6 +35,16 @@ export function parsePlan(text) {
     COLUMNS.forEach(k => { const at = names.indexOf(k); r[k] = at < 0 ? '' : unguard(String(cells[at] ?? '')); });
     return r;
   });
+}
+
+// asr 多值：匯出用／；AI 或使用者常寫 ; , |（含全形），一律當分隔符，統一成／（F-05）。
+// → { cell, used: 用到的其他分隔符, count, unsplit: 只有一筆但含「、」（可能是沒拆開的多值；/ 常見於單位，不算） }
+const ASR_SPLIT = /[／;；,，|｜]/;
+export function normalizeAsr(cell) {
+  const text = String(cell ?? '');
+  const parts = text.split(ASR_SPLIT).map(x => x.trim()).filter(Boolean);
+  const used = [...new Set(text.match(/[;；,，|｜]/g) || [])];
+  return { cell: parts.join('／'), used, count: parts.length, unsplit: parts.length === 1 && parts[0].includes('、') };
 }
 
 const memoCells = memo => Object.fromEntries(dc.MEMO_KEYS.map(k => [k, memo && memo[k] !== undefined ? [].concat(memo[k]).join(k === 'asr' ? '／' : '') : '']));

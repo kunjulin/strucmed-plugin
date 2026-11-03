@@ -20,6 +20,9 @@ const WORKSPACE = path.resolve(wsArg || process.env.STRUCMED_WORKSPACE || path.r
 const FIX = path.join(HERE, 'fixtures');
 const OUT = path.join(HERE, 'out');
 const PORT = Number(args[0] || 8765);
+// preview.mjs 用這兩個值判斷埠上的 harness 是不是這份 plugin（F-02：別版 plugin 留下的 harness 不沿用）
+const SERVE = fileURLToPath(import.meta.url);
+const VERSION = (() => { try { return String(JSON.parse(fs.readFileSync(path.resolve(HERE, '../../.claude-plugin/plugin.json'), 'utf8')).version || ''); } catch { return ''; } })();
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
@@ -41,7 +44,7 @@ const PREVIEW_DIR = path.join(WORKSPACE, '.strucmed', 'preview');
 const SERVER_JSON = path.join(PREVIEW_DIR, 'server.json');
 function writeServerInfo(port) {
   fs.mkdirSync(PREVIEW_DIR, { recursive: true });
-  fs.writeFileSync(SERVER_JSON, JSON.stringify({ v: 1, port, pid: process.pid, workspace: WORKSPACE, web: WEB, started_at: new Date().toISOString() }, null, 1));
+  fs.writeFileSync(SERVER_JSON, JSON.stringify({ v: 1, port, pid: process.pid, workspace: WORKSPACE, web: WEB, version: VERSION, serve: SERVE, started_at: new Date().toISOString() }, null, 1));
 }
 function clearServerInfo() {
   try { if (JSON.parse(fs.readFileSync(SERVER_JSON, 'utf8')).pid === process.pid) fs.rmSync(SERVER_JSON); } catch { /* 已經不在 */ }
@@ -134,7 +137,7 @@ http.createServer((req, res) => {
   }
   if (p === '/__health') {
     // preview.mjs 用來判斷這個埠上是不是新版、同一個工作目錄的 harness 伺服器；路徑只回給本機頁面（Host 相符）
-    return send(res, 200, JSON.stringify({ harness: 'v0', features: ['preview', 'snapshot', 'review', 'workspace'], ...(reviewHostOk(req) && { workspace: WORKSPACE, web: WEB }) }), TYPES['.json']);
+    return send(res, 200, JSON.stringify({ harness: 'v0', features: ['preview', 'snapshot', 'review', 'workspace'], ...(reviewHostOk(req) && { workspace: WORKSPACE, web: WEB, version: VERSION, serve: SERVE }) }), TYPES['.json']);
   }
   if (req.method === 'POST' && p === '/__snapshot') {
     // runtime 驗證的畫面截圖（preview-shim.js 的 __snapshot 以 html2canvas 產生 PNG）→ out/snapshots/（已 gitignore）

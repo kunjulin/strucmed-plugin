@@ -72,7 +72,7 @@
 | `role` | tohis／fromhis／puthis／nohis（多個欄位不同時列 `tohis;nohis`） | 唯讀 |
 | `used_by` | `itemid:說明文字;…` | 唯讀 |
 | `desc` | 一行說明 | 待新建可改；既有不可改（只有作者能改） |
-| `meaning` `type` `unit` `range` `func` `usecase` `interop` `asr` `calx` `llm` `scope` | 補述 11 鍵，每格 ≤ 300 字；`asr` 以 `／` 分隔 | 可改 |
+| `meaning` `type` `unit` `range` `func` `usecase` `interop` `asr` `calx` `llm` `scope` | 補述 11 鍵，每格 ≤ 300 字；`asr` 多值以 `／` 分隔（表頭寫成 `asr（多值以／分隔）`；`;`、`,`、`|` 也會拆，回 `W_ASR_DELIMITER`；只有一筆但含「、」時也回） | 可改 |
 | `fhir_res` `fhir_path` `fhir_code` `fhir_display` `fhir_ucum` | 第一組 FHIR 對應 | 可改 |
 | `fhir_more` | 第二組起，JSON 陣列原文；沒有則空 | 可改（整段 JSON） |
 | `fhir_status` | `ICD-10 MCP 已驗證`／`待人工確認`／`沿用既有` | 唯讀 |

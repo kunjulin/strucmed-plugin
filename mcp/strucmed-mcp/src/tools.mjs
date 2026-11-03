@@ -25,7 +25,7 @@ import { editableItems, findControl, refsTo, maxItemId, walk, isControl, areaNod
 import { writeMeta, readReview, previewServer, lastReviewSeq, reviewFormulas } from './review.mjs';
 import { replaceUnstorable, firstUnstorable, SUBSTITUTES } from './cp950.mjs';
 import { findRuntimeWeb } from './runtime-web.mjs';
-import { toCsv, parsePlan, planRows, importPlan } from './dictcsv.mjs';
+import { toCsv, parsePlan, planRows, importPlan, normalizeAsr } from './dictcsv.mjs';
 
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -968,7 +968,7 @@ export const TOOLS = [
     description: '（離線）修改區塊：title（改標題；有可見標題行時一起改，不論它目前在第幾行）、visible_title（文字區塊的可見標題行：true 加上、false 拿掉）、hidden（刻意隱藏）、' +
       'titles（頁籤 tab1／tab2 的頁籤名稱，動態表格 table1／table2 的欄或列標題：改名、增減、調換順序）。itemid 不變，不需要重建 draft。' +
       'titles 是改完後的完整清單：名稱與現有頁籤相同的保留原頁籤（含裡面的欄位），其餘依序沿用剩下的頁籤（改名），多出來的是新的空白頁籤，沒有用到的舊頁籤刪除；' +
-      '要刪的頁籤裡還有控制項時拒絕並列出 itemid，請先 form_move_control 搬走或 form_remove_control。頁籤名稱就是 HIS 文字輸出的鍵（[頁籤名稱:]），回傳的 mapping 列出每個頁籤的來源。' +
+      '要刪的頁籤裡還有控制項時拒絕並列出 itemid，請先 form_move_control 搬走或 form_remove_control。頁籤名稱就是 HIS 文字輸出的鍵（[頁籤名稱:]），回傳的 mapping 列出每個頁籤的來源；his_text_keys 的鍵被改名或刪掉時 W_HIS_TEXT_KEYS 寫明是哪個頁籤並給改好的清單。' +
       '原表單（form_import）區塊的權限不在這裡改，請在編輯器調整。',
     inputSchema: { type: 'object', required: ['draft_id', 'itemid'], properties: {
       draft_id: str('draft id'), itemid: { type: 'number', description: '區塊 itemid' }, title: str('區塊標題'),
@@ -1003,7 +1003,16 @@ export const TOOLS = [
         a.area.item = retitled.cells;
         const keys = d.meta.hisTextKeys || [];
         const { missing, case_mismatch } = keys.length && cellKind(type) === 'tab' ? hisTextKeyFindings(d, keys) : { missing: [], case_mismatch: [] };
-        if (missing.length || case_mismatch.length) retitled.warnings.push(`W_HIS_TEXT_KEYS：HIS 接收端要的文字鍵（form_update_meta 的 his_text_keys）在頁籤名稱與 label 文字中找不到：${[...missing, ...case_mismatch.map(x => x.want)].join('、')}；鍵改了的話請一併 form_update_meta(his_text_keys)`);
+        // 找不到的鍵若是這次改名或刪掉的頁籤，直接說是哪個頁籤、給改好的清單（F-08）
+        const renamed = new Map(retitled.mapping.filter(m => m.was !== undefined).map(m => [m.was, m.title]));
+        const gone = new Set(retitled.removed.map(r => r.title));
+        const hints = [...missing.filter(k => renamed.has(k)).map(k => `頁籤 ${k} 已改名 ${renamed.get(k)}`), ...missing.filter(k => !renamed.has(k) && gone.has(k)).map(k => `頁籤 ${k} 已刪除`)];
+        const rest = [...missing.filter(k => !renamed.has(k) && !gone.has(k)), ...case_mismatch.map(x => x.want)];
+        if (hints.length) {
+          const fixed = keys.filter(k => !gone.has(k) || renamed.has(k)).map(k => renamed.get(k) || k);
+          retitled.warnings.push(`W_HIS_TEXT_KEYS：${hints.join('；')}；his_text_keys 的 ${missing.filter(k => renamed.has(k) || gone.has(k)).join('、')} 要跟著改請 form_update_meta(his_text_keys: ${JSON.stringify(fixed)})` +
+            (rest.length ? `；另外在頁籤名稱與 label 文字中找不到：${rest.join('、')}` : ''));
+        } else if (rest.length) retitled.warnings.push(`W_HIS_TEXT_KEYS：HIS 接收端要的文字鍵（form_update_meta 的 his_text_keys）在頁籤名稱與 label 文字中找不到：${rest.join('、')}；鍵改了的話請一併 form_update_meta(his_text_keys)`);
       }
       store.saveDraft(d);
       const now = titleLine(a);
@@ -1104,7 +1113,7 @@ export const TOOLS = [
     description: '呈現表單結構供使用者確認。tree / markdown：文字結構。html（v0.2，Claude 內部驗證用，見 SKILL §2c）：以 HIS 端 runtime（TempHtml）在本機離線呈現，' +
       '由 Claude 在內建瀏覽器設值、看計算式結果、執行巨集（LLM、語音、HIS 查詢改為顯示將送出的內容，不實際呼叫；網路由 CSP 封鎖），再把結果交給使用者檢查。' +
       'html 需要平台前端的本機副本（STRUCMED_RUNTIME_WEB；沒設時依序找 <workspace>/strucmed/web、<workspace>/repo/strucmed/web、<workspace>/../strucmed/web，回傳的 runtime_web 是實際結果）與 harness 伺服器。' +
-      'url 取自 harness 寫的 .strucmed/preview/server.json（實際的埠）；伺服器還沒開時 url 是 null，執行 open 欄位的指令（會自動啟動、避開被占用的埠）取得 link。' +
+      'url 取自 harness 寫的 .strucmed/preview/server.json（實際的埠）；伺服器還沒開、或是別份 plugin 的伺服器（W_PREVIEW_OTHER_HARNESS）時 url 是 null，執行 open 欄位的指令（會自動啟動、避開被占用的埠）取得 link。' +
       'html 同時是審閱模式：多寫 <draft_id>.meta.json（欄位事實、計算式試算、HIS 文字鍵），回傳 meta_file、review_dir；使用者在預覽頁改說明文字、選項、字典補述、留意見，按「送出意見」或「定稿」寫到 review_dir，以 form_review_read 讀回。套用第 N 次意見後帶 applied_seq 重新呼叫，再請使用者重新整理。' +
       'applied_seq 超過這個 draft 實際有過的意見（例如重建後的新 draft）時不採用，回 W_APPLIED_SEQ_RESET。formulas_from_review:true 自動讀 reviewer 的 review.md「## 試算」，不必逐字謄寫 formulas。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
@@ -1140,8 +1149,9 @@ export const TOOLS = [
       const { stale_formulas, ...written } = writeMeta(ws, d, form, store.loadDictIndex(), store.loadPolicy(), { applied_seq: seq, formulas });
       if (stale_formulas.length) warnings.push(`W_REVIEW_FORMULA_STALE：${stale_formulas.map(id => '#' + id).join('、')} 的試算對應的計算式與 draft 不同，沒有採用；請重跑 formula_check`);
       const web = findRuntimeWeb(ws.root), server = previewServer(ws);
+      if (server && server.other) warnings.push(`W_PREVIEW_OTHER_HARNESS：埠 ${server.port} 上是別份 plugin 的預覽伺服器（${server.version || '3.9.2 以前'}），不沿用；請執行 open 欄位的指令，會改啟這一版的伺服器`);
       return {
-        url: server ? `http://127.0.0.1:${server.port}/__preview/${d.draft_id}` : null,
+        url: server && !server.other ? `http://127.0.0.1:${server.port}/__preview/${d.draft_id}` : null,
         file: path.relative(ws.root, file), ...written,
         // 檢查伺服器、沒開就在背景啟動、印出可點的連結（本 MCP 不連線，所以不自己探測埠）
         open: `node "${PREVIEW_SCRIPT}" ${d.draft_id} --workspace "${ws.root}"`,
@@ -1170,7 +1180,7 @@ export const TOOLS = [
   },
   {
     name: 'dictionary_plan_export',
-    description: '（離線）把 draft 用到的字典匯出成 CSV，給使用者在 Excel 一次補完：一本字典一列（綁定的既有字典＋待新建字典），欄位含 action、id、名稱、層級、角色、使用欄位、desc、補述 11 鍵、FHIR、候選字典、note。' +
+    description: '（離線）把 draft 用到的字典匯出成 CSV，給使用者在 Excel 一次補完：一本字典一列（綁定的既有字典＋待新建字典），欄位含 action、id、名稱、層級、角色、使用欄位、desc、補述 11 鍵（asr 多值以／分隔，表頭寫明）、FHIR、候選字典、note。' +
       '預設寫到 .strucmed/plans/<draft_id>/dictionaries.csv（計畫產物，重跑覆寫，不走兩段式）；out_path 必須在工作目錄內。UTF-8 帶 BOM、CRLF、RFC 4180。HTTP 模式另回 csv_text。改好後用 dictionary_plan_import 讀回。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'), out_path: str('輸出路徑（選填；相對於工作目錄，且必須在工作目錄內）') } },
     handler({ draft_id, out_path }) {
@@ -1190,7 +1200,7 @@ export const TOOLS = [
     name: 'dictionary_plan_import',
     description: '（離線；只改本機 draft）讀回 dictionary_plan_export 的 CSV（有 BOM、無 BOM 都接受），逐列依 action 處理：new＝更新待新建字典的 desc、補述、FHIR、名稱；bind＝沿用（補述有變才視同 memo）；' +
       'memo＝既有字典的補述修改，不寫 draft，回 memo_items（online_dictionary_memo_batch 的 items），定稿 G2 時才寫；rebind:<id>＝該字典所有欄位改綁到 <id>，回 rebinds；skip＝略過。' +
-      '每列跑 dictionary_memo_check，error 的列不套用、進 skipped（row 是試算表列號，表頭＝1）；checks 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；note 欄工具不處理。id 欄不可改（改了回 skipped，要換字典用 rebind）；既有字典的 desc 不可改（W_DESC_READONLY）。' +
+      'asr（語音別名）多值以／分隔（表頭寫明）；;、,、| 也會拆並回 W_ASR_DELIMITER。每列跑 dictionary_memo_check，error 的列不套用、進 skipped（row 是試算表列號，表頭＝1）；checks 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；note 欄工具不處理。id 欄不可改（改了回 skipped，要換字典用 rebind）；既有字典的 desc 不可改（W_DESC_READONLY）。' +
       'csv_path 與 csv_text 擇一，都不帶時讀預設路徑；csv_path 必須在工作目錄內。缺必要欄回 E_INVALID_INPUT。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'),
       csv_path: str('CSV 路徑（相對於工作目錄，且必須在工作目錄內）'), csv_text: str('CSV 內容（與 csv_path 擇一；HTTP 模式用）') } },
@@ -1206,11 +1216,16 @@ export const TOOLS = [
         if (fs.statSync(file).size > MAX_SOURCE) fail(E.INVALID_INPUT, 'CSV 檔超過 10MB');
         text = fs.readFileSync(file, 'utf8');
       }
-      const warnings = [], fixed = new Set();
+      const warnings = [], fixed = new Set(), asrNoted = new Set();
       const rows = parsePlan(text).map(row => {
         const before = warnings.length, out = { ...row };
         for (const k of ['desc', ...dc.MEMO_KEYS]) out[k] = big5Text(row[k], `字典「${row.dicName}」的${k === 'desc' ? '說明' : `補述 ${dc.MEMO_LABEL[k] || k}`} `, warnings);
         if (warnings.length > before) fixed.add(row.dicName);
+        const asr = normalizeAsr(out.asr);
+        if (asr.used.length) warnings.push(`W_ASR_DELIMITER：字典「${row.dicName}」的語音別名用「${asr.used.join('」「')}」分隔，已拆成 ${asr.count} 筆；CSV 的多值分隔符是／`);
+        else if (asr.unsplit) warnings.push(`W_ASR_DELIMITER：字典「${row.dicName}」的語音別名只有一筆「${asr.cell}」；若是多個說法請用／分隔`);
+        if (asr.used.length || asr.unsplit) asrNoted.add(row.dicName);
+        out.asr = asr.cell;
         return out;
       });
       const idx = store.loadDictIndex();
@@ -1233,7 +1248,10 @@ export const TOOLS = [
       });
       // 既有字典的補述不在 draft 裡：只有這兩種情形才動到 draft
       if (out.rebinds.length || out.applied.some(x => x.action === 'new')) store.saveDraft(d);
-      for (const c of out.checks) if (fixed.has(c.name)) c.warnings.push('W_NON_BIG5');
+      for (const c of out.checks) {
+        if (fixed.has(c.name)) c.warnings.push('W_NON_BIG5');
+        if (asrNoted.has(c.name)) c.warnings.push('W_ASR_DELIMITER');
+      }
       return { ...out, warnings };
     }
   },
