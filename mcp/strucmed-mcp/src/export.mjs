@@ -11,6 +11,7 @@ import { preview } from './preview.mjs';
 import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
 import * as dc from './dictcomment.mjs';
+import { renderSnippets } from './script-snippets.mjs';
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -80,6 +81,21 @@ ${rows.join('\n')}
 ` : ''}`;
 }
 
+// 白名單片段（docs/13）：清單與渲染後的程式碼原樣列出，供人工審閱
+export function scriptSnippetSection(draft) {
+  const r = renderSnippets(draft);
+  if (!r.js) return '';
+  return `
+## 表單 JS（白名單片段，${r.snippets.length} 個，sha256 ${r.hash}）
+由固定樣板渲染，不接受自由 JS；只在 2.0 runtime 執行，不影響 HIS 文字輸出與倉儲。樣式會影響列印版面。
+${r.snippets.map(s => `- ${s.template}#${s.id}${s.advanced ? '（進階，flag formScriptAdvanced）' : ''}：${s.summary}${s.affects.length ? `（影響 #${s.affects.join('、#')}）` : ''}`).join('\n')}
+
+\`\`\`js
+${r.js}
+\`\`\`
+`;
+}
+
 export function manifest(draft, validation, files, sha, pkg) {
   const m = draft.meta;
   const pend = draft.pendingDictionaries || [];
@@ -104,7 +120,7 @@ ${preview(draft, 'tree')}
 - 綁定既有（${bound.length}）：
 ${bound.join('\n') || '- 無'}
 
-${scriptSection(draft, validation)}
+${scriptSection(draft, validation)}${scriptSnippetSection(draft)}
 ## 套件內的選項（v2）
 | 項目 | 值 |
 |---|---|

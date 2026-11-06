@@ -40,6 +40,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/check-env.mjs" --workspace <workspace>
 | 改某一顆 LLM 按鈕的提示詞、AI 回覆不好、想試跑或比較模型 | `tune-prompt` | 需要 draft 與 itemid；試跑要 flag `llmChatTest` 與去識別化樣本 |
 | 上架到編輯器／範本庫、更新線上範本 | `publish-form` | 定稿 G2 的執行段，可單獨對既有 draft 使用；唯一寫入線上的流程；離線時換成 `form_export` 由使用者匯入 |
 | 上線前檢查、AI 走閘道、做成 app／平板用 | `build-form-app` | B1：HIS 內執行的執行清單；B2：獨立 PWA（H0 本機 Docker 預設、H1 既有 struNote、H2 站台） |
+| 表單要自動提示、強調欄位、美化版面 | `edit-form`（既有表單）或 `create-form` | 欄位顏色字級底色用 `form_update_control` 的樣式欄位；區塊以上的樣式、即時提示、連動寫值、對照表、必填提醒是 `form_set_script` 的白名單片段，需 flag `formScript`（預設關；開文件自動跑巨集與表格加列另需 `formScriptAdvanced`）；規則 `references/ScriptAddonRules.md` |
 | 問某個 LLM 模型能不能用 | `llmgateway_models`（有金鑰時）＋ `references/ModelWhitelist.md` | 沒金鑰時只能依靜態表回答並說明可能過時 |
 | 問規則、問某個控制項怎麼寫 | 直接讀 `references/FormDesignRules.md`、`FormulaMacroRules.md`、`TablesTabsRules.md` 回答 | 不建 draft |
 

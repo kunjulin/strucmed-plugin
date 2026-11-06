@@ -59,7 +59,7 @@ function checkArgs(tool, args) {
 // flag 關閉（feature-flags.json）時回 E_FEATURE_DISABLED。個別 tool 可再帶 flag（例如 templateUpdate）。
 function listed() {
   const f = loadFlags();
-  const out = [...TOOLS];
+  const out = TOOLS.filter(t => !t.flag || enabled(t.flag, f));
   if (online.configured() && enabled('online', f)) out.push(...ONLINE_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
   if (llmgw.configured() && enabled('llmgateway', f)) out.push(...LLMGW_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
   if (fmapi.configured() && enabled('fmapi', f)) out.push(...FMAPI_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
@@ -89,6 +89,7 @@ async function callTool(name, args) {
       if (!enabled('llmgateway', f)) throw new ToolError(E.FEATURE_DISABLED, 'feature flag llmgateway 已關閉（feature-flags.json）');
       if (tool.flag && !enabled(tool.flag, f)) throw new ToolError(E.FEATURE_DISABLED, `feature flag ${tool.flag} 未開啟（feature-flags.json）`);
     }
+    if (tool.flag && !onlineNames.has(name) && !llmgwNames.has(name) && !enabled(tool.flag, loadFlags())) throw new ToolError(E.FEATURE_DISABLED, `feature flag ${tool.flag} 未開啟（feature-flags.json）`);
     checkArgs(tool, args);
     const data = await tool.handler(args || {});
     const warnings = Array.isArray(data && data.warnings) ? data.warnings : [];

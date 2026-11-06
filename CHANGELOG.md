@@ -14,9 +14,52 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.10.0（MCP 2.11.0）— 2026-11-06：表單 JS 白名單片段 D1～D4（七種樣板，flag 預設關）
+
+情境 5「JS 增益集」的第一期。使用者決定以白名單片段開放，不接受自由 JS；設計文件在 strucmed-skill 的 docs 13（2026-11-06 修訂：S1 改 stylesheet＋主題、禁止類別分成維持禁止與以樣板在審閱下開放）。新工具與 flag，所以 MCP 升 2.11.0。
+
+**flag `formScript`（預設關）**：關閉時 `form_set_script`／`form_script_preview` 不列出、呼叫回 `E_FEATURE_DISABLED`；draft 已有片段而 flag 事後關閉時 `form_validate` 回 `E_FEATURE_DISABLED`、`form_export` 與上架都拒絕。
+
+**`form_set_script(draft_id, snippets)`**：整份取代（空陣列＝清除）。draft 只存 `{ id, template, params }`，JS 在匯出或上架時由固定樣板渲染；參數有錯什麼都不改，回 `errors` 清單。
+- `style`：`theme`（clean／compact／zebra-table／highlight-required，CSS 固定在 MCP 內）與 `rules`（`scope` 是受限的 form／area:N／area:N table／control:N，`css` 的屬性與值都走白名單：顏色 #hex／rgb()／色名、長度、`Npx solid 顏色`；拒絕 `url(`、`expression(`、`@import`、`;`、`}`）。渲染成注入一個 `<style>`，動態表格新列也套得到；`control:N` 的 color／font-size／background 自動加 `!important`（runtime 是 inline）。
+- `guard`：`sources` 改值後以 Calx `evaluate` 算 `condition`（經 `formula_check` 同一套 lint：巨集專用與禁用函數都擋），成立時 `errormessage` 提示並以 `.sm-guard` 標示 `highlight` 欄位；文件載入後（`ck_getDocDone`）也跑一次。`message` 不接受可組成程式碼的字元與 `ck_`、`window`、`eval` 等字。
+- 渲染後的 JS 以前綴 `sm_` 命名、每個片段各自 try/catch，並掃描禁用 token（連外、身分、`ck_*` 賦值、存檔載入、查詢與 AI、整份資料、內部渲染、動態程式、儲存）→ `E_SCRIPT_FORBIDDEN_API`（樣板問題，理論上不會發生）。
+
+**其他**：`form_script_preview` 回渲染後的 JS、片段清單與 findings；`form_validate` 回 `W_FORM_SCRIPT`（片段清單與影響的 itemid）與 `stats.snippets`；`form_remove_control`／`form_remove_area` 擋片段參照（blockers 的 `from` 是 `snippet:<id>`）；`form_export` 的 plan、`.manifest.md` 與 `online_template_create`／`update` 的 plan 原樣列出渲染後的程式碼（`script.rendered`）；JS 區塊第二行是 `// strucmed-skill snippets=[…] sha256=…`。`references/SecurityInvariants.md` 第 5 條改寫；form-reviewer 檢查 8 加 `form_script_preview`。
+
+**S0 控制項樣式欄位（D0.5，不需 flag）**：`form_add_control` 的 `control` 與 `form_update_control` 的 `changes` 加 `font_color`、`font_size`（10–24 px）、`back_color`，對應平台控制項既有的 `efontcolor`／`efontsize`／`ebackcolor`（編輯器屬性面板的色票、runtime 的 inline style）；顏色走片段同一套白名單，`""` 或 0 清回預設；`form_fields` 回 `style`、`form_preview(tree)` 顯示「樣式 字…/…px/底…」；`form_import` 的既有值原樣保留。`references/FormDesignRules.md` 加「樣式」小節。
+
+**skill 端接線（D3）**：新 `references/ScriptAddonRules.md`（何時用片段、兩種樣板參數、草案「### 表單 JS」格式、閘門與交付）；`Gates.md` §2 草案與 §3 定稿檔加「### 表單 JS」段；form-planner 依 flag 提案（7b）、form-builder 全部建好後 `form_set_script` 並回 `Script`、form-reviewer 的 review.md 加「## 表單 JS」；create-form 需求多問一句（flag 開時）、審閱表加樣式與片段、G2 前 guard 必跑與 style 截圖、交付加一行；edit-form 修改工具與 G2；verify-runtime 與 `RuntimeVerification.md` 的截圖例外；publish-form 與 `PublishWorkflow.md` 的定稿檔段；strucmed-form 分流表；README 說明怎麼開 flag。
+
+**D2（2026-11-06）**：三種新樣板與 CUSTOMFUNC 受控放行。
+- `derive`：`sources` 改值（`when: change`）或開文件（`docload`／`both`）後以 Calx 算 `expr` 寫進 `target`（`SetValueByID`，值沒變不寫）；`target` 不能是 label／按鈕／圖片、不能在動態表格、不能同時在 `sources`，`expr` 不能參照 `target`。
+- `lookup`：依 `source` 的值查固定對照表（≤ 200 筆）寫進 `target`，查無時 `miss.message` 提示、`miss.value` 寫入；`trigger: change` 綁事件，`trigger: customfunc` 渲染成函數 `sm_<name>` 由巨集 `CUSTOMFUNC("sm_<name>")` 呼叫。
+- `required`：必填欄位（須 `required: true`）失焦仍空白時立即提示並標示 `.sm-guard`，填上再失焦移除。
+- `CUSTOMFUNC` 由 forbidden 改為 custom：flag 開啟時只放行第一個參數是字串字面值、且是本 draft `lookup` 片段定義的 `sm_<name>`；名稱未定義回 `E_CUSTOMFUNC_UNDEFINED`（可延後到 `form_validate`，巨集可以先建）；非字面值或 flag 關閉回 `E_FORBIDDEN_FUNCTION`；計算式一律禁止。`formula_check` 帶 `draft_id` 時同一套。
+- `W_CUSTOM_JS_FINDINGS`：改版 draft 的原表單 JS 在 flag 開啟時另以片段同一套禁用 token 掃描，命中只告知不擋不改。
+- 對照表與預填值放寬到可含括號與等號（仍不接受 `< > { } \ \` $ ;`）。
+
+**D4（2026-11-06）**：進階片段與上架後比對。
+- flag `formScriptAdvanced`（預設關；需 `formScript` 也開）：關閉時 `autorun`／`table-rows` 回 `E_FEATURE_DISABLED`，draft 已有而事後關閉時 `form_validate` 回錯誤、匯出與上架拒絕。
+- `autorun`：開文件後 `performActionByID` 執行既有巨集按鈕（只限 `action`；`only_if_empty` 指定欄位已有值時不執行）；巨集本身照舊 lint 與 `W_AI_DATAFLOW`，另回 `W_SCRIPT_AUTORUN` 列出會自動送出的 AI／查詢步驟；定稿 plan 的 `script.advanced` 另列進階片段，manifest 與 `W_FORM_SCRIPT` 標「（進階）」。
+- `table-rows`：開文件後把 `table1` 動態表格補到 `rows.count`（1–30）或 `rows.source` 欄位的值那麼多列（改值後也補，只補不刪），`prefill` 依列預填表格內欄位（`TableRowAdd` 複製隱藏樣板列，`SetValueByID(id, val, subid)` 寫入）。
+- `online_template_get` 比對表單 JS 標記行的 sha256 與實際內容：不符回 `W_SCRIPT_MODIFIED`（上架後被人工改過），`script.matches` 在摘要與整包回傳都有。
+- S9 `ui-options` 不做 JS 樣板：`ck_hidePreset`／`ck_hideAssist`／`ck_hideprevicon` 本來就是表單選項，改為 `form_create` 的 `options.hide_prev_icon`（`f_hideprevicon`，原本固定 false）；`ck_showCharCounts` 由 HIS header 決定，不開放。S8 跳轉等平台 `OpenTemplateByID`。
+- 開文件類片段（`docload`、`autorun`、`table-rows`、`guard` 初次評估）：沒有病人（`ck_hasPatient` false：預覽頁、無 HIS header）時 runtime 不會 `getDoc`，片段改在 1 秒後執行；有病人時仍等 `ck_getDocDone`，30 秒逾時 `console.warn`。
+
+本機 harness 實跑（2026-11-06）：七種樣板都通過（derive 寫入分類、lookup 改值與巨集按鈕兩種觸發、查無時提示並清空、required 提示一次且填上後移除、autorun 開文件自動送出 LLMQUERY 到模擬端點、table-rows 補 2 列並預填）。
+
+未做：S8 表單間跳轉（等平台）。
+
+尚未實測：真實編輯器 round-trip（匯入含片段或樣式欄位的 .htm 再存檔）；HIS 端 2.0 runtime 實際執行（有病人時 `ck_getDocDone` 的等待）；struNote 頁（HostShim）的開文件類片段；D3 的 skill 流程（create-form 從需求到上架一張含片段的表單）。
+
+---
+
 ## 3.9.3（MCP 2.10.0）— 2026-11-04：舊版 harness 不沿用、字典寫入失敗後怎麼續做
 
 3.9.2 以市集版短跑驗收（2026-11-03，8.5／10，`integration-3.9.2.md`）後的收尾。3.9.2 的主要改動都通過、重建 0 次；本版處理驗收看到的小問題。發現編號對應驗收紀錄的 F-01～F-12。字典寫入回傳多了 `next`、`online_folder_list` 的 `type` 改選填、harness 的 `/__health` 與 `server.json` 多了欄位，所以 MCP 升 2.10.0。
+
+發佈（2026-11-04）：strucmed-plugin `943d1d3`（tag `v3.9.3`，由 strucmed-skill tag `v3.9.3-src`＝`959f323` 產生）。發佈時：`release-plugin.mjs` ok、223 檔、掃描無發現（第一次掃描擋下本段對開發文件的連結，已拿掉）；`npm test` 221 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.309 執行，通過。發佈是在全新 clone 上做的：本機的 strucmed-plugin clone 有約 220 個 iCloud 產生的「 2」「 3」重複檔（未追蹤、讀取逾時），沒有動。
 
 尚未實測：本版從市集安裝後的流程；倉儲故障時以 `next` 續做（假站台測過，真站台 3.9.2 驗收時手動這樣做成功）。
 

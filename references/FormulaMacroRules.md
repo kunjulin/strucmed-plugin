@@ -26,7 +26,7 @@
 - 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`…）。拼錯時平台會靜默改用預設模型。
 - 計算式不能用巨集專用函數（HISQUERY、SETVALUEBYID、LLMQUERY…）。
-- **禁止產生**：CUSTOMFUNC、OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO。使用者需要時，請其匯入後在編輯器由人工加入並審查。
+- **禁止產生**：OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO。使用者需要時，請其匯入後在編輯器由人工加入並審查。`CUSTOMFUNC("sm_<name>")` 只在 flag `formScript` 開啟、且本 draft 有同名的 `lookup` 片段（`trigger: customfunc`）時放行（`ScriptAddonRules.md` §2）；其他一律 `E_FORBIDDEN_FUNCTION`／`E_CUSTOMFUNC_UNDEFINED`。
 
 **交付時必須告知**：
 - `W_AI_DATAFLOW`：哪些欄位會送到 LLM／語音服務（manifest「AI 資料流」）。模型白名單與上架審查待院方決議。

@@ -52,6 +52,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
+| 樣式與即時提示 | 工具清單有 `form_set_script`（flag `formScript`）時才問一句 | 要不要強調欄位、區塊底色或表格格線（樣式）、值不合理時立即提示（guard）、輸入後自動帶出判讀或分類（derive／lookup）、必填離開即提醒（required）；開文件自動跑巨集、表格預設列數是進階（另需 `formScriptAdvanced`）。規則與替代做法見 `references/ScriptAddonRules.md` §1。flag 關閉時不問，需求提到就告知需開 flag |
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
 
@@ -67,12 +68,12 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 ## 3. 階段 2：草案（不停下來核准）
 
-1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
+1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、flag `formScript` 是否開啟（工具清單有 `form_set_script` 就是開）、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
    - 字典**先找再建**：planner 為每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 的候選直接選入，範圍內沒有候選才找他科或列待新建。使用者選擇不提供索引時，草案要標明「未比對既有字典」。
    - `Blocked`（缺必要輸入，或需求與規則衝突）→ 把它列的問題與可選方案用一次 `AskUserQuestion` 問使用者後重跑，不要先建；`NeedsRevision` → 照它的建議值往下建，「### 待決」列在草案摘要之後。
    - 「### 待決」列出**他科候選字典**時，交 builder 前先用一次 `AskUserQuestion` 問使用者要不要採用（其他要先問的待決一起問）。採用的以 `online_dictionary_search`（`scope: "all"`、`q`＝字典名稱、`update_index: true`）併入本機索引，把草案該欄改成綁這本字典，再交 builder；不採用就照草案列待新建。未登入時跳過，在待決註明。
    - 草案以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
-2. **建置**：`Task(form-builder)`，給它草案檔路徑、`dept_no`。單一 builder、依草案順序建：`form_create` → 逐區塊 `form_add_area` → 逐欄 `form_add_control`（說明文字＋控制項＋換行）→ 計算式與巨集 `form_update_control` → 表格／頁籤的格子最後。itemid 依建立順序分配（區塊與控制項共用、從 1 起），`further`／`A<itemid>`／`action_id` 都依賴順序，所以**不平行**。builder 把每個 `C*` 對應的 itemid 回填「### 建置對照表」。核對回覆的 `Calls`：至少要有 `form_create`＋區塊數＋控制項數，少了就是有漏，交回 builder。
+2. **建置**：`Task(form-builder)`，給它草案檔路徑、`dept_no`。單一 builder、依草案順序建：`form_create` → 逐區塊 `form_add_area` → 逐欄 `form_add_control`（說明文字＋控制項＋換行）→ 計算式與巨集 `form_update_control` → 表格／頁籤的格子最後。itemid 依建立順序分配（區塊與控制項共用、從 1 起），`further`／`A<itemid>`／`action_id` 都依賴順序，所以**不平行**。builder 把每個 `C*` 對應的 itemid 回填「### 建置對照表」；草案有「### 表單 JS」時最後以 `form_set_script` 一次設定，回覆的 `Script` 列片段 id。核對回覆的 `Calls`：至少要有 `form_create`＋區塊數＋控制項數，少了就是有漏，交回 builder。
 3. **補述預填**（有待新建字典時）：builder 建完、reviewer 之前，照 `dictionary-assist` 模式 2 第 1、2 步起草新字典補述（超過 5 本用 `dictionary-annotator`），以 `dictionary_plan_import`（`draft_id`、`csv_text`）寫進 draft。預覽卡片打開就有內容，使用者只改不對的地方，不用自己填。既有字典不主動起草。
 4. **審查**：`Task(form-reviewer)`，給它草案檔、`draft_id`、第幾次審查。它跑 `form_validate`、`formula_check`（`samples` 由它依白話自己出）、`form_preview(tree)`，比對草案 ↔ draft，寫 `review.md` 並回 `Status`。`NeedsRevision`：把必須修正的項目交回 builder，≤ 2 輪；仍未過就改變假設（例如換控制項型別），在草案摘要多寫一行。
 5. **開預覽**：載入 `verify-runtime` 取得連結（`form_preview` 帶 `formulas_from_review: true`，自動讀 review.md「## 試算」）。`runtime_available: false` 或開不了本機頁面 → 見 §4 最後一段。
@@ -103,7 +104,7 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 | 類別 | 做法 | 要不要問 |
 |---|---|---|
 | 可直接套用：`caption`、`options`、`default`、`required`、`memo`、`fhir` | 照 `suggested_calls` 依序呼叫；有 `then` 的先跑 `tool`（`dictionary_memo_check`），error 時不套用、列給使用者。回傳的 `memo_items`（既有字典的補述，draft 裡沒有）依 `dic_id` 合併寫進 `<workspace>/.strucmed/plans/<draft_id>/memo-items.json`，G2 一起寫入。`W_REVIEW_STALE` 的項目沒有產生呼叫：告訴使用者那一項看的是舊版。自己寫呼叫時：說明文字用 `form_update_control` 頂層的 `label_text`（`changes` 內沒有 caption），單位用 `changes.unit` | 不問 |
-| 需要判斷：`comments`（欄位、區塊、整體） | 能一對一轉成工具呼叫的直接做：加欄位 `form_add_control`（`after_itemid`）、換型別或改計算式 `form_update_control`（先 `formula_check`）、改名 `form_update_meta`、搬欄位 `form_move_control`（`to_area_itemid`、`after_itemid`；itemid 不變，參照不受影響）、改區塊標題 `form_update_area`（`title`）、改頁籤名稱或增減頁籤 `form_update_area`（`titles`，改完後的完整清單；「HIS 文字鍵不對」就是這一項，不重建）、插入區塊 `form_add_area`（`after_itemid`）、刪空區塊 `form_remove_area`（只能刪空區塊，不需確認）。要移除欄位：其他修改做完後 `form_remove_control` 第一次呼叫，plan 原樣列進本輪回報，同意後才帶 `confirm_token`（`SecurityInvariants.md` 第 2 條；token 綁 draft 內容，多個欄位逐一重取）。意思不明確的列出來問 | 不明確或要移除才問，一次問完 |
+| 需要判斷：`comments`（欄位、區塊、整體） | 能一對一轉成工具呼叫的直接做：加欄位 `form_add_control`（`after_itemid`）、換型別或改計算式 `form_update_control`（先 `formula_check`）、改名 `form_update_meta`、搬欄位 `form_move_control`（`to_area_itemid`、`after_itemid`；itemid 不變，參照不受影響）、改區塊標題 `form_update_area`（`title`）、改頁籤名稱或增減頁籤 `form_update_area`（`titles`，改完後的完整清單；「HIS 文字鍵不對」就是這一項，不重建）、插入區塊 `form_add_area`（`after_itemid`）、刪空區塊 `form_remove_area`（只能刪空區塊，不需確認）、改欄位顏色字級底色 `form_update_control`（`font_color`／`font_size`／`back_color`）、改片段參數或加減片段 `form_set_script`（整份取代，flag `formScript`）。要移除欄位：其他修改做完後 `form_remove_control` 第一次呼叫，plan 原樣列進本輪回報，同意後才帶 `confirm_token`（`SecurityInvariants.md` 第 2 條；token 綁 draft 內容，多個欄位逐一重取）。意思不明確的列出來問 | 不明確或要移除才問，一次問完 |
 | 大改結構（區塊對調順序、拆併區塊、換成表格或頁籤） | 回階段 2，重建成新 draft，照下方〈重建流程〉。只搬幾個欄位、插入或刪除區塊、改頁籤名稱或增減頁籤不算，走上一列 | 告知即可 |
 
 3. 實際做的修改追加到草案檔「### 審閱修改紀錄」（itemid、種類、改前→改後，不抄意見原文），最後一輪 reviewer 靠它比對。
@@ -137,9 +138,9 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 ## 5. 階段 4：定稿 G2
 
 1. `Task(form-reviewer)` 最後一輪（告訴它是最後一輪）。**最後一輪必須在所有意見都套用到 draft 之後才啟動**，不要和改 draft、匯回 CSV 平行；之後又改了 draft 就要再審一次。`NeedsRevision` 時修好再審，必要時回階段 3。warning 留到 G2 列；prompt 的 `W_PROMPT_*` 附 `references/PromptPatterns.md` 的改法，使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
-2. 有巨集按鈕時依 `references/RuntimeVerification.md` §4 實跑一次，結果進「### 驗證結果」。
+2. 有巨集按鈕時依 `references/RuntimeVerification.md` §4 實跑一次，結果進「### 驗證結果」。有 `guard`／`derive`／`lookup`／`required` 片段時同樣必跑（輸入一組值看結果；guard 觸發再改回，記「提示一次、標示加上又移除」）；有 `autorun` 時看開文件後「已封鎖的請求」與目標欄位的「將送出 N 字」；有 `table-rows` 時看列數與預填；有 `style` 片段時截一張預覽圖給使用者（`ScriptAddonRules.md` §4）。
 3. 字典：§3 第 3 步已預填。審閱中新增的字典還缺補述時，依 `dictionary-assist` 模式 2 補起草（新字典的補述只有建立時一次機會）。
-4. 載入 `publish-form`，從「準備定稿」接手：`dictionary_plan_export` 出 CSV、取得字典與上架 plan（離線或不上架時換 `form_export` 的 plan）、寫 `publish-plan.md`、呈現 G2、核准、`verify-plan.mjs prepare`、依序執行。閘門名稱都是 G2。
+4. 載入 `publish-form`，從「準備定稿」接手：`dictionary_plan_export` 出 CSV、取得字典與上架 plan（離線或不上架時換 `form_export` 的 plan）、寫 `publish-plan.md`（有片段時「### 表單 JS」段放 plan 的 `script.rendered` 原樣）、呈現 G2、核准、`verify-plan.mjs prepare`、依序執行。閘門名稱都是 G2。
    - `要求修改` → 小改就地改 draft 重新定稿（`Revision` +1）；字典改 CSV 後 `dictionary_plan_import`，回傳的 `memo_items` 併進 `memo-items.json`；使用者想再看頁面就回階段 3。
    - `取消` → 停止，draft、CSV、review 檔留在本機，線上沒有任何寫入。
 
@@ -149,7 +150,7 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 
 1. 結果：templateID、資料夾（格式同 G2：個人（usr／OL5）、次專（sub／代碼）、科部（dpt／代碼））、rev、是否已上架；離線時是輸出檔（`.htm` 內含範本套件 v2、`.package.json`）與 `*.manifest.md`（含匯入步驟與保存前確認清單）的路徑。支援 v2 的編輯器匯入時會預填名稱、捷徑、作業別、Info，**有捷徑＋作業別＝保存後上架**，務必提醒使用者確認。
 2. 字典：新建與補述幾本（CSV 路徑）；未登入時告知既有字典的補述可之後補（`dictionary-assist` 模式 3，不用上架，非建立者也能補），體系升級建議請轉給體系字典管理者。
-3. `W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列；其他警告只列處理建議。
+3. `W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列；有片段時加一行「表單 JS：N 個片段（樣式會影響列印版面；編輯器「表單選項」的 JS 區塊看得到）」；其他警告只列處理建議。
 4. 提醒：先按「新增表單」並確認 sheetID 空白再匯入；有新字典時**必須**「匯入表單及字典」；匯入後不要按「重新編號」；保存前逐一檢查區塊人形圖示。
 
 ## 7. 新產生的表單不支援

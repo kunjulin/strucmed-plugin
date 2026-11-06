@@ -54,6 +54,7 @@
 | （更新）這次寫入的變更 | <diff.summary>（控制項 <before>→<after>；新增／移除／修改 itemid、區塊版面或說明文字、表單 JS、iot） |
 | （更新）線上自來源後的修改 | <diff.online_since_source> |
 | 本文大小 | <body_chars> 字元 |
+| 表單 JS | <script.snippets 的清單，或「無」>（有片段時另有「### 表單 JS」段放 rendered 原樣） |
 
 ### 警告
 - W_AI_DATAFLOW：…

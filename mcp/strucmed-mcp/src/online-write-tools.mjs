@@ -17,8 +17,10 @@ import { folderCode } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
 import { digestForm, diffDigest, describeDiff } from './formdiff.mjs';
 import * as dc from './dictcomment.mjs';
+import { scriptPlan } from './script-snippets.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
+// 白名單片段（docs/13）：計畫原樣列出渲染後的 JS（閘門 G2 的審閱對象）
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 const WRITE_FOLDERS = ['usr', 'sub', 'dpt'];           // sys 需 V2:SystemListAdmins，本工具一律不寫
 const MAX_BODY_CHARS = 2 * 1024 * 1024;                 // TemplateWriteService.MaxContentBytes
@@ -114,7 +116,8 @@ function planCommon(d, v, built, user, base) {
     publish_on_save: !!(t.shortcut && t.groups.length),
     areas: d.areas.length, controls: v.stats && v.stats.controls,
     dictionaries: built.pkg.dictionaries.map(x => ({ id: x.id, name: x.dicName })),
-    draft_sha256: draftHash(d), body_chars: built.size, warnings: v.warnings
+    draft_sha256: draftHash(d), body_chars: built.size, warnings: v.warnings,
+    ...scriptPlan(d)
   };
 }
 

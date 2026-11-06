@@ -19,7 +19,9 @@ export const DEFAULTS = {
   llmChatTest: false,      // llmgateway_chat_test（Phase 3）
   appBuilderB2: true,      // build-form-app 的 B2 app 產生（Phase 4）
   playwrightVerify: false, // verify-runtime 以 Playwright 驗證（選用）
-  unattended: false        // 無人值守：所有閘門一律取消並記錄，不自動核准
+  unattended: false,       // 無人值守：所有閘門一律取消並記錄，不自動核准
+  formScript: false,       // 表單 JS 增益集：白名單片段（form_set_script／form_script_preview；docs/13）
+  formScriptAdvanced: false // 進階片段 autorun／table-rows（docs/13 §九；需 formScript 也開）
 };
 
 const AUTO = {

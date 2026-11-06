@@ -1,9 +1,12 @@
 // 字典助手（plugin 3.7.0）：把 draft 解析成「每個欄位的事實」，供找字典（dictionary_suggest）、寫補述（dictionary_memo_check）與 dictionary-annotator 使用。
 // 事實全部來自表單本身（說明文字、datatype、選項、範圍、字典綁定、誰參照誰、AI 資料流）；derived 是依事實推得的補述草稿，給 AI 改寫，不直接寫入。
 // 不連線、不碰病人資料。
+import { styleOf } from './model.mjs';
 import { walk, isControl, areaNode, referencesOf } from './formtree.mjs';
 import { captions } from './formula-explain.mjs';
 import { scriptFindings, tableControlIds } from './validate.mjs';
+import { scriptFunctions } from './script-snippets.mjs';
+import { enabled } from './flags.mjs';
 import * as dc from './dictcomment.mjs';
 import { unitOf } from './dictsuggest.mjs';
 import { compareUnits } from './units.mjs';
@@ -41,7 +44,7 @@ export function fieldMap(draft, idx, policy = {}) {
   for (const { n } of nodes) {
     for (const r of referencesOf(n)) push(refsIn, r.id, { from: String(n.itemid), kind: r.kind, from_caption: name(n.itemid), from_datatype: n.datatype });
     if (n.datatype === 'action' || n.datatype === 'action2') {
-      const sf = scriptFindings(n, ctlMap, policy, tableIds);
+      const sf = scriptFindings(n, ctlMap, policy, tableIds, enabled('formScript') ? scriptFunctions(draft) : null);
       for (const a of sf.ai) {
         for (const id of a.inputs || []) push(aiRole, String(id), `${a.kind || 'LLM'}（#${n.itemid}「${n.actionName || name(n.itemid)}」）的輸入`);
         if (a.target) push(aiRole, String(a.target), `${a.kind || 'LLM'}（#${n.itemid}「${n.actionName || name(n.itemid)}」）的回覆寫入`);
@@ -84,6 +87,7 @@ export function fieldMap(draft, idx, policy = {}) {
       area: { itemid: node.itemid !== undefined ? String(node.itemid) : '', type: node.itemtype, label: AREA_LABEL[node.itemtype] || node.itemtype, title: area.title || '' },
       ...(opts.length && { options: opts }), ...(min || max ? { min, max } : {}), ...(unit && { unit }), unit_source: unitSet ? 'set' : unitCaption ? 'caption' : unitMemo ? 'memo' : 'none',
       ...(n.format && { format: n.format }), required: !!n.required, tocalc: n.tocalc !== false, dicrole: n.dicrole || 'nohis',
+      ...(styleOf(n) && { style: styleOf(n) }),
       dictionary: dict, refs_out: out, refs_in: inn, ai: aiRole.get(id) || [],
       derived: {
         func: clip(roles.join('；')),

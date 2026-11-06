@@ -8,5 +8,7 @@
   "llmChatTest": false,
   "appBuilderB2": true,
   "playwrightVerify": false,
-  "unattended": false
+  "unattended": false,
+  "formScript": false,
+  "formScriptAdvanced": false
 }

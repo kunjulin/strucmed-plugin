@@ -39,6 +39,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - 「### HIS 文字輸出」：`.strucmed/preview/<draft_id>.meta.json` 的 `histext`、`areas`（`gettext`）、`his_text_keys`（沒有這個檔就先 `form_preview`，`format: "html"`），`form_review_read`（`draft_id`）的 `text_output`（沒有 review 就寫「未在預覽頁產生」）。看起來像真實病人資料就不放範例。
    - 「### 字典」：CSV 路徑與各動作本數（以 `dictionary_plan_export` 的 `rows` 與 CSV 為準，不抄 review.md 的數字）；表列新建的 desc、補述修改的改前／改後（plan 原樣）、改綁、CSV 的 `note`、體系升級建議；`pending-fhir.json` 的字典逐本列出 FHIR，註明「字典建好後補寫」；FHIR 標「待人工確認」的特別提醒。
    - 「### 上架」：`PublishWorkflow.md` §3 的表（「資料夾」寫 個人（usr／OL5）這種格式），或 `form_export` 的 plan。
+   - 「### 表單 JS」（plan 有 `script` 時才有）：片段清單、`sha256`、`rendered` 原樣放在 js 程式碼圍欄內，不摘要改寫（`ScriptAddonRules.md` §4）；這一段是使用者核准的對象。
    - **保存後即上架**（有捷徑＋作業別）要用粗體提醒；測試表單不應有捷徑。
    - 更新範本：把 `plan.meta`（名稱／捷徑／作業別／Info 的線上值與寫入值）與 `plan.diff`（`summary`、`changed_itemids`、`changed_areas`、`js_changed`、`iot_changed`、`online_since_source`）並列給使用者。`W_UNPUBLISH`（會從 HIS 清單消失）、`W_META_RENAME`、`W_ONLINE_CHANGED_SINCE_SOURCE`（會蓋掉線上別人的修改）用粗體提醒，使用者明確同意才繼續；`W_NO_CHANGE` 時問使用者是否真的要更新。
    - 有 LLM／語音巨集：W_AI_DATAFLOW 必列（不需另行審查，但不可省略）。

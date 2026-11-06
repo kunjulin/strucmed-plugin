@@ -51,6 +51,7 @@ export const BUILTIN = new Set([
 //   write    寫入其他欄位 → 只能用在巨集
 //   ai       送資料到 LLM／ASR → 只能用在巨集，列 AI 資料流
 //   forbidden 本工具不產生（任意程式、開網址、存檔、改寫身分或文件 header、連外）
+//   custom   CUSTOMFUNC：只允許呼叫同 draft 以 form_set_script 的 lookup 片段定義的函數（flag formScript）；其餘視同 forbidden
 export const RUNTIME = {
   CHECKREQUIRED: 'setting', CKAUTOXML: 'setting', CKAUTODWLOOKUP: 'setting', CKAUTOUPLOAD: 'setting', CKIOTOW: 'setting',
   GETTEXT: 'context', GETVALUE: 'context', NOW2: 'context', NOWTIME: 'context',
@@ -60,7 +61,7 @@ export const RUNTIME = {
   LOOKUPIOT: 'lookup', LOADDOC: 'lookup', LOADXML: 'lookup', SETDICTATIONBYID: 'lookup',
   SETVALUEBYID: 'write', APPLYPRESETBYNAME: 'write',
   LLMQUERY: 'ai',
-  CUSTOMFUNC: 'forbidden', OPENURL: 'forbidden', SAVEDOC: 'forbidden', SETIOTHEADER: 'forbidden',
+  CUSTOMFUNC: 'custom', OPENURL: 'forbidden', SAVEDOC: 'forbidden', SETIOTHEADER: 'forbidden',
   S_USERID: 'forbidden', S_DEPTNO: 'forbidden'
 };
 // 內建函數中需要另外處理的

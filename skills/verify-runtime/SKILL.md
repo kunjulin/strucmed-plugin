@@ -25,8 +25,8 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
    ```
 3. 給使用者 `link`，一句話說明可以做什麼：填值看結果、按「文字輸出」看 HIS 收到的文字、點欄位右上角改說明文字與補述、留意見，按「送出意見」或「定稿」後回到對話。
 4. 文字輸出：頁面上有值時，用內建瀏覽器開 `url`，讀 `GetJsonText()`（**不用 `GetText()`**，它在捷徑模式會 `scut_cancel()`），對照 `his_text_keys` 用一兩行回報；沒有值或沒有內建瀏覽器就略過，使用者自己按「文字輸出」。
-5. 只在需要時操作瀏覽器（`RuntimeVerification.md` §4）：有巨集按鈕要實跑一次（`performActionByID` → 讀 `window.__simulated`、`window.__blocked`）、`formula_check` 回 `reason` 的計算式、使用者要求測某組值。動態表格按「+」加列、頁籤要切換。結果進定稿檔的「### 驗證結果」，對話中只講一句。
-6. 截圖**預設不做**：只在使用者要求、或使用者開不了預覽頁時（`RuntimeVerification.md` §5）。先 `resize_window`（1000×900），再 `await __snapshot('<名稱>', '<CSS 選擇器>')` → `tools/v0-harness/out/snapshots/<名稱>.png` → 改回 `desktop` → `Read` 看過 → `SendUserFile`。
+5. 只在需要時操作瀏覽器（`RuntimeVerification.md` §4）：有片段（`form_script_preview` 的 `snippets`）時**必跑**：`guard` 輸入一組會觸發的值、再改回正常值，確認提示出現一次、`.sm-guard` 標示加上又移除；`derive`／`lookup` 輸入來源值看目標欄位（lookup 的 customfunc 要按對應的巨集按鈕）；`required` 空白失焦看提示、填上再失焦看標示移除；`autorun` 看開文件後目標欄位的「將送出 N 字」與面板「已封鎖的請求」；`table-rows` 看列數與預填（預覽頁沒有病人，開文件類片段在 1 秒後執行）；有巨集按鈕要實跑一次（`performActionByID` → 讀 `window.__simulated`、`window.__blocked`）、`formula_check` 回 `reason` 的計算式、使用者要求測某組值。動態表格按「+」加列、頁籤要切換。結果進定稿檔的「### 驗證結果」，對話中只講一句。
+6. 截圖**預設不做**：只在使用者要求、使用者開不了預覽頁、或 draft 有 `style` 片段時（樣式只能用看的；`RuntimeVerification.md` §5）。先 `resize_window`（1000×900），再 `await __snapshot('<名稱>', '<CSS 選擇器>')` → `tools/v0-harness/out/snapshots/<名稱>.png` → 改回 `desktop` → `Read` 看過 → `SendUserFile`。
 
 使用者要調整時，修改 draft 後重新 `form_preview(html)`，請使用者重新整理；連結不變。
 

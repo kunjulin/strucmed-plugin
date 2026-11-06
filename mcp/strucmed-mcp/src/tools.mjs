@@ -7,7 +7,7 @@ import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE } from './model.mjs';
+import { buildControl, toFormJson, buildStructuredArea, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE } from './validate.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
@@ -26,6 +26,9 @@ import { writeMeta, readReview, previewServer, lastReviewSeq, reviewFormulas } f
 import { replaceUnstorable, firstUnstorable, SUBSTITUTES } from './cp950.mjs';
 import { findRuntimeWeb } from './runtime-web.mjs';
 import { toCsv, parsePlan, planRows, importPlan, normalizeAsr } from './dictcsv.mjs';
+import { checkSnippets, renderSnippets, snippetRefsTo, scriptFunctions, scriptPlan, TEMPLATE_IDS, ADVANCED_IDS, THEMES, CSS_PROPS } from './script-snippets.mjs';
+import { enabled } from './flags.mjs';
+const THEMES_LIST = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
 
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -81,7 +84,7 @@ function scriptGate(d, node) {
   const map = new Map();
   walk(d, n => { if (isControl(n)) map.set(String(n.itemid), n); });
   map.set(String(node.itemid), node);
-  const r = scriptFindings(node, map, store.loadPolicy(), tableControlIds(d));
+  const r = scriptFindings(node, map, store.loadPolicy(), tableControlIds(d), enabled('formScript') ? scriptFunctions(d) : null);
   const errs = r.found.filter(f => f.level === 'error');
   const blocking = errs.filter(f => !DEFERRABLE.has(f.code));
   if (blocking.length) fail(E.INVALID_INPUT, `#${node.itemid} 的計算式／巨集有錯誤，未寫入 draft`, { errors: blocking });
@@ -359,7 +362,10 @@ const CHANGE_PROPS = {
   action_script: str('action：巨集步驟（最外層逗號分隔）；action2：LLM prompt（Calx 運算式）'),
   action_name: str('按鈕文字（空白＝隱藏按鈕）'), action_id: { type: ['number', 'string'], description: '結果回傳 ID（0 或空白＝不回傳）' },
   fur_action_id: { type: ['number', 'string'], description: 'textbox：輸入後觸發的巨集按鈕 itemid（空白＝取消）' },
-  unit: str('單位（例 kg）；優先於說明文字推得的單位，"" 清除。只存 draft，不進表單')
+  unit: str('單位（例 kg）；優先於說明文字推得的單位，"" 清除。只存 draft，不進表單'),
+  font_color: str('樣式：文字顏色（#rrggbb／#rgb／rgb()／色名；"" 清回預設）。只影響畫面，不影響 HIS 文字輸出與倉儲；label 的文字顏色也用這個'),
+  font_size: { type: ['number', 'string'], description: '樣式：字級 10–24（px，預設 14；"" 或 0 清回預設）。label 型控制項同時影響說明文字' },
+  back_color: str('樣式：底色（同 font_color 的格式；"" 清回預設）。區塊以上的樣式與整張主題用 form_set_script 的 style（flag formScript）'),
 };
 const CONTROL_PROPS = {
   datatype: str('控制項類型', { enum: DATATYPES_V02 }),
@@ -379,6 +385,9 @@ const CONTROL_PROPS = {
   action_script: str('action：巨集步驟；action2：LLM prompt（可先留空，引用的欄位建好後再以 form_update_control 補上；空的會在 form_validate 報 E_ACTION_EMPTY）'), action_name: str('按鈕文字（空白＝隱藏）'),
   action_id: { type: ['number', 'string'], description: '結果回傳 ID（action2 必填）' },
   fur_action_id: { type: ['number', 'string'], description: 'textbox：輸入後觸發的巨集按鈕 itemid' },
+  font_color: str('樣式：文字顏色（#rrggbb／#rgb／rgb()／色名；"" 清回預設）。只影響畫面，不影響 HIS 文字輸出與倉儲；label 的文字顏色也用這個'),
+  font_size: { type: ['number', 'string'], description: '樣式：字級 10–24（px，預設 14；"" 或 0 清回預設）。label 型控制項同時影響說明文字' },
+  back_color: str('樣式：底色（同 font_color 的格式；"" 清回預設）。區塊以上的樣式與整張主題用 form_set_script 的 style（flag formScript）'),
   unit: str('單位（例 kg）；優先於說明文字推得的單位。只存 draft，不進表單')
 };
 export const TOOLS = [
@@ -529,7 +538,7 @@ export const TOOLS = [
         f_chtno: bool('依病歷號查近期紀錄（預設 true）'), f_opdno: bool('依就醫號只查當次'),
         f_day: { type: 'number', description: '查詢天數（預設 30）' },
         histext: str('block | dict', { enum: ['block', 'dict'] }),
-        hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組') } },
+        hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示') } },
       his_text_keys: HIS_TEXT_KEYS,
       from_draft_id: str('重建時的舊 draft id（選填）：依字典名稱帶過待新建字典的 desc、memo、fhir 與既有字典綁定') } },
     handler(a) {
@@ -734,6 +743,7 @@ export const TOOLS = [
         n.datavalue = String(changes.datavalue);
       }
       for (const k of ['required', 'tocalc', 'toSAS']) if (changes[k] !== undefined) n[k] = !!changes[k];
+      if (applyStyle(n, changes).length) markTouched(d, itemid, ['style']);
       if (changes.dictionary !== undefined || changes.dicrole !== undefined) {
         const ref = changes.dictionary !== undefined ? changes.dictionary : (n.dicid ? { id: n.dicid } : (n.dictionary ? { name: n.dictionary } : null));
         applyDictionary(d, n, ref && (ref.id || ref.name) ? ref : null, changes.dicrole, warnings);
@@ -774,8 +784,8 @@ export const TOOLS = [
       const removed = new Set();
       const collect = x => { if (x && x.itemid !== undefined && x.datatype) removed.add(String(x.itemid)); if (Array.isArray(x && x.datavalue)) x.datavalue.forEach(collect); };
       collect(hit.node);
-      const blockers = [...removed].flatMap(id => refsTo(d, id).filter(r => !removed.has(String(r.from))).map(r => ({ target: Number(id), from: Number(r.from), kind: r.kind })));
-      if (blockers.length) fail(E.REF_BROKEN, `#${itemid} 仍被參照，請先修改參照它的控制項`, { blockers });
+      const blockers = [...removed].flatMap(id => [...refsTo(d, id).filter(r => !removed.has(String(r.from))).map(r => ({ target: Number(id), from: Number(r.from), kind: r.kind })), ...snippetRefsTo(d, id).map(r => ({ target: Number(id), ...r }))]);
+      if (blockers.length) fail(E.REF_BROKEN, `#${itemid} 仍被參照，請先修改參照它的控制項${blockers.some(b => String(b.from).startsWith('snippet:')) ? '或 form_set_script 的片段' : ''}`, { blockers });
       const prev = hit.arr[hit.idx - 1];
       const label = prev && prev.datatype === 'text' ? prev.datavalue : '';
       const h = confirm.hashPayload({ d: draftHash(d), itemid: Number(itemid) });
@@ -1035,8 +1045,8 @@ export const TOOLS = [
       });
       if (controls.length) fail(E.INVALID_INPUT, `區塊 #${itemid} 還有 ${controls.length} 個控制項：form_remove_area 只刪空區塊，請先 form_move_control 搬走或 form_remove_control`, { controls });
       if (texts.length) fail(E.INVALID_INPUT, `區塊 #${itemid} 還有說明文字：${texts.slice(0, 3).join('、')}`, { texts });
-      const blockers = refsTo(d, itemid);
-      if (blockers.length) fail(E.REF_BROKEN, `區塊 #${itemid} 仍被參照，請先修改參照它的控制項`, { blockers });
+      const blockers = [...refsTo(d, itemid), ...snippetRefsTo(d, itemid)];
+      if (blockers.length) fail(E.REF_BROKEN, `區塊 #${itemid} 仍被參照，請先修改參照它的控制項或 form_set_script 的片段`, { blockers });
       d.areas.splice(d.areas.indexOf(a), 1);
       store.saveDraft(d);
       return { removed_area: Number(itemid), areas_left: d.areas.length };
@@ -1062,7 +1072,7 @@ export const TOOLS = [
         walk(d, n => { if (isControl(n)) controls.set(String(n.itemid), n); });
         names = captions(d);
       }
-      const ctx = { controls, policy: store.loadPolicy(), self: self_itemid };
+      const ctx = { controls, policy: store.loadPolicy(), self: self_itemid, scriptFunctions: d && enabled('formScript') ? scriptFunctions(d) : null };
       const r = kind === 'formula' ? lintFormula(text, ctx) : kind === 'macro' ? lintMacro(text, ctx)
         : kind === 'prompt' ? lintPrompt(text, ctx) : lintHisQuery(text);
       const parsed = kind === 'formula' && r.info;
@@ -1095,6 +1105,51 @@ export const TOOLS = [
         ...(r.functions && { functions: [...new Set(r.functions)] }),
         ...(r.steps && { steps: r.steps }), ...(r.targets && { targets: r.targets }), ...(r.ai && { ai: r.ai })
       };
+    }
+  },
+  {
+    name: 'form_set_script',
+    flag: 'formScript',
+    description: '（離線，flag formScript）設定表單 JS 增益集：只接受白名單樣板的片段，整份取代（空陣列＝清除）。draft 只存 { id, template, params }，JS 在匯出／上架時由固定樣板渲染，不接受自由 JS、CSS 或選擇器字串。' +
+      '樣板 style：{ theme?: clean|compact|zebra-table|highlight-required, rules?: [{ scope: form｜area:<itemid>｜area:<itemid> table｜control:<itemid>, css: { 屬性: 值 } }] }，屬性只允許 ' + Object.keys(CSS_PROPS).join('、') + '；控制項層級的顏色與字級優先用控制項本身的欄位。' +
+      '樣板 guard：{ sources: itemid[], condition: Calx 運算式（真＝有問題，以 A<itemid> 參照）, message, highlight?: itemid[] }：sources 改值後評估 condition，成立時 errormessage 提示並標示 highlight 欄位。' +
+      '樣板 derive：{ sources: itemid[], target: itemid（非 label、不在動態表格）, expr: Calx 運算式, when?: change|docload|both }：sources 改值（或開文件）後把 expr 的結果 SetValueByID 進 target；目標是 label 請改用計算式，輸入後要跑巨集請用 fur_action_id。' +
+      '樣板 lookup：{ name, source: itemid, table: { 鍵: 值 }（≤200 筆）, target: itemid, miss?: { message?, value? }, trigger?: change|customfunc }：依 source 的值查對照表寫進 target；trigger customfunc 時渲染成函數 sm_<name>，巨集以 CUSTOMFUNC("sm_<name>") 呼叫（lint 只放行這些名稱）。' +
+      '樣板 required：{ targets: itemid[]（須 required:true）, message }：失焦仍空白時立即提示並標示。' +
+      '進階樣板（另需 flag formScriptAdvanced）autorun：{ action: itemid（巨集按鈕）, only_if_empty?: itemid }：開文件後自動執行該巨集（AI／查詢步驟會自動送出，verify-runtime 必跑）；table-rows：{ table: 區塊 itemid（table1）, rows: { count: 1–30 } | { source: itemid }, prefill?: { "<欄位 itemid>": [各列的值] } }：開文件後把動態表格補到指定列數並預填。' +
+      '回傳渲染後的 JS 與 findings；參數有錯時什麼都不改。片段只在 2.0 runtime 執行，不影響 HIS 文字輸出與倉儲；樣式會影響列印版面。定稿計畫與匯入說明會原樣列出渲染後的程式碼。',
+    inputSchema: { type: 'object', required: ['draft_id', 'snippets'], properties: {
+      draft_id: str('draft id'),
+      snippets: { type: 'array', description: '整份片段清單；空陣列＝清除', items: { type: 'object', required: ['template', 'params'], properties: {
+        id: str('片段 id（選填；小寫英數、- 或 _，字母開頭；預設 s1、s2…）'),
+        template: str(TEMPLATE_IDS.join(' | ') + '（' + ADVANCED_IDS.join('、') + ' 需 flag formScriptAdvanced）', { enum: TEMPLATE_IDS }),
+        params: { type: 'object', description: 'style：{ theme?, rules? }；guard：{ sources, condition, message, highlight? }；derive：{ sources, target, expr, when? }；lookup：{ name, source, table, target, miss?, trigger? }；required：{ targets, message }；autorun：{ action, only_if_empty? }；table-rows：{ table, rows, prefill? }' } } } } } },
+    handler({ draft_id, snippets }) {
+      if (!enabled('formScript')) fail(E.FEATURE_DISABLED, 'feature flag formScript 未開啟（feature-flags.json）');
+      const d = store.loadDraft(draft_id);
+      const chk = checkSnippets(d, snippets);
+      const errors = chk.findings.filter(f => f.level === 'error');
+      if (errors.length) fail(E.INVALID_INPUT, `片段參數有 ${errors.length} 個錯誤，這次什麼都沒有改`, { errors: errors.map(f => ({ code: f.code, message: f.message })) });
+      const next = { ...d, script: { snippets: chk.snippets.map(({ affects, ...s }) => s) } };
+      const r = renderSnippets(next);
+      if (r.findings.length) fail(E.INVALID_INPUT, '渲染後的 JS 含禁用 token（樣板問題），這次什麼都沒有改', { errors: r.findings });
+      if (chk.snippets.length) d.script = { snippets: chk.snippets.map(({ affects, ...s }) => s) }; else delete d.script;
+      store.saveDraft(d);
+      return { draft_id, snippets: r.snippets, rendered: r.js, sha256: r.hash, warnings: chk.findings.filter(f => f.level !== 'error').map(f => `${f.code}：${f.message}`),
+        next: r.js ? '把 rendered 原樣放進定稿計畫的「表單 JS」段給使用者審閱；有 guard／derive／lookup／required 片段時 verify-runtime 實際輸入一次看結果，有 style 片段時截一張預覽圖，有 autorun 片段時看開文件送出了什麼；lookup（customfunc）的巨集寫 CUSTOMFUNC("sm_<name>")' : '片段已清除' };
+    }
+  },
+  {
+    name: 'form_script_preview',
+    flag: 'formScript',
+    description: '（離線，flag formScript）回傳 draft 目前片段渲染後的 JS、片段清單與 findings（reviewer 核對計畫用）；沒有片段時 rendered 是空字串。',
+    inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id') } },
+    handler({ draft_id }) {
+      if (!enabled('formScript')) fail(E.FEATURE_DISABLED, 'feature flag formScript 未開啟（feature-flags.json）');
+      const d = store.loadDraft(draft_id);
+      const chk = checkSnippets(d, (d.script && d.script.snippets) || []);
+      const r = renderSnippets(d);
+      return { draft_id, snippets: r.snippets, rendered: r.js, sha256: r.hash, findings: [...chk.findings, ...r.findings].map(f => ({ code: f.code, level: f.level, message: f.message })), themes: THEMES_LIST };
     }
   },
   {
@@ -1289,7 +1344,8 @@ export const TOOLS = [
             overwrite: w.exists.map(f => path.relative(ws.root, f)),
             new_dictionaries: d.pendingDictionaries.map(p => p.name),
             import_mode: d.pendingDictionaries.length ? '匯入表單及字典（必須）' : '匯入表單',
-            warnings: v.warnings, stats: v.stats
+            warnings: v.warnings, stats: v.stats,
+            ...scriptPlan(d)
           },
           confirm_token: confirm.issue('form_export', h),
           next: '請把 plan 給使用者確認，同意後帶 confirm_token 再呼叫一次'

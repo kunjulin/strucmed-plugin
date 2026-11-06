@@ -96,7 +96,7 @@ function refFindings(info, ctx, out, what) {
 }
 
 // context：'formula'（label 計算式、imgbox 函數網址）或 'macro'（巨集步驟、LLM 控制項 prompt）
-function functionFindings(info, context, out, what, ctx = {}) {
+function functionFindings(info, context, out, what, ctx = {}, src) {
   for (const f of info.functions) {
     const cls = classify(f.name);
     if (cls === null) {
@@ -107,6 +107,18 @@ function functionFindings(info, context, out, what, ctx = {}) {
     }
     if (UNAVAILABLE.has(f.name) && !(ctx.policy && ctx.policy.runtime_has_numeral_jstat)) {
       out.push(warn('W_FORMULA_FN_NEEDS_DEPLOY', `${f.raw}() 需要新版平台部署到 HIS 端後才可用（舊版${UNAVAILABLE.get(f.name)}）`));
+    }
+    if (cls === 'custom') {
+      // CUSTOMFUNC("name", …)＝window[name].apply（平台 TempHtml.js:465）：只放行本 draft 片段渲染出的函數，且第一個參數必須是字串字面值
+      // ctx.scriptFunctions：null＝flag formScript 關（一律禁止）；陣列＝本 draft 目前定義的函數名（片段可以晚於巨集建立，缺的延後到 form_validate）
+      const list = Array.isArray(ctx.scriptFunctions) ? ctx.scriptFunctions.map(String) : null;
+      const arg = src !== undefined ? argText(src, f, 0) : null;
+      const name = arg === null ? null : strLiteral(arg);
+      if (context === 'formula') out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不能放在計算式（每次重算都會執行）；只能在巨集呼叫本 draft 以 form_set_script 的 lookup 片段定義的函數`));
+      else if (list === null) out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不在本工具允許範圍（任意函數名）；feature flag formScript 開啟時只允許呼叫本 draft 以 form_set_script 的 lookup 片段（trigger customfunc）定義的函數`));
+      else if (name === null) out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 的第一個參數必須是字串字面值（本 draft 片段定義的函數名）`));
+      else if (!list.includes(name)) out.push(err('E_CUSTOMFUNC_UNDEFINED', `${f.raw}("${name}") 不是本 draft 片段定義的函數（${list.length ? `目前有 ${list.join('、')}` : '目前沒有'}）：請用 form_set_script 加 lookup 片段（trigger customfunc、name「${name.replace(/^sm_/, '')}」）`));
+      continue;
     }
     if (cls === 'forbidden') out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不在本工具允許範圍（任意程式、開網址、存檔、改寫身分或文件 header、連外）；確有需要請匯入後由人工在編輯器加入並審查`));
     else if (context === 'formula' && ['lookup', 'write', 'ai'].includes(cls)) out.push(err('E_FORMULA_MACRO_ONLY', `${f.raw}() 是巨集專用函數，不能放在計算式`));
@@ -128,7 +140,7 @@ export function lintFormula(text, ctx = {}, { context = 'formula', what = '計�
   const r = check(src);
   if (!r.ok) { out.push(err(r.code, `${what}語法錯誤：${r.message}`)); return { findings: out, refs: [], functions: [] }; }
   const refs = refFindings(r, ctx, out, what);
-  functionFindings(r, context, out, what, ctx);
+  functionFindings(r, context, out, what, ctx, src);
   if (context === 'macro') {
     const nested = r.functions.filter(f => f.name === 'LLMQUERY');
     if (nested.length) out.push(warn('W_LLM_NOT_AWAITED', `${what}在一般運算式中呼叫 LLMQUERY：不受 IF 控制、每次都會執行，而且不會等待回覆就繼續下一步`));

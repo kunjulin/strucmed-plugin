@@ -9,14 +9,16 @@ import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.m
 import * as dc from './dictcomment.mjs';
 import { captions } from './formula-explain.mjs';
 import { suggest, unitOf } from './dictsuggest.mjs';
+import { checkSnippets, renderSnippets, scanCustomJs, scriptFunctions } from './script-snippets.mjs';
+import { enabled } from './flags.mjs';
 
 // 由 scriptlint 以更精確的訊息回報的參照種類
 const SCRIPT_REF_KINDS = new Set(['formula', 'actionScript', 'target', 'actionID']);
 const TEXT_TARGETS = ['textarea', 'textbox', 'label'];
 
 // 單一控制項的計算式／巨集／HIS 參照檢查（validate 與新增、修改工具共用）
-export function scriptFindings(c, ctlMap, policy = {}, tableIds = null) {
-  const ctx = { controls: ctlMap, policy, self: c.itemid, tableIds };
+export function scriptFindings(c, ctlMap, policy = {}, tableIds = null, scriptFns = null) {
+  const ctx = { controls: ctlMap, policy, self: c.itemid, tableIds, scriptFunctions: scriptFns };
   const found = [], ai = [];
   let formulaRefs = null, macroIds = false;
   if (c.formula && (c.datatype === 'label' || c.datatype === 'imgbox')) {
@@ -63,7 +65,7 @@ export function tableControlIds(draft) {
   return ids;
 }
 // 新增／修改時可以延後處理的錯誤（參照對象可能稍後才建立）；其餘錯誤當下就拒絕
-export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE', 'E_FORMULA_EMPTY']);
+export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE', 'E_FORMULA_EMPTY', 'E_CUSTOMFUNC_UNDEFINED']);
 
 // 文字輸出（GetJsonText）的鍵：[鍵:] 標記，來自頁籤名稱（GetText2 以「[頁籤名稱:]」分段）與說明文字、label
 const HIS_KEY_RE = /\[([^\]\r\n]+):\]/g;
@@ -213,12 +215,13 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   // ── v0.2：計算式、巨集、HIS 參照 ──
   const ctlMap = new Map(controls.map(x => [String(x.node.itemid), x.node]));
   const tableIds = tableControlIds(draft);
+  const scriptFns = enabled('formScript') ? scriptFunctions(draft) : null;
   const ai = [];
   const formulaGraph = new Map();
   let macroIds = false;
   for (const { node: c, area } of controls) {
     const sFresh = freshFor(c, area, 'formula');
-    const r = scriptFindings(c, ctlMap, policy, tableIds);
+    const r = scriptFindings(c, ctlMap, policy, tableIds, scriptFns);
     const found = r.found;
     if (r.formulaRefs) formulaGraph.set(String(c.itemid), r.formulaRefs);
     if (r.macroIds) macroIds = true;
@@ -260,7 +263,24 @@ export function validateDraft(draft, dictIndex, policy = {}) {
 
   const pending = draft.pendingDictionaries || [];
   if (pending.length) warn('W_NEW_DICTIONARY', `有 ${pending.length} 個新字典：必須用「匯入表單及字典」匯入，否則綁定會靜默消失（04 結論 2）`);
-  if (draft.source && draft.source.javascript) warn('W_CUSTOM_JS', `保留原表單 JS（${draft.source.javascript.length} 字元），本工具未審查其內容，請人工審查後再使用`);
+  if (draft.source && draft.source.javascript) {
+    warn('W_CUSTOM_JS', `保留原表單 JS（${draft.source.javascript.length} 字元），本工具未審查其內容，請人工審查後再使用`);
+    // flag 開啟時另以片段同一套禁用 token 掃描原 JS：只告知，不擋、不改（docs/13 §三）
+    if (enabled('formScript')) {
+      const hits = scanCustomJs(draft.source.javascript);
+      if (hits.length) warn('W_CUSTOM_JS_FINDINGS', `原表單 JS 含 ${hits.map(h => `「${h.token}」（${h.why}）`).join('、')}：這些在白名單片段是禁用的；人工審查時請特別看這幾處`);
+    }
+  }
+  // 白名單片段（docs/13）：參數重新檢查（itemid 可能已被刪）、渲染後掃禁用 token；flag 關閉時不得輸出
+  const snippets = (draft.script && draft.script.snippets) || [];
+  if (snippets.length) {
+    if (!enabled('formScript')) errors.push({ code: 'E_FEATURE_DISABLED', message: `draft 有 ${snippets.length} 個表單 JS 片段，但 feature flag formScript 已關閉：開啟 flag，或 form_set_script 帶空陣列清除` });
+    const chk = checkSnippets(draft, snippets);
+    for (const f of chk.findings) (f.level === 'error' ? errors : warnings).push({ code: f.code, message: f.message });
+    const r = renderSnippets(draft);
+    for (const f of r.findings) errors.push({ code: f.code, message: f.message });
+    warn('W_FORM_SCRIPT', `表單有 ${r.snippets.length} 個 JS 片段（${r.snippets.map(s => `${s.template}#${s.id}${s.advanced ? '（進階）' : ''}${s.affects.length ? '→#' + s.affects.join(',#') : ''}`).join('；')}）：只在 2.0 runtime 執行、不影響 HIS 文字輸出與倉儲，樣式會影響列印版面；定稿計畫會原樣列出渲染後的程式碼`);
+  }
 
   if ((m.hisTextKeys || []).length) {
     const { missing, case_mismatch } = hisTextKeyFindings(draft, m.hisTextKeys);
@@ -308,7 +328,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       required: nodes.filter(c => c.required).length,
       formulas: nodes.filter(c => c.formula).length,
       macros: nodes.filter(c => c.datatype === 'action' || c.datatype === 'action2').length,
-      ai_steps: ai.length
+      ai_steps: ai.length,
+      snippets: snippets.length
     }
   };
 }

@@ -7,6 +7,7 @@ import * as store from './store.mjs';
 import * as online from './online.mjs';
 import * as site from './site.mjs';
 import * as dc from './dictcomment.mjs';
+import { verifyScriptBlock } from './script-snippets.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;                       // 與伺服器 TemplatePackage.IsValidId 相同
@@ -98,14 +99,19 @@ export const ONLINE_TOOLS = [
       const id = checkId(template_id, 'template_id');
       const pkg = await online.call('GET', `api/v2/templates/${id}`, {}, '讀取範本');
       const chars = JSON.stringify(pkg).length;
-      if (!save) return { package: pkg, ...(chars > LARGE_CHARS && { warnings: [`W_LARGE_RESPONSE：範本約 ${chars} 字元；請改用 save:true（只回摘要，內容存檔）`] }) };
+      // 本工具上架的片段 JS 有標記行與雜湊：不符＝上架後被人工改過（docs/13 §七 W_SCRIPT_MODIFIED）
+      const script = verifyScriptBlock(((Array.isArray(pkg && pkg.form) ? pkg.form : []).find(x => x && x.itemtype === 'javascript') || {}).content);
+      const warnings = [];
+      if (chars > LARGE_CHARS && !save) warnings.push(`W_LARGE_RESPONSE：範本約 ${chars} 字元；請改用 save:true（只回摘要，內容存檔）`);
+      if (script && !script.matches) warnings.push(`W_SCRIPT_MODIFIED：表單 JS 的片段區塊與標記的雜湊不符（標記 ${script.sha256}、實際 ${script.actual}）：上架後被人工改過，本工具不為改過的內容負責；要以本工具重建請 form_import 後 form_set_script 整份重設`);
+      if (!save) return { package: pkg, ...(script && { script }), ...(warnings.length && { warnings }) };
       const ws = store.workspace();
       const dir = path.join(ws.base, 'online');
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${id}.package.json`);
       fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
       const saved = path.relative(ws.root, file).split(path.sep).join('/');
-      return { saved, summary: summarize(pkg, chars),
+      return { saved, summary: summarize(pkg, chars), ...(script && { script }), ...(warnings.length && { warnings }),
         notes: ['summary.rev 是套件裡 template.rev 的值，不是版本號：新建回 rev 1、取回常是 0；版本號以 online_template_versions 的 current_rev 為準',
           'summary.chars 是整個套件（含 presets、dictionaries、integrity）的字元數，比上架計畫的 body_chars（只算 template＋form）大是正常的'],
         ...(include_package && { package: pkg }) };

@@ -1,4 +1,5 @@
 // form_preview（tree / markdown；html 預覽排在 v0.2）
+import { styleOf } from './model.mjs';
 // v1：可呈現既有表單的巢狀結構（表格格、圖示、群組子項）與計算式、巨集
 const LABEL = {
   textbox: '文字', numberbox: '數字', textarea: '段落', calendar: '日期時間', selection: '下拉', combobox: '組合框',
@@ -28,6 +29,8 @@ function describe(c, touched) {
   if (Array.isArray(c.datavalue)) bits.push(`子項 ${c.datavalue.filter(x => x && x.itemid !== undefined).length}`);
   if (c.reference) bits.push(`引用 #${c.reference}`);
   if (c.required) bits.push('必填');
+  const st = styleOf(c);
+  if (st) bits.push(`樣式 ${[st.font_color && `字${st.font_color}`, st.font_size && `${st.font_size}px`, st.back_color && `底${st.back_color}`].filter(Boolean).join('/')}`);
   bits.push(c.dictionary ? `字典 ${c.dictionary}${c.dicid ? '' : '（新建）'}／${ROLE[c.dicrole] || c.dicrole}` : '無字典');
   return bits.join(' ');
 }

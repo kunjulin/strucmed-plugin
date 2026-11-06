@@ -3,6 +3,7 @@
 // (F = G1; field sets taken from the
 // v0 harness G1 output of the real editor).
 import { E, fail } from './errors.mjs';
+import { scriptBlock, COLOR_RE, COLOR_HELP } from './script-snippets.mjs';
 
 export const RUNTIME_ROLE = 'doctor'; // 「所有人」 (平台 web/js/scripts.js:26; TempHtml.js:2223)
 export const EDITORVER = '1.6';
@@ -27,6 +28,39 @@ function base(itemid, datatype) {
   };
 }
 
+// S0 控制項樣式欄位（docs/13 §4.0）：平台控制項 JSON 既有的 efontcolor／efontsize（px）／ebackcolor，
+// 編輯器屬性面板有色票（平台 web/js/scripts.js:2794-2800），runtime 以 inline style 渲染（web/js/TempHtml.js:4562、4707）。
+// 空字串或 0 清回預設（''／14／''）。只影響畫面，不影響 HIS 文字輸出與倉儲。
+export const STYLE_DEFAULTS = { efontcolor: '', efontsize: 14, ebackcolor: '' };
+export const STYLE_KEYS = { font_color: 'efontcolor', font_size: 'efontsize', back_color: 'ebackcolor' };
+export function applyStyle(o, c) {
+  const changed = [];
+  for (const [k, field] of Object.entries(STYLE_KEYS)) {
+    if (c[k] === undefined) continue;
+    let v = c[k];
+    if (v === '' || v === null || v === 0 || v === '0') { if (o[field] !== STYLE_DEFAULTS[field]) changed.push(k); o[field] = STYLE_DEFAULTS[field]; continue; }
+    if (k === 'font_size') {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 10 || n > 24) fail(E.INVALID_INPUT, 'font_size 必須是 10–24 的整數（px）；"" 或 0 清回預設 14');
+      v = n;
+    } else {
+      v = String(v).trim();
+      if (!COLOR_RE.test(v)) fail(E.INVALID_INPUT, `${k} 的值「${v.slice(0, 30)}」不在白名單：${COLOR_HELP}`);
+    }
+    if (o[field] !== v) changed.push(k);
+    o[field] = v;
+  }
+  return changed;
+}
+// 非預設的樣式（form_fields、form_preview 顯示用）
+export function styleOf(n) {
+  const out = {};
+  if (n.efontcolor) out.font_color = n.efontcolor;
+  if (n.efontsize !== undefined && n.efontsize !== '' && Number(n.efontsize) !== STYLE_DEFAULTS.efontsize) out.font_size = Number(n.efontsize);
+  if (n.ebackcolor) out.back_color = n.ebackcolor;
+  return Object.keys(out).length ? out : null;
+}
+
 const furtherStr = f => (Array.isArray(f) && f.length ? f.map(n => String(parseInt(n, 10))).join(',') : '');
 
 export function buildControl(itemid, c) {
@@ -41,6 +75,7 @@ export function buildControl(itemid, c) {
   if (c.tocalc !== undefined) o.tocalc = !!c.tocalc;
   if (c.toSAS !== undefined) o.toSAS = !!c.toSAS;
   if (c.dicrole !== undefined && !DICROLES.has(c.dicrole)) fail(E.INVALID_INPUT, `dicrole 必須是 ${[...DICROLES].join('/')}`);
+  applyStyle(o, c);
 
   if (['textbox', 'numberbox', 'textarea', 'label'].includes(dt)) o.reference = c.reference ? String(c.reference) : '';
   if (dt === 'numberbox') {
@@ -177,7 +212,7 @@ export function iotObject(meta, generator) {
     f_opdno: !!o.f_opdno, f_chtno: o.f_chtno !== undefined ? !!o.f_chtno : true,
     templateID: '',
     f_histext: o.histext === 'dict' ? 'histextbydict' : 'histextbyblock',
-    f_hideprevicon: false, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,
+    f_hideprevicon: !!o.hide_prev_icon, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,
     f_day: String(o.f_day !== undefined ? o.f_day : 30),
     d_url: '',                           // filled by the editor with its warehouse URL
     modifiedUser: generator, modifiedDept: '', modifiedDate: 0
@@ -188,15 +223,17 @@ export function toFormJson(draft, generatorTag) {
   // imported：原封輸出（深拷貝）；generated：依編輯器匯入後格式輸出
   const arr = draft.areas.map(a => (a.imported || a.structured ? structuredClone(a.area) : areaObject(a)));
   const marker = `// generated-by: ${generatorTag}`;
+  // 白名單片段（docs/13）：有片段時接在標記行之後；改版且保留原 JS 時原 JS 在前、片段在後
+  const snippets = scriptBlock(draft);
   if (draft.source) {
     // v1 改版：保留原表單的 JS（只在最前面加一行標記註解）與 iot 表單選項；
     // 新表單不得沿用原 ID → sheetid / templateID 清空，d_url 交給編輯器填入
     // 來源若本身是本工具的輸出，先移除舊標記，避免改版一次多一行
     const js = (draft.source.javascript || '').replace(/^(\/\/ generated-by: strucmed-skill [^\n]*\n?)+/, '');
-    arr.push({ itemtype: 'javascript', content: js ? `${marker}\n${js}` : marker });
+    arr.push({ itemtype: 'javascript', content: [marker, js, snippets].filter(Boolean).join('\n') });
     arr.push({ ...structuredClone(draft.source.iot), sheetid: '', templateID: '', d_url: '', modifiedUser: 'strucmed-skill', modifiedDept: '', modifiedDate: 0 });
   } else {
-    arr.push({ itemtype: 'javascript', content: marker });   // marker only, never code (02 §5.2)
+    arr.push({ itemtype: 'javascript', content: [marker, snippets].filter(Boolean).join('\n') });   // 沒有片段時只有標記行 (02 §5.2)
     arr.push(iotObject(draft.meta, 'strucmed-skill'));
   }
   return arr;

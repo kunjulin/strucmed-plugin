@@ -72,6 +72,13 @@ A2 身體測量（formtable）
 | 1,2,1,2 | 身高： | [C3 numberbox] | cm 體重： | [C4 numberbox] |
 ```
 
+### 表單 JS（flag formScript 開啟時才有；沒有則寫「無」）
+| id | 樣板 | 參數（C*／A* 用穩定 ID） | 效果 | 觸發時機 | 影響的欄位 |
+|---|---|---|---|---|---|
+| bmi-high | guard | sources C2、C3；condition …；message「…」；highlight C2、C3 | 提示並標紅 | C2／C3 改值後、開文件時 | C2、C3 |
+
+格式與樣板參數見 `references/ScriptAddonRules.md` §3；builder 在所有欄位建好後以 `form_set_script` 一次設定。
+
 ### 待新建字典
 | 名稱 | 用於 | desc | 已查候選與不採用理由 |
 
@@ -134,6 +141,13 @@ Revision: 1
 
 ### 上架
 （`references/PublishWorkflow.md` §3 的表；離線時換成 form_export 的 plan：檔案、覆寫、匯入模式）
+
+### 表單 JS（有片段時才有）
+- 片段：style#look（樣式：主題 clean、2 條規則）、guard#bmi-high（條件提示：…）；sha256 <plan.script.sha256>
+- 只在 2.0 runtime 執行；不影響 HIS 文字輸出與倉儲；樣式會影響列印版面
+```js
+<plan.script.rendered 原樣，不摘要>
+```
 
 ### 警告
 - …

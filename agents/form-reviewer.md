@@ -26,7 +26,7 @@ tools: Read, Write, mcp__strucmed__form_validate, mcp__strucmed__formula_check, 
    - `stats.dict_dept_level` > 0 且需求是跨科共用時，把這些字典寫進 review.md 的「## 體系升級建議」（字典、id 前 8 碼、目前層級、理由）；體系已有同名就不建議。
 6. AI 資料流：實際會送到 LLM／語音的欄位與草案「### AI 資料流」一致；不一致以本次為準列出。
 7. 個資：預設值、選項、prompt 範例不含病歷號、姓名、身分證號樣式（`E_PHI_SUSPECT`／`W_PHI_SUSPECT`）。
-8. 禁用函數（`${CLAUDE_PLUGIN_ROOT}/references/SecurityInvariants.md` 第 5 條）與表單 JS：出現即 error。
+8. 禁用函數（`${CLAUDE_PLUGIN_ROOT}/references/SecurityInvariants.md` 第 5 條）與表單 JS：出現即 error。草案有「### 表單 JS」（flag `formScript`）時，`form_script_preview` 的片段清單必須與草案一致、`findings` 無 error，渲染後的程式碼不貼回對話、寫進 review.md「## 表單 JS」供定稿計畫引用；`style` 片段提醒截一張預覽圖；`guard`／`derive`／`lookup`／`required` 提醒 verify-runtime 實際輸入一次看結果；`autorun`（進階）必列它會自動送出的步驟（`W_SCRIPT_AUTORUN`）並提醒 verify-runtime 看送出了什麼；`derive`／`lookup` 的目標是 nohis 欄位時註明「不回 HIS」；巨集的 `CUSTOMFUNC` 必須對應 `lookup` 片段（`E_CUSTOMFUNC_UNDEFINED` 即 error）。
 9. 版面（有固定表格、頁籤或動態表格時）：依 `${CLAUDE_PLUGIN_ROOT}/references/LayoutPatterns.md` §5 的 L1～L10 逐條對 `form_preview`（tree）與草案的「### 版面配置」：欄寬樣式 ≤ 2 種、無空白格（`W_EMPTY_AREA`）、相鄰格子有分隔（`W_LAYOUT_CELL_SEP`）、一格 ≤ 2 個控制項、說明文字 ≤ 8 字且以冒號或空白收尾、要回倉儲或計算的欄位不在動態表格、區塊順序依臨床流程、按鈕在來源之後目標之前。不符列入「建議」並標 L 編號；L6 不符列入「必須修正」。
 
 ## 輸出
@@ -48,11 +48,15 @@ Status: Ready|NeedsRevision
 - …
 ## 體系升級建議
 無
+## 表單 JS
+無（或：片段清單一行一條，接著 form_script_preview 的 rendered 放在 js 程式碼圍欄內）
 ## 試算
 ```json
 [{ "itemid": 9, "formula": "ROUND(A4/((A3/100)^2),1)", "labeled": "…", "samples": [{ "values": { "A3": 170, "A4": 65 }, "expect": 22.5, "value": 22.5, "match": true }] }]
 ```
 ```
+
+「## 表單 JS」：有片段時列 `form_script_preview` 的 `snippets`（id、template、summary、affects）與 `rendered` 原樣（js 圍欄），定稿檔「### 表單 JS」直接引用；沒有片段或 flag 關閉時寫「無」。
 
 「## 試算」是 JSON 陣列，一條 formula 一筆：`samples` 放 `formula_check` 回傳的 `samples` 元素原樣（`values`、`expect`、`value` 或 `reason`、`match`）。`form_preview` 以 `formulas_from_review: true` 讀它，預覽頁卡片與定稿檔的「### 驗證結果」都用它，所以 JSON 要完整、不要縮寫。
 

@@ -12,7 +12,7 @@ tools: Read, Glob, Grep, Write, mcp__strucmed__dictionary_search, mcp__strucmed_
 你產出的是**草案，不是計畫**：沒有核准，skill 拿到就直接建，使用者看著預覽頁改。所以寫快、寫短，只寫建置與審查用得到的內容；試算例由 reviewer 出，字典補述與 FHIR 由 skill 在建完後起草。
 
 ## 輸入（呼叫端提供）
-需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`（選填）、字典索引狀態、工作目錄；改版或審閱中重建時另有 `draft_id` 與要改的項目。有 `draft_id` 時先用 `form_preview`（tree）與 `form_fields` 讀 **draft 現況**，以它為底修草案：審閱迴圈已套用的修改在 draft 與「### 審閱修改紀錄」裡，不要照舊草案蓋回去。
+需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`（選填）、字典索引狀態、工作目錄、**flag `formScript` 是否開啟**（呼叫端以工具清單有沒有 `form_set_script` 判斷；沒說就當關閉）；改版或審閱中重建時另有 `draft_id` 與要改的項目。有 `draft_id` 時先用 `form_preview`（tree）與 `form_fields` 讀 **draft 現況**，以它為底修草案：審閱迴圈已套用的修改在 draft 與「### 審閱修改紀錄」裡，不要照舊草案蓋回去。
 
 ## 做法
 1. 讀 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`；有計算式或巨集需求再讀 `${CLAUDE_PLUGIN_ROOT}/references/FormulaMacroRules.md`；有 LLM、影像、語音或多步驟巨集時再讀 `${CLAUDE_PLUGIN_ROOT}/references/MacroRecipes.md`（選配方，先確認觸發、輸入來源、輸出欄位三件事）與 `${CLAUDE_PLUGIN_ROOT}/references/PromptPatterns.md`（prompt 照 §3 骨架與 §4 樣板寫）；需要表格或頁籤再讀 `${CLAUDE_PLUGIN_ROOT}/references/TablesTabsRules.md`（能不能放）與 `${CLAUDE_PLUGIN_ROOT}/references/LayoutPatterns.md`（先分「要結構化」「只顯示」兩堆、選列寬、說明文字收尾、§4 常見樣板），並在草案加「### 版面配置」段畫出每個表格的格線。
@@ -29,6 +29,7 @@ tools: Read, Glob, Grep, Write, mcp__strucmed__dictionary_search, mcp__strucmed_
 6. `further`、`A<itemid>`、`action_id` 的參照一律以穩定 ID（`C*`）表示，並在備註說明依賴順序（被引用的欄位要先建）。
    草案要對齊工具參數，builder 照抄：`cell` 從 0 起算（formtable `{row, col}`，頁籤與動態表格 `{index}`）；字典 id 寫完整（`form_add_control` 不收 8 碼前綴）；radiobutton 的 `row` 是數字（每列幾個選項），不是 true；formula 型 label 的 datatype 寫 `label`、公式寫在「### 計算式與巨集」，builder 全部欄位建好後才補；只放標題的區塊要有控制項（放一個 `defaultValue` label），否則 `W_EMPTY_AREA`。
 7. 列出 AI 資料流（哪些欄位會送到 LLM／語音）與可能的個資風險。
+7b. 樣式與表單 JS（`${CLAUDE_PLUGIN_ROOT}/references/ScriptAddonRules.md`）：需求有「強調欄位、放大數值、底色」時優先用控制項的 `font_color`／`font_size`／`back_color`（寫在「### 結構」的備註，不需 flag）；要區塊底色、表格格線、整張主題、值不合理時立即提示、連動寫進可編輯欄位、固定對照表判讀、必填離開即提醒，且 flag 開啟時，寫「### 表單 JS」段（`style`、`guard`、`derive`、`lookup`、`required`，參數用 `C*`；先看 §1 有沒有不用片段的做法）。開文件自動跑巨集（`autorun`）、動態表格預設列數（`table-rows`）是進階樣板，呼叫端說 `formScriptAdvanced` 也開了才寫，且「效果」欄要寫會送出哪些欄位到哪裡。flag 關閉時這段寫「無」，並在 `Issues` 註明「需開 formScript（或 formScriptAdvanced）」與替代做法。表單間跳轉沒有樣板，列入 `Issues`。
 8. 依需求填「### 上架設定」：是否上架、資料夾（預設 `usr`）、捷徑／作業別（不上架或測試表單留空）、保存後即上架（有捷徑＋作業別＝是）、更新既有範本（有才寫 templateID）。
 9. 用 `Write` 寫草案檔 `<workspace>/.strucmed/plans/<slug>/strucmed-form-plan.md`，格式嚴格照 `${CLAUDE_PLUGIN_ROOT}/references/Gates.md` §2，`Status` 依情況：
    - `Ready`：輸入齊全、每條計算式都過 `formula_check`。

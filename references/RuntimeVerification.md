@@ -46,7 +46,7 @@ HIS 拿到的文字用 runtime 的 `GetJsonText()` 看，**不要用 `GetText()`
 
 ## 5. 截圖（預設不做）
 
-只在使用者要求，或使用者開不了預覽頁、而 Claude 這邊跑得起 harness 時才截圖（§6 的沒有 runtime 副本時無從截圖）。瀏覽器工具的截圖只有 Claude 看得到，必須存檔再傳：
+只在使用者要求、使用者開不了預覽頁、或 draft 有 `style` 片段（`form_script_preview` 的 `snippets` 有 template `style`；樣式只能用看的）、而 Claude 這邊跑得起 harness 時才截圖。其他片段（`guard`／`derive`／`lookup`／`required`／`autorun`／`table-rows`）用操作與讀值驗證，不截圖（`ScriptAddonRules.md` §4）（§6 的沒有 runtime 副本時無從截圖）。瀏覽器工具的截圖只有 Claude 看得到，必須存檔再傳：
 
 1. 先在頁面設好代表性的值、按過巨集。
 2. 用 `await __snapshot('<名稱>', '<CSS 選擇器，省略＝整張表單>')` 存到 `tools/v0-harness/out/snapshots/<名稱>.png`。

@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.10.0）
+# strucmed-mcp（v2.11.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -10,7 +10,7 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 - 輸出與刪除 draft 採**兩段式確認**（`confirm_token`：HMAC、綁定內容雜湊、10 分鐘有效、金鑰只存在本次行程）。
 - 線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫另有**瀏覽器寫入確認頁**（2.3.0，`src/approve.mjs`）：在 127.0.0.1 開一頁列出 plan，使用者按「確認寫入」才寫入；還沒按時回 `pending` 與 `approve_url`，再呼叫一次接著等；按取消回 `E_REJECTED`。每次確認只能用一次，無法關閉；網址含一次性 nonce，POST 檢查 Host／Origin，頁面內容一律跳脫並帶嚴格 CSP。`STRUCMED_APPROVE_WAIT_MS` 調整單次等待（預設 120 秒）。
 - stdout 只輸出 JSON-RPC；診斷訊息寫 stderr。
-- 表單 JS 區塊只寫入產生器標記註解，不產生可執行程式碼。
+- 表單 JS 區塊預設只寫入產生器標記註解，不產生可執行程式碼；flag `formScript` 開啟時只由 `form_set_script` 的白名單樣板渲染（draft 只存樣板參數，不接受自由 JS／CSS；渲染後掃描禁用 token，定稿計畫原樣列出），進階的 `autorun`／`table-rows` 另需 `formScriptAdvanced`。
 
 ## 使用
 本 repo 是 Claude Code plugin（`.claude-plugin/plugin.json` 的 `mcpServers` 以 `${CLAUDE_PLUGIN_ROOT}` 指到本 server；工作目錄＝Claude Code 的目前目錄）。安裝：`claude plugin marketplace add <本 repo 路徑>` → `claude plugin install strucmed@strucmed-marketplace`；在本 repo 內開發也用已安裝的 plugin（本機市集直接讀原始檔），tool 名稱為 `mcp__plugin_strucmed_strucmed__<tool>`。**改了 MCP 原始碼或更新 plugin 後，已開啟的工作階段裡 MCP 子行程仍是舊版**（`form_export` 的 `marker` 會顯示舊版號）：執行 `/reload-plugins` 或重開 Claude Code 才會換新。根目錄不再放 `.mcp.json`（它會被當成專案層級設定重複載入，且 `${CLAUDE_PLUGIN_ROOT:-.}` 這種預設語法不會展開）。手動執行：
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.10.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.11.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -194,6 +194,8 @@ cd mcp/strucmed-mcp && npm test
 - `test/no-silent.test.mjs`：不靜默：`E_UNKNOWN_KEY`、`additionalProperties:false`、`changes.unit` 與 `unit_source`、`W_DICT_DUP_WRITE`、M14 小修、線上寫入工具的描述開頭。
 - `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、別版 plugin 的 harness 不沿用（`version`、`serve`、`W_PREVIEW_OTHER_HARNESS`）、工作目錄固定、`runtime_web` 的尋找順序。
 - `test/v392.test.mjs`：3.9.1 實跑的發現：`form_update_area(titles)` 改名、增減、調換頁籤與拒絕刪除有欄位的頁籤、可見標題行被搬動後仍找得到（`W_BEFORE_TITLE`）、改名或刪頁籤後 `W_HIS_TEXT_KEYS` 指出頁籤並給改好的清單（3.9.3）、`dictionary_suggest` 預設 5 筆與 `full_memo`、型別不一致的降級理由。
+- `test/script.test.mjs`：表單 JS 白名單片段（flag `formScript`）：flag 關不列出、S1 style 的主題與規則渲染成一個 `<style>`（控制項層級加 `!important`）、CSS 屬性與值白名單、S4 guard 的事件綁定與條件 lint、訊息字元限制、禁用 token 掃描（字串與註解不算）、`form_remove_control`／`form_remove_area` 擋片段參照、flag 事後關閉時驗證與匯出拒絕、匯出計畫與 manifest 列出渲染後的 JS、改版 draft 原 JS 在前片段在後；D2：S2 derive（目標不能是 label／自己／動態表格）、S3 lookup（`sm_<name>`、`CUSTOMFUNC` 只放行片段定義的名稱、未定義可延後 `E_CUSTOMFUNC_UNDEFINED`、名稱重複）、S5 required（目標須 required）、`W_CUSTOM_JS_FINDINGS`、`verifyScriptBlock` 雜湊比對、`hide_prev_icon`；D4：flag `formScriptAdvanced` 關閉時 autorun／table-rows 拒絕、開啟後渲染（`performActionByID`、`TableRowAdd`＋預填）、事後關閉驗證與匯出拒絕。
+- `test/style-fields.test.mjs`：S0 控制項樣式欄位（`font_color`／`font_size`／`back_color` → `efontcolor`／`efontsize`／`ebackcolor`）：新增與更新、清回預設、無效值拒絕、`form_fields` 的 `style` 與 `form_preview(tree)` 顯示、`form_import` 既有值保留不算修改。
 - `test/rebuild.test.mjs`：`form_move_control`、`form_update_area`、`form_remove_area`、`form_add_area(after_itemid)`、`from_draft_id`、`W_APPLIED_SEQ_RESET`、補述自動檢查、`W_NON_BIG5`、`formulas_from_review`。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。
 - `test/trial-feedback.test.mjs`：3.5.0 試用回饋：`form_import(for_update)` 與 `metaSet`、`formdiff`（說明文字、控制項、JS、iot，排除伺服器補回的欄位）、`visible_title` 與 `W_AREA_NO_VISIBLE_HEADING`、空白巨集腳本 `E_ACTION_EMPTY`、`formula_check` 的 `W_KIND_MISMATCH`。

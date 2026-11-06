@@ -428,6 +428,7 @@ token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設�
 | `STRUCMED_EXTERNAL_URL` | 院外站台網址（通常不用設；`none` 不探測院外） |
 | `STRUCMED_SITE` | `offline` 完全不連線；`internal`／`external` 強制站台 |
 | `STRUCMED_RUNTIME_WEB` | 平台 `web/` 副本（網頁預覽用） |
+| `STRUCMED_FLAGS` | 自己的功能開關 JSON 檔路徑（例如開 `formScript`；不設則用 plugin 內的 `feature-flags.json`） |
 
 例如在專案資料夾啟動 Codex（PowerShell）：
 
@@ -511,18 +512,18 @@ MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `to
 
 | Skill | 用途 | 參數 |
 |---|---|---|
-| `/strucmed:strucmed-form` | **入口**：確認環境、判定意圖、分流到下列流程 | `<表單需求>`，或 `改版 <檔案或範本ID>`、`預覽 <draft_id>`、`上架 <draft_id>`、`app <範本ID>` |
+| `/strucmed:strucmed-form` | **入口**：確認環境、判定意圖、分流到下列流程 | `<表單需求>`，或 `改版 <檔案或範本ID>`、`預覽 <draft_id>`、`調校 <draft_id> <itemid>`、`上架 <draft_id>`、`app <範本ID>` |
 | `/strucmed:connect-strucmed` | 檢查並建立與 strucmed API v2、LlmGateway、FMapi 的連線 | — |
 | `/strucmed:create-form` | 設計新表單：需求 → 草案直接建 draft → 預覽頁審閱 → 定稿（G2）→ 上架或輸出 | `<表單目的與臨床情境>` |
 | `/strucmed:edit-form` | 以既有 `.htm`／`.json`／線上範本為範本改版，原結構原封保留 | `<來源> <要改什麼>` |
-| `/strucmed:verify-runtime` | 以 HIS 端 runtime 的本機離線副本實跑計算式、巨集、表格頁籤，交出「輸入 → 結果」對照表 | `<draft_id>` |
+| `/strucmed:verify-runtime` | 以 HIS 端 runtime 的本機離線副本開 draft 的預覽頁：給可點的連結與 HIS 文字輸出，你在頁面上填值、看計算結果、留意見；有巨集時實跑一次，截圖只在你要求時做 | `<draft_id>` |
 | `/strucmed:tune-prompt` | 調校單一 LLM 按鈕的提示詞：依 PromptPatterns 改寫、formula_check、選用去識別化樣本試跑比較模型，再寫回 draft | `<draft_id> <itemid> [模型別名]` |
-| `/strucmed:dictionary-assist` | 欄位字典助手：為欄位、計算式、巨集、LLM prompt 找合適的字典並給引用方式；為新字典寫完整補述（表單功能、使用情境、交換引用）；解析既有表單、補齊它用到的字典補述 | `find <draft_id> <itemid>`／`new <draft_id>`／`annotate <template_id\|.htm\|draft_id>` |
+| `/strucmed:dictionary-assist` | 欄位字典助手：為欄位、計算式、巨集、LLM prompt 找合適的字典並給引用方式；為新字典寫完整補述（表單功能、使用情境、交換引用）；解析既有表單、補齊它用到的字典補述 | `find <draft_id> <itemid>`／`csv <draft_id>`／`annotate <template_id\|.htm\|draft_id>` |
 | `/strucmed:publish-form` | 定稿 G2 的執行段：經 API v2 上架（新建或 If-Match 更新），字典先建後綁；create-form、edit-form 內嵌，也可單獨對既有 draft 使用；線上未設定時改走 `.htm` 匯入 | `<draft_id> [--folder usr\|sub\|dpt] [--update <templateID>]` |
 | `/strucmed:build-form-app` | B1 執行條件檢核清單；B2 表單 APP 產生（G4；H0 本機 Docker／H1 既有 struNote／H2 站台 `/apps/`） | `<範本 ID> [b1\|b2]` |
 | `/strucmed:report-issue` | 收集 workflow-log、版本與遮蔽後的錯誤，產生 issue 草稿（由你自己送出） | `[一句話描述問題]` |
 
-Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`form-planner`（唯讀，產表單草案）、`form-builder`（單一、依序建置 draft）、`form-reviewer`（草案 ↔ draft 對照、自出試算例、白名單、AI 資料流、疑似個資）、`app-builder`（執行 scaffold 與靜態檢查）。共同規則在 [AGENTS.md](AGENTS.md)。
+Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`form-planner`（唯讀，產表單草案）、`form-builder`（單一、依序建置 draft）、`form-reviewer`（草案 ↔ draft 對照、自出試算例、白名單、AI 資料流、疑似個資）、`app-builder`（執行 scaffold 與靜態檢查）、`dictionary-annotator`（唯讀，為一張表單用到的字典起草補述；dictionary-assist 模式 3 超過 5 本時啟動）。共同規則在 [AGENTS.md](AGENTS.md)。
 
 ## 流程與核准閘門
 
@@ -546,6 +547,20 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 |---|---|---|
 | G2 | `## 定稿` | 依序寫入字典、補述、範本（`online_template_create`／`update` 第二段；唯一寫線上的點；hook 會檢查核准 sidecar，MCP 再開瀏覽器確認頁由使用者按「確認寫入」）；離線時輸出 `.htm` |
 | G4 | `## 應用程式計畫` | 產生 B2 app 目錄 |
+
+**表單樣式與 JS 片段（3.10.0）**：
+- 欄位的顏色、字級、底色：直接用 `form_update_control` 的 `font_color`／`font_size`／`back_color`，不用開任何開關（編輯器屬性面板也看得到、可再調）。
+- 區塊底色、表格格線、整張主題，以及「值不合理立即提示」「輸入後自動帶出分類或判讀」「必填離開即提醒」：要開 flag `formScript`。開啟後多出 `form_set_script`／`form_script_preview` 兩個工具，只接受 `style`（固定主題＋受限規則）、`guard`（條件提示）、`derive`（連動寫進可編輯欄位）、`lookup`（固定對照表判讀；巨集可用 `CUSTOMFUNC("sm_<name>")` 呼叫）、`required`（必填離開即提醒）五種樣板，不接受自由 JS 或 CSS。
+- 「開文件時自動跑巨集」「動態表格預設幾列並預填」：另開 `formScriptAdvanced`（`autorun`、`table-rows`）。AI／查詢步驟會在開文件時自動送出，預覽頁會實跑給你看送出了什麼。
+- 怎麼開：本機資料夾安裝（開發者）改 plugin 根目錄的 `feature-flags.json`；市集安裝時改快取目錄的同一個檔（Claude Code 在 `~/.claude/plugins/cache/strucmed-marketplace/strucmed/<版本>/feature-flags.json`，更新版本後要再改一次），或在啟動工具的 shell 設 `STRUCMED_FLAGS` 指向自己的 JSON 檔（內容例如 `{ "formScript": true }`）。改完開新工作階段。
+- 渲染後的程式碼會原樣列在定稿 G2 與匯入說明給你審閱；片段只在 2.0 runtime 執行，不影響 HIS 文字輸出與倉儲；樣式會影響列印版面。規則見 [references/ScriptAddonRules.md](references/ScriptAddonRules.md)。
+
+需求這樣描述就會用到（flag 開啟時）：
+
+```text
+幫我做一張「營養評估單」：身高體重算 BMI，BMI 分類自動寫進「分類」欄位（27 以上肥胖、24 以上過重、其他正常）；
+體重超過 300 就立刻提示；評估者沒填就提醒；藥名輸入 Aspirin／Metformin 時自動帶出藥物分類；測量區塊淡黃底、表格要格線。
+```
 
 G1、G3 編號已停用（舊文件與 CHANGELOG 裡的 G1～G3 指 3.8.0 以前的流程）。定稿檔與核准 sidecar 放在工作目錄的 `.strucmed/plans/<draft_id>/`，`scripts/verify-plan.mjs` 以 sha256 比對；一改，核准就失效。格式見 [references/Gates.md](references/Gates.md)。
 
@@ -571,7 +586,7 @@ G1、G3 編號已停用（舊文件與 CHANGELOG 裡的 G1～G3 指 3.8.0 以前
 
 `plugin.json` 以 `${CLAUDE_PLUGIN_ROOT}/mcp/strucmed-mcp/src/server.mjs` 註冊 `strucmed`（stdio，Node 20，零相依），tool 名稱為 `mcp__plugin_strucmed_strucmed__<tool>`。
 
-- **離線（一律可用）**：`form_create`／`form_import`／`form_add_area`／`form_add_control`／`form_update_control`／`form_validate`／`form_preview`／`form_export`、`dictionary_*`、`formula_check` 等 16 個。
+- **離線（一律可用）**：`form_create`／`form_import`／`form_search`／`form_delete`／`form_update_meta`／`form_add_area`／`form_update_area`／`form_remove_area`／`form_add_control`／`form_update_control`／`form_move_control`／`form_remove_control`／`form_fields`／`form_validate`／`form_preview`／`form_review_read`／`form_export`、`dictionary_load`／`search`／`suggest`／`memo_check`／`create`／`plan_export`／`plan_import`、`formula_check`，共 25 個；flag `formScript` 開啟時另有 `form_set_script`／`form_script_preview`（表單 JS 白名單片段）。
 - **線上（判斷出站台才列出；以瀏覽器登入）**：`online_login`／`me`／`features`／`folder_list`／`template_get`／`template_create`／`template_update`／`template_versions`、`online_dictionary_*`、`online_me_notes_*`。沒有查詢或存檔病人紀錄的 tool。
 - **LlmGateway（只有院內）**：`llmgateway_models`（白名單快取 `.strucmed/llm-models.json`，巨集模型檢查以此為準）、`llmgateway_chat_test`（flag 預設關）。
 - **FMapi（只有院內）**：`fmapi_status`（唯讀）。
@@ -630,8 +645,8 @@ strucmed-plugin/
 ├── plugin.json、mcp_config.json、hooks.json、rules/AGENTS.md  # Antigravity 版 plugin（3.5.0 起）
 ├── AGENTS.md                # 所有 agent 與 skill 的共同規則
 ├── feature-flags.json       # 功能開關（online／llmgateway／fmapi 自動；templateUpdate 開；dictionaryWrite 開）
-├── skills/                  # 9 個 skill（見上表）
-├── agents/                  # form-planner、form-builder、form-reviewer、app-builder
+├── skills/                  # 10 個 skill（見上表）
+├── agents/                  # form-planner、form-builder、form-reviewer、app-builder、dictionary-annotator
 ├── references/              # 設計規則、計算式與巨集、提示詞樣板、巨集工作流配方、表格頁籤規則與版面樣板、閘門、上架與 APP 流程、模型白名單、安全不變量
 ├── hooks/                   # UserPromptSubmit 安全提醒、PreToolUse 核准檢查、PostToolUse workflow-log；antigravity/＝Antigravity 版 G2 定稿
 ├── scripts/                 # check-env、verify-plan、preview、scaffold-form-app、check-app-dist、report-issue
