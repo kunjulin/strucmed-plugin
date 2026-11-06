@@ -48,7 +48,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 表單目的 | ✓ | 臨床情境、使用者、要收集什麼、要帶回 HIS 的文字 |
 | 目標科部代碼 `dept_no` | ✓ | 線上：取自 `online_me`，科部在登入頁填，**不在對話中問**；回 `W_NO_DEPT` 時照 `connect-strucmed` 第 4 步請使用者重新登入。離線才問：使用者登入編輯器時填的 deptno |
 | 是否正式上架 | ✓ | 否 → 不設捷徑與作業別，資料夾預設 usr，**不問**這三項 |
-| 作業別 | 上架才問 | 門／住／急／手術／檢查／助手／All；**測試表單不設** |
+| 作業別 | 上架才問 | 門／住／急／手術／檢查／助手／All；**測試表單不設**，交給 planner 時寫「不設」，不要把需求裡提到的科別或住院情境當成作業別帶進去 |
 | 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
@@ -68,7 +68,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 ## 3. 階段 2：草案（不停下來核准）
 
-1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、flag `formScript` 是否開啟（工具清單有 `form_set_script` 就是開）、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
+1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別（不上架或測試表單寫「不設」）、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、flag `formScript` 是否開啟（工具清單有 `form_set_script` 就是開）、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
    - 字典**先找再建**：planner 為每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 的候選直接選入，範圍內沒有候選才找他科或列待新建。使用者選擇不提供索引時，草案要標明「未比對既有字典」。
    - `Blocked`（缺必要輸入，或需求與規則衝突）→ 把它列的問題與可選方案用一次 `AskUserQuestion` 問使用者後重跑，不要先建；`NeedsRevision` → 照它的建議值往下建，「### 待決」列在草案摘要之後。
    - 「### 待決」列出**他科候選字典**時，交 builder 前先用一次 `AskUserQuestion` 問使用者要不要採用（其他要先問的待決一起問）。採用的以 `online_dictionary_search`（`scope: "all"`、`q`＝字典名稱、`update_index: true`）併入本機索引，把草案該欄改成綁這本字典，再交 builder；不採用就照草案列待新建。未登入時跳過，在待決註明。
@@ -137,11 +137,11 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 
 ## 5. 階段 4：定稿 G2
 
-1. `Task(form-reviewer)` 最後一輪（告訴它是最後一輪）。**最後一輪必須在所有意見都套用到 draft 之後才啟動**，不要和改 draft、匯回 CSV 平行；之後又改了 draft 就要再審一次。`NeedsRevision` 時修好再審，必要時回階段 3。warning 留到 G2 列；prompt 的 `W_PROMPT_*` 附 `references/PromptPatterns.md` 的改法，使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
+1. `Task(form-reviewer)` 最後一輪（告訴它是最後一輪）。**最後一輪必須在所有意見都套用到 draft 之後才啟動**，不要和改 draft、匯回 CSV 平行；**字典 CSV 匯回（`dictionary_plan_import`）也算改 draft**，最後一輪要排在匯回之後；之後又改了 draft 就要再審一次（只改補述時以 `dictionary_plan_import` 回傳的 `checks` 無 error 代替整輪，並記進定稿檔）。`NeedsRevision` 時修好再審，必要時回階段 3。warning 留到 G2 列；prompt 的 `W_PROMPT_*` 附 `references/PromptPatterns.md` 的改法，使用者想反覆調整某一顆按鈕的 prompt 或試跑模型時，建議之後用 `/strucmed:tune-prompt`。
 2. 有巨集按鈕時依 `references/RuntimeVerification.md` §4 實跑一次，結果進「### 驗證結果」。有 `guard`／`derive`／`lookup`／`required` 片段時同樣必跑（輸入一組值看結果；guard 觸發再改回，記「提示一次、標示加上又移除」）；有 `autorun` 時看開文件後「已封鎖的請求」與目標欄位的「將送出 N 字」；有 `table-rows` 時看列數與預填；有 `style` 片段時截一張預覽圖給使用者（`ScriptAddonRules.md` §4）。
 3. 字典：§3 第 3 步已預填。審閱中新增的字典還缺補述時，依 `dictionary-assist` 模式 2 補起草（新字典的補述只有建立時一次機會）。
 4. 載入 `publish-form`，從「準備定稿」接手：`dictionary_plan_export` 出 CSV、取得字典與上架 plan（離線或不上架時換 `form_export` 的 plan）、寫 `publish-plan.md`（有片段時「### 表單 JS」段放 plan 的 `script.rendered` 原樣）、呈現 G2、核准、`verify-plan.mjs prepare`、依序執行。閘門名稱都是 G2。
-   - `要求修改` → 小改就地改 draft 重新定稿（`Revision` +1）；字典改 CSV 後 `dictionary_plan_import`，回傳的 `memo_items` 併進 `memo-items.json`；使用者想再看頁面就回階段 3。
+   - `要求修改` → 小改就地改 draft 重新定稿（`Revision` +1）；字典改 CSV 後 `dictionary_plan_import`，回傳的 `memo_items` 併進 `memo-items.json`、`checks` 要無 error（有 error 修到沒有；結構沒動就不必再跑 reviewer）；使用者想再看頁面就回階段 3。
    - `取消` → 停止，draft、CSV、review 檔留在本機，線上沒有任何寫入。
 
 ## 6. 階段 5：交付格式

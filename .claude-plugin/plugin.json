@@ -1,6 +1,6 @@
 {
   "name": "strucmed",
-  "version": "3.10.0",
+  "version": "3.10.1",
   "description": "長庚結構化病歷 2.0（StrucMed）表單製作 plugin：與使用者互動設計表單、離線驗證與 runtime 預覽、經 strucmed API v2 上架、LlmGateway 模型白名單、表單 APP 產生。站台自動判斷院內／院外；線上功能以瀏覽器登入站台，HIS 密碼只在站台登入頁輸入，不經 AI 工具與對話。",
   "author": {
     "name": "Kunjulin"
@@ -18,23 +18,27 @@
       "type": "string",
       "title": "LlmGateway token（選用，伺服器型）",
       "description": "在 LlmGateway「我的帳號」核發，標籤建議 strucmed-plugin；只在院內網路使用（GET /v1/models 取模型白名單）。留空或院外＝模型白名單用內建靜態表。",
-      "sensitive": true
+      "sensitive": true,
+      "required": false
     },
     "fmapi_key": {
       "type": "string",
       "title": "FMapi 檢視金鑰（選用）",
       "description": "FMapi 檢視金鑰；只在院內網路使用。",
-      "sensitive": true
+      "sensitive": true,
+      "required": false
     },
     "external_url": {
       "type": "string",
       "title": "院外站台網址（選用，預設 https://cgmh.ddns.net）",
-      "description": "通常留空：院內連不到時自動改用內建的院外站台 https://cgmh.ddns.net（登入仍需 HIS 帳密）。只有資訊室另外公告新網址時才填（必須是 https）；填 none 則不探測院外、只在院內網路連線。"
+      "description": "通常留空：院內連不到時自動改用內建的院外站台 https://cgmh.ddns.net（登入仍需 HIS 帳密）。只有資訊室另外公告新網址時才填（必須是 https）；填 none 則不探測院外、只在院內網路連線。",
+      "required": false
     },
     "runtime_web": {
       "type": "directory",
       "title": "平台前端 web/ 本機副本（選用）",
-      "description": "runtime 驗證（HTML 預覽）需要 StrucMed 平台原始碼的 web/ 目錄副本；留空時用工作目錄的 repo/strucmed/web。"
+      "description": "runtime 驗證（HTML 預覽）需要 StrucMed 平台原始碼的 web/ 目錄副本；留空時用工作目錄的 repo/strucmed/web。",
+      "required": false
     }
   },
   "mcpServers": {

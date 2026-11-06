@@ -25,6 +25,7 @@ function checkCode(v, field, required) {
 }
 
 const LARGE_CHARS = 50000;
+const FOLDER_PAGE_DEFAULT = 10;
 // 範本套件的摘要：online_template_get(save:true) 只回這些，整包留在存檔
 function summarize(pkg, chars) {
   const t = (pkg && pkg.template) || {};
@@ -56,7 +57,7 @@ export const ONLINE_TOOLS = [
     description: '（online）以瀏覽器登入 strucmed 站台（OAuth 2.0 授權碼 + PKCE，回呼到本機 127.0.0.1）。站台自動判斷院內（LVAIW）或院外（使用者設定的網址），回應的 site 標明。' +
       '會以系統瀏覽器開啟站台登入頁，**HIS 帳密由使用者在登入頁輸入，不經過 AI 工具**；本 tool 沒有帳密參數，絕不在對話中索取密碼。' +
       '最多等約 2 分鐘；還沒完成時回 pending:true 與 authorize_url（瀏覽器沒開時請使用者自行開啟），使用者完成後再呼叫一次即可，不會重開新的登入。' +
-      '已登入時直接回目前狀態（already:true）。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；access token 30 分鐘，其他線上 tool 會自動以 refresh token 換新，' +
+      '已登入時直接回目前狀態（already:true）。回傳的 login_flow 說明這次是 browser（經瀏覽器登入頁）或 reused（沿用本行程既有登入，沒開登入頁），dept_source 說明科部來源：login_page（登入頁送出）、session（沿用上次登入）、none（沒帶科部，另附 W_NO_DEPT）。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；access token 30 分鐘，其他線上 tool 會自動以 refresh token 換新，' +
       '同一次登入最長 8 小時，之後或 MCP 重啟（新對話、/reload-plugins）需重新登入。token 只能使用範本、字典與自己的 struNote 清單。',
     inputSchema: { type: 'object', properties: {
       dept_no: str('登入科部（token 的科部，選填）'), hospital: str('院區代碼（選填，預設 CGMH）') } },
@@ -78,13 +79,25 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_folder_list',
-    description: '（online，唯讀）列出資料夾中的範本（GET api/v2/folders/{type}/templates）。type 選填，預設 usr：usr 個人、sub 次專科、dpt 科部、sys 系統、trash 垃圾桶、ALL 全部。',
+    description: '（online，唯讀）列出資料夾中的範本（GET api/v2/folders/{type}/templates）。type 選填，預設 usr：usr 個人、sub 次專科、dpt 科部、sys 系統、trash 垃圾桶、ALL 全部。' +
+      '預設每頁 10 筆、只回精簡欄位（template_id、name、shortcut、groups、modify_date、creator），超過時 more 說明還剩幾筆；要找特定範本請帶 q（名稱或捷徑），不要加大 page_size 把整個資料夾灌進對話。',
     inputSchema: { type: 'object', properties: {
       type: str('資料夾（選填，預設 usr 個人）', { enum: FOLDER_TYPES }), q: str('名稱或捷徑關鍵字（選填）'),
-      page: { type: 'number', description: '頁次（選填，從 1 起）' }, page_size: { type: 'number', description: '每頁筆數（選填，伺服器上限 200）' } } },
+      page: { type: 'number', description: '頁次（選填，從 1 起）' }, page_size: { type: 'number', description: '每頁筆數（選填，預設 10，伺服器上限 200）' } } },
     async handler({ type = 'usr', q, page, page_size }) {
       if (!FOLDER_TYPES.includes(type)) fail(E.INVALID_INPUT, `type 必須是 ${FOLDER_TYPES.join('／')}`);
-      return online.call('GET', `api/v2/folders/${type}/templates`, { query: { q, page, pageSize: page_size } }, '讀取資料夾清單');
+      const size = page_size === undefined ? FOLDER_PAGE_DEFAULT : page_size;
+      const r = await online.call('GET', `api/v2/folders/${type}/templates`, { query: { q, page, pageSize: size } }, '讀取資料夾清單');
+      // 3.9.3 驗收 F-09：平台每筆帶 description 等欄位，50 筆約 30 KB；這裡只留找範本要用的欄位
+      const items = (Array.isArray(r && r.items) ? r.items : []).map(i => ({
+        template_id: String(i.templateID || ''), name: String(i.templatename ?? i.name ?? ''), shortcut: String(i.shortcut || ''),
+        groups: Array.isArray(i.groups) ? i.groups : [], ...(i.modifyDate && { modify_date: String(i.modifyDate) }), ...(i.creator && { creator: String(i.creator) }) }));
+      const pg = Number((r && r.page) || page || 1), ps = Number((r && r.pageSize) || size), total = Number(r && r.total !== undefined ? r.total : items.length);
+      const out = { folder: r && r.folder, exists: !!(r && r.exists), total, page: pg, page_size: ps, items };
+      if (r && r.duplicates) out.duplicates = r.duplicates;
+      if (r && r.corrupt) out.corrupt = r.corrupt;
+      if (total > pg * ps) out.more = `還有 ${total - pg * ps} 筆沒列出：帶 q 篩選名稱或捷徑，或 page: ${pg + 1}`;
+      return out;
     }
   },
   {

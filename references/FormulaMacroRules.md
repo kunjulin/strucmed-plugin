@@ -22,6 +22,7 @@
 - 比較運算子兩側**加空白**：`A5 > 3`，不要寫 `A5>3`（會語法錯誤）。
 - 不能用 `&`，改用 `CONCATENATE`；小數寫 `0.5`；文字一律加引號。
 - `ROUND`／`ROUNDUP`／`ROUNDDOWN` 一定要寫位數（`ROUND(x, 0)`），少了位數 runtime 會算出 NaN。
+- `ROUND` 剛好落在 5 的邊界時以 runtime（Calx）的浮點結果為準，可能和手算差最後一位：BMI 160 cm／80 kg 數學上是 31.25，runtime 顯示 31.2 不是 31.3。`formula_check` 的試算例與需求裡的範例值都避開 .x5 邊界；臨床切點剛好落在邊界時在白話註明「以 runtime 顯示值為準」。
 - 巨集步驟的字串裡**不要放半形括號**（會打亂步驟切分），需要時用 `CHAR(40)`／`CHAR(41)`。
 - 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`…）。拼錯時平台會靜默改用預設模型。

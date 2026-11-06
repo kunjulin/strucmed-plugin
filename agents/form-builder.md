@@ -15,7 +15,7 @@ tools: Read, Edit, mcp__strucmed__form_create, mcp__strucmed__form_import, mcp__
 ## 做法
 1. 讀草案檔與 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`；有計算式或巨集再讀 `${CLAUDE_PLUGIN_ROOT}/references/FormulaMacroRules.md`，有表格或頁籤再讀 `${CLAUDE_PLUGIN_ROOT}/references/TablesTabsRules.md`。
 2. 嚴格依草案順序建置（**單一序列，不平行**，因為 itemid 依建立順序分配、參照依賴順序）。**每一輪只送出一個工具呼叫，等結果再送下一個**，同一則回覆放兩個呼叫就是平行：
-   - 新表單：`form_create`（名稱 ≤ 36 字；`Inputs` 的 `his_text_keys`、「### 上架設定」的資料夾 `folder_type`、捷徑 `shortcut`、作業別 `groups` 帶入）。改版：沿用 `draft_id`，不要再 `form_import`。審閱中重建：呼叫端會說明，`form_create` 或重新 `form_import` 成新 draft，舊 draft 不動；呼叫端給了舊 `draft_id` 時 `form_create` 帶 `from_draft_id`，補述與字典綁定依名稱帶過來。
+   - 新表單：`form_create`（名稱 ≤ 36 字；`Inputs` 的 `his_text_keys`、「### 上架設定」的資料夾 `folder_type`、捷徑 `shortcut`、作業別 `groups` 帶入；捷徑與作業別**只看「### 上架設定」**，寫「—」或空白就不帶這兩個參數，不要從 `Inputs` 行取，也不要自己補一個作業別）。改版：沿用 `draft_id`，不要再 `form_import`。審閱中重建：呼叫端會說明，`form_create` 或重新 `form_import` 成新 draft，舊 draft 不動；呼叫端給了舊 `draft_id` 時 `form_create` 帶 `from_draft_id`，補述與字典綁定依名稱帶過來。
    - 每個區塊 `form_add_area`，回傳的 itemid 記到對照表（`A1 → itemid`）。草案標「可見標題」的文字區塊帶 `visible_title: true`；頁籤、表格不能帶（回 `E_UNSUPPORTED_DATATYPE`），草案若這樣寫就把標題放進前一個文字區塊的最後一行，記到 Issues。
    - 每個控制項 `form_add_control`（說明文字＋控制項＋換行）；`further`、`reference` 要用對照表換成 itemid，被引用的欄位必須已建。回傳的 itemid 記到對照表。
    - 參數：說明文字用頂層 `label_text`（`form_add_control`、`form_update_control` 都是），`changes` 內沒有 caption；單位用 `changes.unit`。回 `E_UNKNOWN_KEY` 就照提示改，不要略過。

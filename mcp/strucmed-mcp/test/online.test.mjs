@@ -78,8 +78,15 @@ function handler(req, res) {
     if (behavior.redirect) { res.writeHead(302, { Location: 'https://evil.example/steal' }); return res.end(); }
     if (behavior.upstream500) return err(res, 502, 'E_UPSTREAM', '倉儲連線失敗');
     let m;
-    if (req.method === 'GET' && (m = p.match(/^api\/v2\/folders\/(\w+)\/templates$/)))
+    if (req.method === 'GET' && (m = p.match(/^api\/v2\/folders\/(\w+)\/templates$/))) {
+      if (behavior.bigFolder) { // 平台的實際形狀：folder 物件、76 筆、每筆帶 description 等欄位
+        const size = Number(url.searchParams.get('pageSize') || 50), pg = Number(url.searchParams.get('page') || 1);
+        const all = Array.from({ length: 76 }, (_, i) => ({ templateID: `T-${i + 1}`, templatename: `範本 ${i + 1}`, shortcut: i === 0 ? 'fall' : '', groups: i === 0 ? ['門'] : [],
+          description: 'x'.repeat(300), modifyDate: '20261104', creator: USER_ID, source: USER_ID }));
+        return json(res, 200, { folder: { type: m[1], code: 'OL5' }, exists: true, duplicates: 0, corrupt: 0, total: all.length, page: pg, pageSize: size, items: all.slice((pg - 1) * size, pg * size) });
+      }
       return json(res, 200, { folder: m[1], exists: true, total: 1, items: [{ templateID: 'T-1', name: '跌倒評估' }] });
+    }
     if (req.method === 'GET' && (m = p.match(/^api\/v2\/templates\/([A-Za-z0-9-]+)$/))) {
       const saved = templates.get(m[1]);
       if (saved) { res.setHeader('ETag', '"' + saved.sha256 + '"'); return json(res, 200, fakePackage(m[1], saved.template, saved.form)); }
@@ -303,6 +310,9 @@ test('login opens the browser login page with PKCE and a loopback redirect, then
     assert.equal(r.data.user_id, USER_ID);
     assert.equal(r.data.dept_no, 'APP');
     assert.equal(r.data.base_url, BASE(), 'trailing slash normalised');
+    assert.equal(r.data.login_flow, 'browser');
+    assert.equal(r.data.dept_source, 'login_page');
+    assert.match(r.data.logged_in_at, /^\d{4}-\d{2}-\d{2}T/);
     const token = reqs.find(x => x.path === '/strucmed/api/v2/auth/token');
     assert.deepEqual(Object.keys(token.body).sort(), ['clientId', 'code', 'codeVerifier', 'grantType', 'redirectUri']);
     assert.equal(token.body.grantType, 'authorization_code');
@@ -312,6 +322,9 @@ test('login opens the browser login page with PKCE and a loopback redirect, then
     // 已登入：不再開登入頁
     const status = await m.call('online_login', {});
     assert.equal(status.data.already, true);
+    assert.equal(status.data.login_flow, 'reused', '3.9.3 F-01：沿用登入時說明沒開登入頁');
+    assert.equal(status.data.dept_source, 'login_page', '沿用時科部來源仍是上次登入頁');
+    assert.match(status.data.note, /沒有開登入頁/);
   } finally { m.stop(); }
 });
 
@@ -1130,4 +1143,46 @@ test('online_dictionary_usage: where-used per dictionary, counts into the index,
   const old = await mcp.call('online_dictionary_usage', {});
   assert.equal(old.error.code, 'E_UPSTREAM');
   assert.match(old.error.message, /W_SERVER_OLD/);
+});
+
+// 3.9.3 驗收 F-01：登入頁沒帶科部 → dept_source none，並附 W_NO_DEPT
+test('online_login without a dept reports dept_source none', async () => {
+  await mcp.call('online_logout', {});
+  behavior.noDept = true;
+  try {
+    const r = await browserLogin(mcp, {});
+    assert.equal(r.ok, true);
+    assert.equal(r.data.login_flow, 'browser');
+    assert.equal(r.data.dept_source, 'none');
+    assert.ok(r.data.warnings.some(w => w.startsWith('W_NO_DEPT')));
+  } finally { delete behavior.noDept; await mcp.call('online_logout', {}); }
+});
+
+// 3.9.3 驗收 F-09：預設每頁 10 筆、只回精簡欄位、more 說明還剩幾筆
+test('online_folder_list defaults to 10 concise rows and says how many are left', async () => {
+  await browserLogin(mcp, {});
+  behavior.bigFolder = true;
+  try {
+    reqs = [];
+    const r = await mcp.call('online_folder_list', {});
+    assert.equal(r.ok, true);
+    assert.equal(new URLSearchParams(reqs[0].search).get('pageSize'), '10', '沒帶 page_size 時向伺服器要 10 筆');
+    assert.deepEqual(r.data.folder, { type: 'usr', code: 'OL5' });
+    assert.equal(r.data.total, 76);
+    assert.equal(r.data.page, 1);
+    assert.equal(r.data.page_size, 10);
+    assert.equal(r.data.items.length, 10);
+    assert.deepEqual(Object.keys(r.data.items[0]).sort(), ['creator', 'groups', 'modify_date', 'name', 'shortcut', 'template_id']);
+    assert.deepEqual(r.data.items[0], { template_id: 'T-1', name: '範本 1', shortcut: 'fall', groups: ['門'], modify_date: '20261104', creator: USER_ID });
+    assert.ok(!JSON.stringify(r.data).includes('xxxx'), 'description 不回傳');
+    assert.ok(JSON.stringify(r.data).length < 2500, `精簡後的回傳要小：${JSON.stringify(r.data).length}`);
+    assert.match(r.data.more, /還有 66 筆/);
+    assert.match(r.data.more, /page: 2/);
+    const last = await mcp.call('online_folder_list', { page: 8 });
+    assert.equal(last.data.items.length, 6);
+    assert.equal(last.data.more, undefined, '最後一頁沒有 more');
+    const big = await mcp.call('online_folder_list', { page_size: 100 });
+    assert.equal(big.data.items.length, 76);
+    assert.equal(big.data.more, undefined);
+  } finally { delete behavior.bigFolder; }
 });

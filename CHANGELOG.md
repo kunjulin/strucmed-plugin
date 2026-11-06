@@ -14,9 +14,35 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.10.1（MCP 2.12.0）— 未發佈：3.9.3 驗收的小修（作業別不再偷帶、登入回傳講清楚來源、資料夾清單精簡）
+
+3.9.3 以市集版完整實跑一張頁籤表單（2026-11-04，8.5／10，重建 0 次）後的收尾，發現編號對應驗收紀錄 `integration-3.9.3.md` 的 F-01～F-11。`online_login` 回傳多了欄位、`online_folder_list` 的預設筆數與回傳形狀改了，所以 MCP 升 2.12.0。
+
+**作業別（F-02）**
+- 測試表單草案「### 上架設定」寫「—」，builder 卻從 `Inputs` 行的 `groups=住` 帶進 `form_create`，驗收者在審閱時手動清掉才沒上架成帶作業別的範本。改法從源頭到檢查：`create-form` 不上架時交給 planner 的作業別寫「不設」；planner 的 `Inputs` 行 `groups=` 要與上架設定一致（`Gates.md` §2 的範例也改成留空並加說明）；builder 的捷徑與作業別**只看「### 上架設定」**，寫「—」就不帶參數；reviewer 新增第 10 項「上架設定與 draft meta 一致」，不一致列入「必須修正」。`form_validate` 的 `W_NO_SHORTCUT` 加一句「測試表單或不上架時請 `form_update_meta(groups: [])`」。
+
+**定稿前的最後一輪（F-05、F-07）**
+- `create-form` §5 第 1 步寫明字典 CSV 匯回（`dictionary_plan_import`）也算改 draft，最後一輪 reviewer 要排在匯回之後；G2「要求修改」只改補述時以 `dictionary_plan_import` 回傳的 `checks` 無 error 代替整輪，記進定稿檔。`edit-form` 同步。
+
+**線上工具**
+- F-01：`online_login` 回傳 `login_flow`（`browser`＝這次經瀏覽器登入頁；`reused`＝沿用本行程既有登入，沒開登入頁，另附 `note`）、`dept_source`（`login_page`／`session`／`none`）、`logged_in_at`。驗收時沿用舊登入直接成功、看不出登入頁有沒有出現，現在回傳會說。
+- F-09：`online_folder_list` 預設每頁 10 筆（原本沿用伺服器的 50 筆，一次約 30 KB），只回 `template_id`、`name`、`shortcut`、`groups`、`modify_date`、`creator`（不回 `description`），`total` 超過時附 `more` 說明還剩幾筆與下一頁；要找特定範本請帶 `q`。`page_size` 仍可指定。
+
+**文件**
+- F-03：`FormulaMacroRules.md` 補 `ROUND` 在 .x5 邊界以 runtime 浮點結果為準（BMI 160 cm／80 kg 顯示 31.2 不是 31.3），試算例與範例值避開邊界；planner 的 `formula_check` 試算也照做。
+- F-08：`plugin.json` 的四個 `userConfig` 明標 `required: false`；README（本 repo 與公開版）與 `connect-strucmed` 寫明四項都是選填，`plugin configure` 列在 unconfigured 不是待辦，留空時預覽用 `repo/strucmed/web`、線上用內建院外站台。
+
+不處理：F-04（參數名猜錯時的 `E_INVALID_INPUT` 已附 `allowed` 清單）、F-06（字典確認頁行為，下次驗收請使用者逐頁回報）、F-10（機器上的舊版 MCP 行程，環境問題）、F-11（`online_template_get` 的 `rev` 已有 notes 說明）。
+
+測試：`test/online.test.mjs` 加 F-01 的 `login_flow`／`dept_source`／`none` 與 F-09 的預設 10 筆、精簡欄位、`more`、最後一頁；假站台加 76 筆的資料夾情境。
+
+尚未實測：本版從市集安裝後的流程；`login_flow: reused` 在真站台 SSO 下的表現。
+
 ## 3.10.0（MCP 2.11.0）— 2026-11-06：表單 JS 白名單片段 D1～D4（七種樣板，flag 預設關）
 
 情境 5「JS 增益集」的第一期。使用者決定以白名單片段開放，不接受自由 JS；設計文件在 strucmed-skill 的 docs 13（2026-11-06 修訂：S1 改 stylesheet＋主題、禁止類別分成維持禁止與以樣板在審閱下開放）。新工具與 flag，所以 MCP 升 2.11.0。
+
+發佈（2026-11-06）：strucmed-plugin `3e70dd9`（tag `v3.10.0`，由 strucmed-skill tag `v3.10.0-src`＝`3caddaa` 產生）。發佈時：`release-plugin.mjs` ok、227 檔、掃描無發現；`npm test` 240 過、1 略過；`claude plugin validate --strict` 以 Claude Code 2.1.317 執行，通過。發佈在全新 clone 上做（本機舊 clone 未動）。發佈後本機已從市集更新 3.9.3→3.10.0：快取版 `npm test` 同樣通過，MCP 啟動回 2.11.0，flag 關時 25 個離線 tool、以 `STRUCMED_FLAGS` 開兩個 flag 時 27 個（`form_set_script`／`form_script_preview` 出現）。尚未：真實編輯器 round-trip、HIS 端實際開文件、create-form 完整流程實測。
 
 **flag `formScript`（預設關）**：關閉時 `form_set_script`／`form_script_preview` 不列出、呼叫回 `E_FEATURE_DISABLED`；draft 已有片段而 flag 事後關閉時 `form_validate` 回 `E_FEATURE_DISABLED`、`form_export` 與上架都拒絕。
 

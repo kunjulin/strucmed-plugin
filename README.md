@@ -414,7 +414,7 @@ Codex：`codex plugin marketplace add <資料夾路徑>`。Antigravity：把資�
 | 院外站台網址 | 通常留空（預設 `https://cgmh.ddns.net`）。只有資訊室公告新網址時才填（必須是 https）；填 `none` 則不探測院外 |
 | FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
 
-token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。從 2.x 升級：舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理。
+token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。四個欄位都是選填：`claude plugin configure` 會把沒填的列在 unconfigured，那不是待辦；留空時預覽用工作目錄的 `repo/strucmed/web`、線上用內建的院外站台。從 2.x 升級：舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理。
 
 #### 環境變數（Codex、Copilot CLI、其他 MCP client）
 

@@ -58,6 +58,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 同 `create-form` §5、§6，閘門是 G2；輸出時 manifest 會列出「改版自」與本次改動的控制項（✎）。
 
 - 小改沒有草案檔時，最後一輪由 `publish-form` 的驗證段代替 reviewer。
+- 字典 CSV 匯回（`dictionary_plan_import`）也算改 draft：最後一輪 reviewer 排在匯回之後，同 `create-form` §5 第 1 步。
 - 有片段時同 `create-form` §5 第 2 步（guard／derive／lookup／required 必跑、autorun 看送出了什麼、style 截圖），定稿檔「### 表單 JS」放 plan 的 `script.rendered` 原樣。
 - 更新線上範本：`plan.meta`、`plan.diff` 與 `W_UNPUBLISH`、`W_META_RENAME`、`W_ONLINE_CHANGED_SINCE_SOURCE` 都進定稿檔，規則見 `publish-form`。
 - **補述**：`form_fields`（`only: "dictionary"`）看本次改到的欄位用的字典，`missing_angles` 有缺且已登入時，列進 G2 前的 CSV（`dictionary-assist` 模式 2）。使用者不想這次處理就留給 `dictionary-assist` 模式 3：不用上架，非建立者也能補，寫入仍要核准與瀏覽器確認。

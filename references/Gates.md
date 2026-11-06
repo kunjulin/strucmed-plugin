@@ -43,7 +43,7 @@ G1、G3 編號停用，不重新編號：舊文件、CHANGELOG 與案例文件�
 ## 表單草案
 Status: Ready            ← Ready | NeedsRevision | Blocked
 Revision: 1              ← 每次修改 +1
-Inputs: dept_no=33F00; groups=門,住; publish=false; folder=usr; his_text_keys=Report,Impression; dictionary_index=online 2026-10-26
+Inputs: dept_no=33F00; groups=; publish=false; folder=usr; his_text_keys=Report,Impression; dictionary_index=online 2026-10-26
 
 ### 結構
 | ID | 區塊／控制項 | datatype | 說明文字 | 選項／範圍 | 字典（名稱／完整 id／層級；或「新建：一行 desc」） | 必填 | 備註（further→C2；cell 從 0 起算：row/col 或 index；radiobutton 每列幾個） |
@@ -52,6 +52,7 @@ Inputs: dept_no=33F00; groups=門,住; publish=false; folder=usr; his_text_keys=
 | C1 | 跌倒史 | radiobutton | 過去一年是否跌倒 | 是／否 | FALL_HX／3f2a9c1d-7b1e-4c55-9a10-2f6d0e8b4c11／體系 | ✓ | further→C2；row 2 |
 
 - 層級：體系（sys）／本科（own）／次專（sub）／科部（dpt）／全院（system）。綁定順序與理由見 `references/FormDesignRules.md`〈字典說明、補述與層級〉。
+- `Inputs` 只記錄呼叫端給的輸入；捷徑與作業別以「### 上架設定」為準，builder 不從 `Inputs` 取。不上架或測試表單時 `groups=` 留空，不要一邊寫 `groups=住` 一邊在上架設定寫「—」。
 
 ### 計算式與巨集
 | ID | 類型 | 內容 | 白話 | 模型 | 寫入 |

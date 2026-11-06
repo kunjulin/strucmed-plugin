@@ -103,7 +103,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
 
   if (!m.name || !m.name.trim()) report(true, 'E_INVALID_INPUT', '表單名稱不可空白');
   if ((m.name || '').length > 36) report(true, 'E_INVALID_INPUT', '表單名稱超過 36 字（平台 web/editor.html:463）');
-  if ((m.groups || []).length && !m.shortcut) warn('W_NO_SHORTCUT', '有作業別但沒有捷徑名稱：表單不會出現在 HIS 清單（GB:biao-dan-shi-yong/biao-dan-shang-jia）');
+  if ((m.groups || []).length && !m.shortcut) warn('W_NO_SHORTCUT', '有作業別但沒有捷徑名稱：表單不會出現在 HIS 清單（GB:biao-dan-shi-yong/biao-dan-shang-jia）；測試表單或不上架時不要帶作業別，請 form_update_meta(groups: [])');
   if (!draft.areas.length) report(true, 'E_INVALID_INPUT', '表單沒有任何區塊');
 
   const ids = new Map();          // itemid → [{fresh}]

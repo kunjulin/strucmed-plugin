@@ -143,7 +143,9 @@ function openBrowser(url) {
 // 瀏覽器登入：第一次呼叫開啟登入頁並等待（預設最多 2 分鐘）；還沒完成時回 pending 與網址，再呼叫一次會接著等同一個登入
 export async function login({ hospital, dept_no } = {}) {
   const base = baseUrl();
-  if (session && session.base === base) return { ...status(), already: true };
+  // 沿用本行程既有登入：沒有開登入頁，科部是上次登入時的值（3.9.3 驗收 F-01：回傳講清楚來源，呼叫端才知道登入頁有沒有出現）
+  if (session && session.base === base) return { ...status(), already: true, login_flow: 'reused', dept_source: session.user.deptSource || 'session',
+    logged_in_at: session.user.loggedInAt || null, note: '沿用本行程既有的登入，這次沒有開登入頁；要換科部或帳號請 online_logout 後重新 online_login' };
   let opened = null;
   if (!flow || flow.base !== base || Date.now() > flow.expires) {
     closeFlow();
@@ -162,9 +164,12 @@ export async function login({ hospital, dept_no } = {}) {
   const t = await send(base, 'POST', 'api/v2/auth/token', { body: { grantType: 'authorization_code', clientId: CLIENT_ID, code: r.code, codeVerifier: f.verifier, redirectUri: f.redirectUri } });
   if (t.status !== 200 || !t.json || !t.json.accessToken) upstreamError(t, '登入');
   const u = t.json.userInfo || {};
-  setTokens(base, t.json, { userId: String(u.userId || ''), name: String(u.name || ''), deptNo: String(u.deptNo || dept_no || ''), loc: String(u.loc || '') });
+  const deptNo = String(u.deptNo || dept_no || '');
+  // dept_source：login_page＝這次經瀏覽器登入頁送出的科部（cookie 或 dept_no 參數的預填也是使用者在頁面送出的）；none＝登入頁沒帶科部
+  setTokens(base, t.json, { userId: String(u.userId || ''), name: String(u.name || ''), deptNo, loc: String(u.loc || ''),
+    deptSource: deptNo ? 'login_page' : 'none', loggedInAt: new Date().toISOString() });
   if (!session.user.userId) { session = null; fail(E.UPSTREAM, '登入回應缺少 userInfo.userId'); }
-  return status();
+  return { ...status(), login_flow: 'browser', dept_source: session.user.deptSource, logged_in_at: session.user.loggedInAt };
 }
 
 // 盡力作廢 refresh token（auth/revoke），失敗也照樣清除本機 token
