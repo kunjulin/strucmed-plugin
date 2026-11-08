@@ -168,7 +168,7 @@ test('M14：VERSION 取自 package.json，generator 與實際版本一致', asyn
   const { VERSION } = await import('../src/export.mjs');
   const pkg = JSON.parse(fs.readFileSync(path.join(HERE, '../package.json'), 'utf8'));
   assert.equal(VERSION, pkg.version);
-  assert.equal(pkg.version, '2.13.0');
+  assert.equal(pkg.version, '2.13.1');
 });
 
 test('M15：所有線上寫入工具的描述以寫入性質開頭', async () => {

@@ -274,10 +274,9 @@ test('form_add_area embed：GetData 形狀、key 順序、預設值；outputs �
   // manifest 揭露
   const man = exp.embedSection(v);
   assert.match(man, /## 嵌入頁面資料流（1 個）/);
-  assert.ok(man.includes(exp.EMBED_APPEND_WARNING), '有送出／寫回欄位：manifest 提醒不要用編輯器「加載表單」');
-  assert.match(exp.EMBED_APPEND_WARNING, /加載表單/);
+  assert.ok(!man.includes('加載表單'), '不再提醒加載表單（站台編輯器已修正）');
   const noMap = exp.embedSection({ embeds: [{ kind: 'embed', itemid: 1, title: 'x', host: 'x.cgmh.org.tw', params: [], inputs: [], outputs: [], source: 'new' }] });
-  assert.ok(noMap && !noMap.includes(exp.EMBED_APPEND_WARNING), '沒有送出／寫回欄位：不提醒');
+  assert.ok(noMap && !noMap.includes('加載表單'));
   assert.match(man, /\| 區塊 #\d+ 臨床決策支援 \| 表單載入時 \| assistantai\.cgmh\.org\.tw \| chtno=\{chtno\}（病歷號）、dept=\{deptNo\}（科別）、mode=his \|/);
 });
 
@@ -375,9 +374,9 @@ test('匯入既有含 embed 的表單：不論 flag 原樣保留並檢查；原�
   assert.ok(!v3.warnings.some(w => w.code === 'E_FORBIDDEN_FUNCTION'));
   assert.deepEqual(v3.embeds.map(e => [e.kind, e.host]).sort(), [['embed', 'cdss.cgmh.org.tw'], ['openpanel', 'x.cgmh.org.tw']]);
   assert.match(exp.embedSection(v3), /\| 巨集 #4 查詢（原表單） \| 按下 OPENPANEL \| x\.cgmh\.org\.tw \|/);
-  assert.ok(exp.embedSection(v3).includes(exp.EMBED_APPEND_WARNING), '原表單的 embed 有送出／寫回欄位：也要提醒加載表單');
+  assert.ok(!exp.embedSection(v3).includes('加載表單'));
   const onlyPanel = exp.embedSection({ embeds: v3.embeds.filter(e => e.kind === 'openpanel') });
-  assert.ok(onlyPanel && !onlyPanel.includes(exp.EMBED_APPEND_WARNING), '只有 OPENPANEL：不提醒加載表單');
+  assert.ok(onlyPanel && !onlyPanel.includes('加載表單'));
 });
 
 test('OPENPANEL（flag 開）：網址必須是字串字面值且通過 embed url 的檢查；只能用在巨集；OPENURL 維持禁用', () => {

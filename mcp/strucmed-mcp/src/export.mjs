@@ -81,16 +81,12 @@ ${rows.join('\n')}
 ` : ''}`;
 }
 
-// 編輯器「加載表單」會位移 embed 的 inputs／outputs，卻不位移文字區塊的欄位編號（平台 SetQuillData2 沒用位移參數，2026-11-08 往返實測 T3）
-export const EMBED_APPEND_WARNING = '**不要用編輯器的「加載表單」把含嵌入頁面、且有送出或寫回欄位（`inputs`／`outputs`）的表單附加到其他表單**：目前編輯器加載時會位移嵌入頁面的對應，卻不位移文字區塊的欄位編號，對應會指到錯的欄位；指到存在但錯的欄位時存檔不會報錯。要合併表單請用 edit-form 在 plugin 內做；單獨匯入、存檔、「重新編號」都沒有問題。';
-
 // 嵌入頁面資料流（embed 區塊與 OPENPANEL）：與 AI 資料流同樣揭露目標主機、帶出的參數、送出與寫回的欄位
 export function embedSection(validation) {
   const list = validation.embeds || [];
   if (!list.length) return '';
   const cell = v => String(v === undefined || v === null || v === '' ? '—' : v).replace(/\|/g, '／');
   const io = l => (l.length ? l.map(x => `${cell(x.key)}→#${x.itemid}`).join('、') : '—');
-  const mapped = list.some(x => x.kind === 'embed' && ((x.inputs && x.inputs.length) || (x.outputs && x.outputs.length)));
   const rows = list.map(x => x.kind === 'embed'
     ? `| 區塊 #${x.itemid}${x.title ? ` ${cell(x.title)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 表單載入時 | ${cell(x.host)} | ${x.params.length ? x.params.map(p => `${cell(p.key)}=${cell(p.placeholder ? `${p.value}（${p.placeholder}）` : p.value)}`).join('、') : '—'} | ${io(x.inputs)} | ${io(x.outputs)} |`
     : `| 巨集 #${x.itemid}${x.name ? ` ${cell(x.name)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 按下 OPENPANEL | ${cell(x.host)} | — | — | — |`);
@@ -99,7 +95,7 @@ export function embedSection(validation) {
 下列院內頁面會顯示在表單內。embed 區塊載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號與「送出欄位」的值；
 嵌入頁以 strucmed.result 回傳的值會寫進「寫回欄位」，和醫師手填一樣隨表單存檔。網址只接受 https 與院內主機，參數不帶身分證號、姓名。
 HIS 端要 StrucForm 導向白名單放行該主機（1.10.9 起預設放行院內範圍）。
-${mapped ? `\n${EMBED_APPEND_WARNING}\n` : ''}
+
 | 來源 | 時機 | 目標主機 | 網址參數 | 送出欄位 | 寫回欄位 |
 |---|---|---|---|---|---|
 ${rows.join('\n')}

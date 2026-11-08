@@ -14,6 +14,10 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.11.1（MCP 2.13.1）— 2026-11-08：manifest 不再提醒避開「加載表單」；README 補嵌入頁面使用須知
+
+- 站台編輯器平台 PR 188（2026-11-08 起部署的院內站台已含）已修正加載表單的欄位編號位移，實測含嵌入頁面的表單附加後 `inputs`／`outputs` 與計算式都正確。移除 `export.mjs` 的 `EMBED_APPEND_WARNING`：manifest「嵌入頁面資料流」不再附這句提醒；README、`FormDesignRules.md` 註明更早的站台才需避開。`test/embed.test.mjs` 改為斷言 manifest 不含「加載表單」。
+
 ## 3.11.0（MCP 2.13.0）— 2026-11-08：嵌入頁面（embed 區塊、OPENPANEL），flag `embedArea` 預設開
 
 平台 PLAN-STRUCFORM-1.10.9 §1.5（站台端 §1.1～§1.3 在 `kunjulin/strucmed` 的 embed 區塊 PR：runtime、編輯器、共用規則 `web/js/embed-block.js`，commit 26984f3）。契約是平台的 B1 嵌入頁 APP 開發說明 §4。
@@ -61,6 +65,8 @@ claude plugin update strucmed@strucmed-marketplace
 - F-09（`create-form` §3）：問題沒有答案（被別的訊息取代、略過）時採建議值，並在草案與定稿檔標「（預設，使用者未作答）」。
 
 測試：`test/review.test.mjs` 加「既有字典 bind 的補述缺漏只提醒一次」（第一次照常、第二次併成一條、`action=new` 與 `action=memo` 不受影響）、`test/online.test.mjs` 加「summary：只有標記註解的 javascript 區塊」（標記行、標記＋程式碼、無標記、空區塊；標記行沒有 `W_SCRIPT_MODIFIED`）。
+
+發佈（2026-11-08）：strucmed-plugin `6819005`、tag `v3.11.0`、GitHub Release「strucmed 3.11.0（MCP 2.13.0）」；本 repo tag `v3.11.0-src`（`583c764`）。發佈時：`release-plugin.mjs` ok、229 檔、掃描無發現；發佈樹測試 265 個（264 通過、1 略過）；`claude plugin validate --strict` 以 Claude Code 2.1.317 執行，通過。發佈在全新 clone 上做。發佈後本機已從市集更新 3.10.1→3.11.0：MCP 啟動回 2.13.0、42 個 tool，`form_add_area` 的 `type` 有 `embed`（flag 預設開）。尚未：HIS 端 iframe 與 `strucmed.context`／`result`、院內站台編輯器。
 
 ---
 

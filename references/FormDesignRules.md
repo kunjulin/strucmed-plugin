@@ -66,10 +66,12 @@
 - 建置順序：`outputs` 的欄位常在區塊之後才建，`E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 先延後（回傳 `pending`），建好欄位後 `form_update_area(itemid, outputs: {...})` 補上；其他 `E_EMBED_*` 當下拒絕、draft 不變。`form_update_area` 的 `url`、`params`、`height`、`inputs`、`outputs` 整項取代。
 - 寫回欄位用 `textbox`／`textarea`／`numberbox`（數字欄位收到非數字會被 runtime 拒絕）；要進倉儲就綁字典。被 `inputs`／`outputs` 參照的欄位不能 `form_remove_control`（先改 embed）。
 - runtime：表單載入後送 `strucmed.context`（**病歷號、科別、使用者、門診序號**，加 `inputs` 欄位值），只接受來源等於 `url` 的 `strucmed.result`；嵌入頁本身不進 HIS 文字輸出與紀錄 XML。`authread` 不允許顯示時不載入 iframe。
-- **不要用編輯器的「加載表單」把含嵌入頁面、且有送出或寫回欄位（`inputs`／`outputs`）的表單附加到其他表單**：目前編輯器加載時會位移嵌入頁面的對應，卻不位移文字區塊的欄位編號，對應會指到錯的欄位；指到存在但錯的欄位時存檔不會報錯。要合併表單請用 edit-form 在 plugin 內做；單獨匯入、存檔、「重新編號」都沒有問題。manifest「嵌入頁面資料流」在有送出或寫回欄位時會寫這句，交付時要轉告使用者。
+- **「加載表單」**：站台編輯器需含平台 PR 188（2026-11-08 起部署的院內站台已含），附加含嵌入頁面的表單時 `inputs`／`outputs` 與計算式會跟著欄位位移，實測正確；manifest 不再附避開加載表單的提醒。更早的站台編輯器只位移嵌入頁面的對應、不位移文字區塊的欄位編號，存檔不報錯，那種站台上要合併表單請用 edit-form 在 plugin 內做。
 - 揭露：`form_validate` 每個 embed 列 `W_EMBED_DATAFLOW`（目標主機、網址參數、送出與寫回欄位），manifest「嵌入頁面資料流」、form-reviewer 的 review.md 都要列；與 AI 資料流同等級，交付時不可省略。
 - HIS 端要 StrucForm 導向白名單放行該主機：1.10.9 DLL 起預設放行院內範圍（程式碼已完成、抽換時程依 HIS 端）；院內範圍以外的主機由平台在站台的集中白名單登錄，plugin 不產生範圍以外的網址（`E_EMBED_HOST`）。被擋下時 iframe 空白、runtime 提示並送 errorlog `NAV-DENIED`，管理者可依主機彙總查詢。1.10.7／1.10.8 的白名單只認設定主機，會擋掉院內頁面。verify-runtime 的 harness 不載入外部 iframe，只驗表單邏輯。
-- 嵌入頁的開發條件（`frame-ancestors`、Chromium 104、postMessage 格式、身分分級）在平台的 B1 嵌入頁 APP 開發說明，不在 plugin 範圍。
+- 嵌入頁的開發條件（`frame-ancestors`、Chromium 104、postMessage 格式、身分分級、時序、測試方法、常見症狀）在平台的 B1 嵌入頁 APP 開發說明 `docs/EMBED-APP-GUIDE.md`（§3～§10，最小 L1 範例 `docs/examples/embed-app-l1.html`），不在 plugin 範圍。
+- 嵌入頁因 `X-Frame-Options`、`frame-ancestors` 被擋，或主機連線被拒時，iframe 顯示灰底哭臉，runtime 不會提示也不送 `NAV-DENIED`（只有 8 秒沒載入與停在空白頁才會）；交付時請使用者確認嵌入頁主機的標頭，並告訴開發者看開發說明的 §10.5。
+- 嵌入頁拿到的 `user`、`deptNo` 是 L1（工作站自稱、無簽章），只做顯示與稽核；表單設計不要把開立、簽核等不可逆動作放在嵌入頁內完成（等 L2 token）。
 - 只在按下按鈕時才開的頁面改用巨集 `OPENPANEL`（`MacroRecipes.md` R10；1.10.9 起開在右側子面板，收不到 `strucmed.context`、不能寫回欄位），不用 embed。
 
 ## 字典說明、補述與層級

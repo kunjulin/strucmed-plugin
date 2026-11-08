@@ -388,7 +388,7 @@ test('folder list and template get send the bearer token', async () => {
 // 3.10.2 F-07：javascript 區塊只有產生器標記註解時，js_chars 回 0、另給 js_marker
 test('online_template_get summary：只有標記註解的 javascript 區塊 js_chars 0＋js_marker；有程式碼照算', async () => {
   await browserLogin(mcp, {});
-  const marker = '// generated-by: strucmed-skill 3.11.0 (mcp 2.13.0)';
+  const marker = '// generated-by: strucmed-skill 3.11.1 (mcp 2.13.1)';
   const withJs = js => ONLINE_FORM.map(x => x.itemtype === 'javascript' ? { ...x, content: js } : structuredClone(x));
   const get = async (id, js) => {
     templates.set(id, { sha256: 'x'.repeat(8), template: { name: id }, form: withJs(js) });
