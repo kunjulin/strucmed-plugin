@@ -409,6 +409,30 @@ test('dictionary_plan_import：action 五種與 id 被改', async () => {
   assert.equal(t.form_validate({ draft_id: f.draft_id }).valid, true);
 });
 
+// 3.10.2 F-05：既有字典 bind、沒補述，補述缺漏的提醒只回一次
+test('dictionary_plan_import：既有字典 bind 的補述缺漏只提醒一次，第二次併成一條', async () => {
+  const f = bmi();
+  t.dictionary_plan_export({ draft_id: f.draft_id });
+  const put = async fn => t.dictionary_plan_import({ draft_id: f.draft_id, csv_text: await editCsv(f.draft_id, fn) });
+  const codes = (r, name) => r.checks.find(c => c.name === name).warnings;
+  const r1 = await put(() => {});
+  assert.ok(codes(r1, '身高').includes('W_MEMO_INCOMPLETE'), '第一次照常提醒：' + JSON.stringify(r1.checks));
+  assert.ok(!r1.warnings.some(w => w.startsWith('W_MEMO_EXISTING_REPEAT')));
+  const first = codes(r1, '身高').filter(c => /^W_MEMO_(INCOMPLETE|NO_MEANING)$/.test(c));
+  const r2 = await put(() => {});
+  assert.deepEqual(codes(r2, '身高').filter(c => /^W_MEMO_(INCOMPLETE|NO_MEANING)$/.test(c)), [], '第二次不再逐本回');
+  const rep = r2.warnings.filter(w => w.startsWith('W_MEMO_EXISTING_REPEAT'));
+  assert.equal(rep.length, 1);
+  assert.match(rep[0], /既有字典 1 本沒補述，上次已提醒/);
+  assert.ok(first.length >= 1);
+  // 待新建字典（action=new）不受影響：每次照常提醒
+  assert.ok(codes(r2, 'BW_NEW').includes('W_MEMO_INCOMPLETE'));
+  // 使用者改了既有字典的補述（action=memo）：警告照常
+  const r3 = await put(rows => { Object.assign(rows.find(r => r.dicName === '身高'), { action: 'memo', func: 'BMI 的輸入' }); });
+  assert.equal(r3.warnings.filter(w => w.startsWith('W_MEMO_EXISTING_REPEAT')).length, 0);
+  assert.ok(codes(r3, '身高').includes('W_MEMO_INCOMPLETE'));
+});
+
 test('dictionary_plan_import：CSV 只含要改的列時，沒列到的字典不動', async () => {
   const f = bmi();
   t.dictionary_plan_export({ draft_id: f.draft_id });

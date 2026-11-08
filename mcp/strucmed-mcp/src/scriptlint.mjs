@@ -5,6 +5,8 @@
 import { check } from './calx.mjs';
 import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS } from './calx-catalog.mjs';
 import { checkAlias } from './policy.mjs';
+import { checkUrl } from './embed.mjs';
+import { enabled } from './flags.mjs';
 
 // 需要 numeral.js／jStat 的內建函數（2026-09-28 以 tools/v0-harness/calx-parity.html 在真實 Calx 2.2.8 實測）。
 // 舊版 TempHtml.html 沒有載入這兩個套件：
@@ -118,6 +120,20 @@ function functionFindings(info, context, out, what, ctx = {}, src) {
       else if (list === null) out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不在本工具允許範圍（任意函數名）；feature flag formScript 開啟時只允許呼叫本 draft 以 form_set_script 的 lookup 片段（trigger customfunc）定義的函數`));
       else if (name === null) out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 的第一個參數必須是字串字面值（本 draft 片段定義的函數名）`));
       else if (!list.includes(name)) out.push(err('E_CUSTOMFUNC_UNDEFINED', `${f.raw}("${name}") 不是本 draft 片段定義的函數（${list.length ? `目前有 ${list.join('、')}` : '目前沒有'}）：請用 form_set_script 加 lookup 片段（trigger customfunc、name「${name.replace(/^sm_/, '')}」）`));
+      continue;
+    }
+    if (cls === 'panel') {
+      // OPENPANEL(url, title)：StrucForm 1.10.9 起開在右側子面板（更早開浮動面板，不取代表單），非 HIS 退回 window.open；網址規則與 embed 區塊的 url 相同（embed.mjs，
+      // 平台 web/js/embed-block.js 的 checkUrl）。flag embedArea 關閉時與其他開網址函數一樣禁用；ctx.embedArea 可覆寫（測試用）
+      const on = ctx.embedArea !== undefined ? !!ctx.embedArea : enabled('embedArea');
+      if (!on) { out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 需要 feature flag embedArea（3.11.0 起預設開，目前被關閉）；flag 關閉時本工具不產生開網址的函數`)); continue; }
+      if (context === 'formula') { out.push(err('E_FORMULA_MACRO_ONLY', `${f.raw}() 是巨集專用函數，不能放在計算式（每次重算都會開面板）`)); continue; }
+      const arg = src !== undefined ? argText(src, f, 0) : null;
+      const url = arg === null ? null : strLiteral(arg);
+      if (url === null) { out.push(err('E_EMBED_URL', `${f.raw}() 的網址必須是字串字面值（不能用欄位或運算式組網址，離線才檢查得了 https 與主機）`)); continue; }
+      const r = checkUrl(url);
+      for (const e of r.errors) out.push(err(e.code, `${f.raw}()：${e.message}`));
+      if (r.ok) out.push({ ...warn('W_EMBED_DATAFLOW', `${f.raw}() 按下時開啟院內頁面 ${r.host}（右側子面板或浮動面板；不帶參數、不送 strucmed.context、不寫回欄位）`), host: r.host, url: r.url });
       continue;
     }
     if (cls === 'forbidden') out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不在本工具允許範圍（任意程式、開網址、存檔、改寫身分或文件 header、連外）；確有需要請匯入後由人工在編輯器加入並審查`));

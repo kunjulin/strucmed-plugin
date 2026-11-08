@@ -1,5 +1,6 @@
 // form_preview（tree / markdown；html 預覽排在 v0.2）
 import { styleOf } from './model.mjs';
+import { summarize } from './embed.mjs';
 // v1：可呈現既有表單的巢狀結構（表格格、圖示、群組子項）與計算式、巨集
 const LABEL = {
   textbox: '文字', numberbox: '數字', textarea: '段落', calendar: '日期時間', selection: '下拉', combobox: '組合框',
@@ -9,7 +10,7 @@ const LABEL = {
 const AREA = {
   form: '文字', form2: '雙欄', formtable: '固定表格', table1: '動態表格(欄向，按＋加列)', table2: '動態表格(列向，按＋加欄)',
   // tab1 是垂直頁籤、tab2 是水平頁籤（平台 web/js/scripts.js:1174、1136；TempHtml.js:2509、2531）
-  tab1: '頁籤(垂直)', tab2: '頁籤(水平)', picture: '圖形', picture_table: '圖形表格'
+  tab1: '頁籤(垂直)', tab2: '頁籤(水平)', picture: '圖形', picture_table: '圖形表格', embed: '嵌入頁面'
 };
 const ROLE = { nohis: '無', tohis: '僅寫入', fromhis: '僅讀取', puthis: '可讀寫' };
 const clip = (s, n = 40) => { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; };
@@ -76,6 +77,18 @@ function nestedLines(area, touched) {
   return out;
 }
 
+// 嵌入頁面：只列摘要（主機、參數、高度、讀取與寫回欄位），不組實際網址
+function embedLines(node) {
+  const s = summarize(node);
+  const io = list => list.map(x => `${x.key}→#${x.itemid}`).join('、');
+  return [
+    `主機 ${s.host || '（網址無效）'}${s.path && s.path !== '/' ? `　路徑 ${clip(s.path)}` : ''}　高度 ${s.height === 'fill' ? '填滿' : s.height + 'px'}`,
+    `網址參數：${s.params.length ? s.params.map(p => `${p.key}=${p.placeholder || clip(p.value, 20)}`).join('、') : '無'}`,
+    ...(s.inputs.length ? [`送出欄位（strucmed.context.values）：${io(s.inputs)}`] : []),
+    `寫回欄位（strucmed.result）：${s.outputs.length ? io(s.outputs) : '無'}`
+  ];
+}
+
 export function preview(draft, format = 'tree') {
   const m = draft.meta;
   const touched = new Set((draft.touched || []).map(String));
@@ -93,7 +106,7 @@ export function preview(draft, format = 'tree') {
     const flags = [a.imported ? null : '新增', hidden ? '隱藏' : null, node.gettext ? null : '不回傳 HIS'].filter(Boolean).join('、');
     const head = `區塊 #${node.itemid} ${AREA[node.itemtype] || node.itemtype}${a.title ? '：' + a.title : ''}${flags ? `（${flags}）` : ''}`;
     lines.push(md ? `\n**${head}**\n` : `└ ${head}`);
-    const body = node.itemtype === 'form' ? streamLines(node.item, touched) : nestedLines(node, touched);
+    const body = node.itemtype === 'form' ? streamLines(node.item, touched) : node.itemtype === 'embed' ? embedLines(node) : nestedLines(node, touched);
     for (const l of body) lines.push(md ? '- ' + l : '   ├ ' + l);
   }
   const pend = draft.pendingDictionaries || [];

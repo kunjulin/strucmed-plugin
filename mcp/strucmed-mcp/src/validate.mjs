@@ -11,6 +11,14 @@ import { captions } from './formula-explain.mjs';
 import { suggest, unitOf } from './dictsuggest.mjs';
 import { checkSnippets, renderSnippets, scanCustomJs, scriptFunctions } from './script-snippets.mjs';
 import { enabled } from './flags.mjs';
+import * as embed from './embed.mjs';
+
+// 整張 draft 的 embed 檢查（平台 StrucEmbed.validateForm）：以輸出時的 GetData 形狀走訪，回 [{ itemid, code, message }]
+export function embedFindings(draft) {
+  return embed.validateForm(draft.areas.map(areaNode));
+}
+// form_add_area／form_update_area 當下就拒絕的 embed 錯誤；E_EMBED_INPUT／E_EMBED_OUTPUT_MISSING 可延後（欄位常在區塊之後才建）
+export const EMBED_DEFERRABLE = new Set(['E_EMBED_INPUT', 'E_EMBED_OUTPUT_MISSING']);
 
 // 由 scriptlint 以更精確的訊息回報的參照種類
 const SCRIPT_REF_KINDS = new Set(['formula', 'actionScript', 'target', 'actionID']);
@@ -125,7 +133,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       const visible = first && (first.datatype === 'text' ? String(first.datavalue || '').trim() : first.datatype === 'label' && (first.format || 'defaultValue') === 'defaultValue');
       if (!visible) warn('W_AREA_NO_VISIBLE_HEADING', `${where}「${a.title}」：區塊標題不會顯示在表單上，第一行也沒有說明文字，HIS 畫面上這個區塊沒有標題；請用 form_add_area 的 visible_title，或在第一個控制項加說明文字`, a.itemid);
     }
-    if (a.structured) {
+    if (a.structured && a.area.itemtype !== 'embed') {
       // 表格／頁籤：每一格都要有控制項，否則 HIS 端會出現空白格或空白頁籤
       const cells = a.area.itemtype === 'formtable' ? a.area.item.flatMap((r, ri) => r.item.map((c, ci) => [`第 ${ri} 列第 ${ci} 欄`, c.item]))
         : a.area.item.map((c, i) => [`「${c.datatitle || i}」`, c.item]);
@@ -217,6 +225,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   const tableIds = tableControlIds(draft);
   const scriptFns = enabled('formScript') ? scriptFunctions(draft) : null;
   const ai = [];
+  const embeds = [];              // 嵌入頁面資料流：embed 區塊與 OPENPANEL（W_EMBED_DATAFLOW、manifest、review.md）
   const formulaGraph = new Map();
   let macroIds = false;
   for (const { node: c, area } of controls) {
@@ -231,6 +240,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       const key = f.code + f.message;
       if (seen.has(key)) continue;
       seen.add(key);
+      if (f.code === 'W_EMBED_DATAFLOW' && f.host) embeds.push({ kind: 'openpanel', itemid: Number(c.itemid), name: c.actionName || '', host: f.host, url: f.url, params: [], inputs: [], outputs: [], source: area.imported ? 'imported' : 'new' });
       if (f.level === 'warn') warn(f.code, `#${c.itemid}：${f.message}`, c.itemid);
       else report(sFresh, f.code, `#${c.itemid}：${f.message}`, c.itemid);
     }
@@ -259,6 +269,27 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     if (!Array.isArray(policy.gateway_models) && policy.site_external) warnings.push({ code: 'W_LLM_WHITELIST_STALE', expected: true, message: '院外預期：院外站台沒有 LlmGateway，模型名稱只以內建靜態表檢查；回院內後以 llmgateway_models 更新並實測 AI 巨集' });
     else if (!Array.isArray(policy.gateway_models)) warn('W_LLM_WHITELIST_STALE', '模型白名單尚未從 LlmGateway 取得（llmgateway_models），只以內建靜態表檢查模型名稱');
     else if (policy.gateway_stale) warn('W_LLM_WHITELIST_STALE', `LlmGateway 白名單快取已 ${policy.gateway_age_days} 天，建議重新 llmgateway_models`);
+  }
+
+  // ── 嵌入頁面（embed 區塊）：規則與平台 web/js/embed-block.js 相同（embed.mjs）──
+  // 本工具新增（或以 form_update_area 修改）的 embed、或 inputs／outputs 指到本次新增修改的欄位 → error；原表單原封保留的 → warning。
+  // flag embedArea 關閉時本工具新增的 embed 不能輸出（站台編輯器尚未支援）；匯入的 embed 一律原樣保留並檢查。
+  const embedAreas = draft.areas.filter(a => areaNode(a).itemtype === 'embed');
+  if (embedAreas.length) {
+    const added = embedAreas.filter(a => !a.imported);
+    if (added.length && !enabled('embedArea')) errors.push({ code: 'E_FEATURE_DISABLED', message: `draft 有 ${added.length} 個本工具新增的嵌入頁面區塊（${added.map(a => '#' + areaNode(a).itemid).join('、')}），但 feature flag embedArea 已關閉：不能輸出；請 form_remove_area 移除，或把 flag 開回來` });
+    const touchedIds = new Set([...touched, ...Object.keys(tf).filter(k => (tf[k] || []).length)]);
+    const freshEmbed = new Map(embedAreas.map(a => {
+      const n = areaNode(a);
+      const refs = [...Object.values(n.inputs && typeof n.inputs === 'object' ? n.inputs : {}), ...Object.values(n.outputs && typeof n.outputs === 'object' ? n.outputs : {})].map(v => String(v).trim());
+      return [String(n.itemid), !a.imported || !!a.embedTouched || refs.some(id => touchedIds.has(id))];
+    }));
+    for (const f of embedFindings(draft)) report(freshEmbed.get(f.itemid), f.code, `嵌入頁面 #${f.itemid}：${f.message}`, f.itemid);
+    for (const a of embedAreas) {
+      const s = embed.summarize(areaNode(a));
+      embeds.push({ kind: 'embed', ...s, itemid: Number(s.itemid), source: a.imported ? 'imported' : 'new' });
+      warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);
+    }
   }
 
   const pending = draft.pendingDictionaries || [];
@@ -317,7 +348,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   const dictDeptLevel = boundEntries.filter(e => ['own', 'sub', 'dpt'].includes(dc.level(e.dicType, m.dept_no))).length;
   return {
     valid: errors.length === 0,
-    errors, warnings, ai,
+    errors, warnings, ai, embeds,
     stats: {
       areas: draft.areas.length, controls: nodes.length,
       new_or_modified: controls.filter(x => x.touched).length,
@@ -329,7 +360,9 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       formulas: nodes.filter(c => c.formula).length,
       macros: nodes.filter(c => c.datatype === 'action' || c.datatype === 'action2').length,
       ai_steps: ai.length,
-      snippets: snippets.length
+      snippets: snippets.length,
+      embeds: embedAreas.length,
+      openpanels: embeds.filter(x => x.kind === 'openpanel').length
     }
   };
 }

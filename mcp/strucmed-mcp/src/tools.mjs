@@ -7,8 +7,9 @@ import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
-import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE } from './validate.mjs';
+import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
+import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE, EMBED_DEFERRABLE } from './validate.mjs';
+import { validateForm as embedValidateForm, summarize as embedSummarize, summaryText as embedSummaryText } from './embed.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import { captions, labelFormula, evaluate, sameValue } from './formula-explain.mjs';
 import { preview } from './preview.mjs';
@@ -255,6 +256,23 @@ function retitleCells(a, type, titles) {
   const warnings = removed.filter(r => r.texts).map(r => `W_CELL_TEXT_REMOVED：刪除的「${r.title}」裡有 ${r.texts} 段說明文字，一併刪除`);
   if (mapping.some(m => m.from === null)) warnings.push('W_EMPTY_CELL：新增的格子是空的，請用 form_add_control 帶 cell: {index} 加欄位');
   return { cells, mapping, removed: removed.map(({ index, title }) => ({ index, title })), warnings };
+}
+// 嵌入頁面（embed）區塊的參數（form_add_area、form_update_area 共用）
+const EMBED_MAP = d => ({ type: 'object', additionalProperties: { type: ['number', 'string'] }, description: d });
+const EMBED_PROPS = {
+  url: str('embed：嵌入頁網址（https、院內主機；可含固定 query，不可含 {…} 占位符與帳密）'),
+  params: { type: 'object', additionalProperties: { type: 'string' }, description: 'embed：附加到網址的參數 { 名稱: 值 }，值只能是 {chtno}、{deptNo}、{user}、{opdno} 或常數；名稱只能英數字、_、-、.，不可像身分證號或姓名（idno、name、ptname…）' },
+  height: { type: ['string', 'number'], description: 'embed：高度，"fill"（一張表單最多一個）或像素 100–4000，預設 600' },
+  inputs: EMBED_MAP('embed：表單 → 嵌入頁 { key: itemid }，載入時以 strucmed.context.values 送出；欄位必須存在且參與計算'),
+  outputs: EMBED_MAP('embed：嵌入頁 → 表單 { key: itemid }；欄位必須存在、不在彈出片語或群組內，多個 embed 不可寫同一欄')
+};
+// 新增或修改後整張表單的 embed 檢查：當下就拒絕的錯誤與可延後的（欄位還沒建）分開
+function embedNow(d, area) {
+  const form = d.areas.map(areaNode);
+  const at = form.findIndex(n => n.itemtype === 'embed' && String(n.itemid) === String(area.itemid));
+  if (at >= 0) form[at] = area; else form.push(area);
+  const mine = embedValidateForm(form).filter(f => f.itemid === String(area.itemid));
+  return { errors: mine.filter(f => !EMBED_DEFERRABLE.has(f.code)), deferred: mine.filter(f => EMBED_DEFERRABLE.has(f.code)).map(f => `${f.code}：${f.message}（之後補上欄位或 form_update_area 修正；form_validate 會再檢查）`) };
 }
 const AFTER_ZERO = '0＝放到最前面';
 function placeArea(d, entry, after) {
@@ -785,7 +803,7 @@ export const TOOLS = [
       const collect = x => { if (x && x.itemid !== undefined && x.datatype) removed.add(String(x.itemid)); if (Array.isArray(x && x.datavalue)) x.datavalue.forEach(collect); };
       collect(hit.node);
       const blockers = [...removed].flatMap(id => [...refsTo(d, id).filter(r => !removed.has(String(r.from))).map(r => ({ target: Number(id), from: Number(r.from), kind: r.kind })), ...snippetRefsTo(d, id).map(r => ({ target: Number(id), ...r }))]);
-      if (blockers.length) fail(E.REF_BROKEN, `#${itemid} 仍被參照，請先修改參照它的控制項${blockers.some(b => String(b.from).startsWith('snippet:')) ? '或 form_set_script 的片段' : ''}`, { blockers });
+      if (blockers.length) fail(E.REF_BROKEN, `#${itemid} 仍被參照，請先修改參照它的控制項${blockers.some(b => String(b.from).startsWith('snippet:')) ? '或 form_set_script 的片段' : ''}${blockers.some(b => /^embed/.test(b.kind)) ? '或以 form_update_area 修改嵌入頁面的 inputs／outputs' : ''}`, { blockers });
       const prev = hit.arr[hit.idx - 1];
       const label = prev && prev.datatype === 'text' ? prev.datavalue : '';
       const h = confirm.hashPayload({ d: draftHash(d), itemid: Number(itemid) });
@@ -839,18 +857,48 @@ export const TOOLS = [
   },
   {
     name: 'form_add_area',
-    description: '新增區塊（加在表單最後；after_itemid 指定插在哪個區塊之後）。form＝文字區塊；formtable＝固定表格（rows 指定每列欄寬，例 ["3,3","2,2,2"]）；' +
+    // 說明與 type 清單在列出工具時依 flag embedArea 決定：skill 以「type 有 embed」判斷嵌入頁面是否可用（同 form_set_script 與 formScript）
+    get description() {
+      return '新增區塊（加在表單最後；after_itemid 指定插在哪個區塊之後）。form＝文字區塊；formtable＝固定表格（rows 指定每列欄寬，例 ["3,3","2,2,2"]）；' +
       'tab1＝垂直頁籤、tab2＝水平頁籤（titles＝頁籤名稱）；table1＝欄向動態表格（titles＝欄標題，使用者按「+」新增列）、table2＝列向動態表格（titles＝列標題，按「+」新增欄）。' +
-      '權限預設為所有人（doctor）可顯示、可編輯，並回傳文字；要隱藏或不回傳時，必須明確宣告 hidden 或 return_text:false。雙欄 form2 不支援。',
-    inputSchema: { type: 'object', required: ['draft_id'], properties: {
-      draft_id: str('draft id'), type: str('區塊類型（預設 form）', { enum: AREA_TYPES }),
+      '權限預設為所有人（doctor）可顯示、可編輯，並回傳文字；要隱藏或不回傳時，必須明確宣告 hidden 或 return_text:false。雙欄 form2 不支援。' +
+      (enabled('embedArea') ? 'embed＝嵌入頁面（flag embedArea 已開啟）：' : '（embed 嵌入頁面需 feature flag embedArea，目前未開啟，不在 type 清單）') + '在表單內以 iframe 顯示院內頁面，url 只接受 https＋院內主機，' +
+      'params 的值只能是 {chtno}、{deptNo}、{user}、{opdno} 或常數；inputs／outputs 是 { key: itemid }（outputs 寫回的欄位可以之後再建，form_validate 會檢查）。規則與站台編輯器相同（E_EMBED_*）。';
+    },
+    get inputSchema() { return { type: 'object', required: ['draft_id'], additionalProperties: false, properties: {
+      draft_id: str('draft id'), type: str('區塊類型（預設 form）', { enum: enabled('embedArea') ? [...AREA_TYPES, 'embed'] : AREA_TYPES }),
+      ...EMBED_PROPS,
       title: str('區塊標題：**不會顯示在 HIS 表單上**，只用於預覽與計畫；要讓使用者看到標題請帶 visible_title:true，或第一個控制項的說明文字寫成標題'),
       visible_title: bool('文字區塊（form）：在區塊第一行插入一行可見的標題文字（內容＝title）'),
       rows: { type: 'array', items: { type: 'string', enum: FORMTABLE_PATTERNS }, description: 'formtable：每列的欄寬（總和 6），預設 ["3,3"]' },
       titles: { type: 'array', items: { type: 'string' }, description: 'tab1/tab2：頁籤名稱；table1：欄標題；table2：列標題（不可含半形單引號）' },
       hidden: bool('刻意隱藏的區塊（authread 設為空）'), return_text: bool('false 表示不回傳 HIS（gettext:false）'),
-      after_itemid: { type: 'number', description: `插在這個區塊之後（${AFTER_ZERO}）；不帶則加在最後` } } },
-    handler({ draft_id, type = 'form', title, visible_title, hidden, return_text, rows, titles, after_itemid }) {
+      after_itemid: { type: 'number', description: `插在這個區塊之後（${AFTER_ZERO}）；不帶則加在最後` } } }; },
+    handler({ draft_id, type = 'form', title, visible_title, hidden, return_text, rows, titles, after_itemid, url, params, height, inputs, outputs }) {
+      const embedArgs = { url, params, height, inputs, outputs };
+      const givenEmbed = Object.keys(embedArgs).filter(k => embedArgs[k] !== undefined && embedArgs[k] !== null && embedArgs[k] !== '');
+      if (type === 'embed') {
+        if (!enabled('embedArea')) fail(E.FEATURE_DISABLED, 'feature flag embedArea 未開啟（feature-flags.json；3.11.0 起預設開，這裡被關掉了）：本工具不產生 embed 區塊，按鈕開頁面的 OPENPANEL 也一樣');
+        if (visible_title || rows || titles) fail(E.UNSUPPORTED, 'embed 區塊不接受 visible_title、rows、titles：標題用 title（顯示在 iframe 上方）');
+        if (title !== undefined) checkText(title, 'title');
+        const d = store.loadDraft(draft_id);
+        const auth = { authread: hidden ? [] : [RUNTIME_ROLE], authwrite: [RUNTIME_ROLE], gettext: return_text !== false };
+        const itemid = d.nextItemId;
+        const area = buildEmbedArea(itemid, { title, ...embedArgs }, auth);
+        const now = embedNow(d, area);
+        if (now.errors.length) fail(E.INVALID_INPUT, `嵌入頁面設定有誤，這次什麼都沒有改：${now.errors.map(e => `${e.code} ${e.message}`).join('；')}`, { errors: now.errors });
+        d.nextItemId++;
+        placeArea(d, { structured: true, itemid, type, title: title || '', hidden: !!hidden, return_text: return_text !== false, ...auth, area }, after_itemid);
+        store.saveDraft(d);
+        const s = embedSummarize(area);
+        return {
+          area_itemid: itemid, type, summary: embedSummaryText(s),
+          ...(now.deferred.length && { pending: now.deferred }),
+          notes: ['嵌入頁面不進 HIS 文字輸出與紀錄 XML；只有寫回 outputs 欄位的值會存檔', '載入後 runtime 以 strucmed.context 送出病歷號、科別、使用者、門診序號與 inputs 欄位值：form_validate 會列 W_EMBED_DATAFLOW，交付時必須告知使用者',
+            'HIS 端要 StrucForm 導向白名單放行該主機；harness（verify-runtime）不載入外部 iframe，只驗表單邏輯']
+        };
+      }
+      if (givenEmbed.length) fail(E.UNSUPPORTED, `${givenEmbed.join('、')} 只適用嵌入頁面區塊（type: embed）`);
       if (!AREA_TYPES.includes(type)) fail(E.UNSUPPORTED, `區塊類型 ${type} 不支援（可用：${AREA_TYPES.join(' / ')}；雙欄 form2 無法由編輯器建立，不支援）`);
       if (visible_title) {
         if (type !== 'form') fail(E.UNSUPPORTED, `visible_title 只適用文字區塊（form）；${type} 的標題請放在前一個文字區塊的最後一行，或第一格控制項的說明文字`);
@@ -979,15 +1027,37 @@ export const TOOLS = [
       'titles（頁籤 tab1／tab2 的頁籤名稱，動態表格 table1／table2 的欄或列標題：改名、增減、調換順序）。itemid 不變，不需要重建 draft。' +
       'titles 是改完後的完整清單：名稱與現有頁籤相同的保留原頁籤（含裡面的欄位），其餘依序沿用剩下的頁籤（改名），多出來的是新的空白頁籤，沒有用到的舊頁籤刪除；' +
       '要刪的頁籤裡還有控制項時拒絕並列出 itemid，請先 form_move_control 搬走或 form_remove_control。頁籤名稱就是 HIS 文字輸出的鍵（[頁籤名稱:]），回傳的 mapping 列出每個頁籤的來源；his_text_keys 的鍵被改名或刪掉時 W_HIS_TEXT_KEYS 寫明是哪個頁籤並給改好的清單。' +
-      '原表單（form_import）區塊的權限不在這裡改，請在編輯器調整。',
+      '原表單（form_import）區塊的權限不在這裡改，請在編輯器調整。' +
+      '嵌入頁面（embed，flag embedArea）：url、params、height、inputs、outputs 整項取代（params／inputs／outputs 給完整物件，{} 清空），title 同時改 iframe 上方的標題；規則與 form_add_area 相同。',
     inputSchema: { type: 'object', required: ['draft_id', 'itemid'], properties: {
+      ...EMBED_PROPS,
       draft_id: str('draft id'), itemid: { type: 'number', description: '區塊 itemid' }, title: str('區塊標題'),
       visible_title: bool('文字區塊（form）的可見標題行：true 加上（內容＝title，放在第一行）、false 拿掉'), hidden: bool('刻意隱藏的區塊（authread 設為空）；false 恢復所有人可顯示'),
       titles: { type: 'array', items: { type: 'string' }, description: 'tab1/tab2：改完後的頁籤名稱（完整清單，即 HIS 文字鍵）；table1/table2：欄或列標題。不可含半形單引號、不可重複，1–20 個' } } },
-    handler({ draft_id, itemid, title, visible_title, hidden, titles }) {
-      if (title === undefined && visible_title === undefined && hidden === undefined && titles === undefined) fail(E.INVALID_INPUT, 'title、visible_title、hidden、titles 至少要給一個');
+    handler({ draft_id, itemid, title, visible_title, hidden, titles, ...rest }) {
+      const embedArgs = Object.fromEntries(['url', 'params', 'height', 'inputs', 'outputs'].filter(k => rest[k] !== undefined).map(k => [k, rest[k]]));
+      if (title === undefined && visible_title === undefined && hidden === undefined && titles === undefined && !Object.keys(embedArgs).length) fail(E.INVALID_INPUT, 'title、visible_title、hidden、titles（embed 另有 url、params、height、inputs、outputs）至少要給一個');
       const d = store.loadDraft(draft_id);
       const a = findArea(d, itemid), type = areaNode(a).itemtype;
+      if (Object.keys(embedArgs).length && type !== 'embed') fail(E.UNSUPPORTED, `${Object.keys(embedArgs).join('、')} 只適用嵌入頁面區塊（embed）；區塊 #${itemid} 是 ${type}`);
+      if (type === 'embed') {
+        if (visible_title !== undefined || titles !== undefined) fail(E.UNSUPPORTED, 'embed 區塊沒有 visible_title、titles：標題用 title');
+        if (!enabled('embedArea') && (title !== undefined || Object.keys(embedArgs).length)) fail(E.FEATURE_DISABLED, 'feature flag embedArea 未開啟（feature-flags.json）：嵌入頁面的設定不能修改；原表單的 embed 區塊會原樣保留');
+        if (title !== undefined) checkText(title, 'title');
+        if (hidden !== undefined && a.imported) fail(E.UNSUPPORTED, `區塊 #${itemid} 是原表單的區塊，權限請在編輯器調整`);
+        const node = a.area;
+        const cur = Object.fromEntries(EMBED_FIELDS.map(k => [k, node[k]]));
+        const next = embedConfig({ ...cur, ...(title !== undefined && { title }), ...embedArgs });
+        const candidate = { ...node, ...Object.fromEntries(EMBED_FIELDS.filter(k => k === 'title' ? title !== undefined : k in embedArgs).map(k => [k, next[k]])) };
+        const now = embedNow(d, candidate);
+        if (now.errors.length) fail(E.INVALID_INPUT, `嵌入頁面設定有誤，這次什麼都沒有改：${now.errors.map(e => `${e.code} ${e.message}`).join('；')}`, { errors: now.errors });
+        a.area = candidate;
+        if (title !== undefined) a.title = title;
+        if (title !== undefined || Object.keys(embedArgs).length) a.embedTouched = true;
+        if (hidden !== undefined) { a.hidden = !!hidden; a.authread = hidden ? [] : [RUNTIME_ROLE]; a.area.authread = a.authread; }
+        store.saveDraft(d);
+        return { area_itemid: Number(itemid), title: a.area.title || '', summary: embedSummaryText(embedSummarize(a.area)), ...(hidden !== undefined && { hidden: !!a.hidden }), ...(now.deferred.length && { pending: now.deferred }) };
+      }
       if (visible_title !== undefined && type !== 'form') fail(E.UNSUPPORTED, `visible_title 只適用文字區塊（form）；${type} 的標題請放在前一個文字區塊的最後一行，或第一格控制項的說明文字`);
       if (title !== undefined) checkText(title, 'title');
       const retitled = titles !== undefined ? retitleCells(a, type, titles) : null;
@@ -1037,6 +1107,12 @@ export const TOOLS = [
     handler({ draft_id, itemid }) {
       const d = store.loadDraft(draft_id);
       const a = findArea(d, itemid);
+      // 嵌入頁面沒有子項：直接刪（寫回欄位本身保留）。flag 關閉時也可以刪，讓 E_FEATURE_DISABLED 的 draft 能修好
+      if (areaNode(a).itemtype === 'embed') {
+        d.areas.splice(d.areas.indexOf(a), 1);
+        store.saveDraft(d);
+        return { removed_area: Number(itemid), areas_left: d.areas.length, notes: ['寫回（outputs）與送出（inputs）的欄位保留，不再由嵌入頁寫入'] };
+      }
       if (!streamsOf(a).length) fail(E.INVALID_INPUT, `區塊 #${itemid}（${areaNode(a).itemtype}）的內容不在串流內，這個工具判斷不了是不是空的；請在編輯器處理`);
       const controls = [], titled = titleLine(a), texts = [];
       walk({ areas: [a] }, (n, arr, i) => {
@@ -1255,7 +1331,7 @@ export const TOOLS = [
     name: 'dictionary_plan_import',
     description: '（離線；只改本機 draft）讀回 dictionary_plan_export 的 CSV（有 BOM、無 BOM 都接受），逐列依 action 處理：new＝更新待新建字典的 desc、補述、FHIR、名稱；bind＝沿用（補述有變才視同 memo）；' +
       'memo＝既有字典的補述修改，不寫 draft，回 memo_items（online_dictionary_memo_batch 的 items），定稿 G2 時才寫；rebind:<id>＝該字典所有欄位改綁到 <id>，回 rebinds；skip＝略過。' +
-      'asr（語音別名）多值以／分隔（表頭寫明）；;、,、| 也會拆並回 W_ASR_DELIMITER。每列跑 dictionary_memo_check，error 的列不套用、進 skipped（row 是試算表列號，表頭＝1）；checks 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；note 欄工具不處理。id 欄不可改（改了回 skipped，要換字典用 rebind）；既有字典的 desc 不可改（W_DESC_READONLY）。' +
+      'asr（語音別名）多值以／分隔（表頭寫明）；;、,、| 也會拆並回 W_ASR_DELIMITER。每列跑 dictionary_memo_check，error 的列不套用、進 skipped（row 是試算表列號，表頭＝1）；checks 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；note 欄工具不處理。既有字典（action=bind、沒改補述）缺補述時，W_MEMO_INCOMPLETE／W_MEMO_NO_MEANING 只在第一次匯回提醒，之後併成 warnings 的一條 W_MEMO_EXISTING_REPEAT（「既有字典 N 本沒補述，上次已提醒」），不擋定稿。id 欄不可改（改了回 skipped，要換字典用 rebind）；既有字典的 desc 不可改（W_DESC_READONLY）。' +
       'csv_path 與 csv_text 擇一，都不帶時讀預設路徑；csv_path 必須在工作目錄內。缺必要欄回 E_INVALID_INPUT。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: { draft_id: str('draft id'),
       csv_path: str('CSV 路徑（相對於工作目錄，且必須在工作目錄內）'), csv_text: str('CSV 內容（與 csv_path 擇一；HTTP 模式用）') } },
@@ -1284,7 +1360,13 @@ export const TOOLS = [
         return out;
       });
       const idx = store.loadDictIndex();
+      // F-05：上次已提醒過補述缺漏的既有字典（sidecar，不進 draft）
+      const nagFile = path.join(ws.base, 'plans', d.draft_id, 'memo-nag.json');
+      let nagged = new Set();
+      try { const j = JSON.parse(fs.readFileSync(nagFile, 'utf8')); if (Array.isArray(j.ids)) nagged = new Set(j.ids.map(String)); } catch { /* 第一次匯回 */ }
+      const naggedBefore = nagged.size;
       const out = importPlan(d, rows, dictRows(d, idx, fieldMap(d, idx, store.loadPolicy()).fields), {
+        nagged,
         check: ({ memo, fhir, dic_id, itemid }) => memoCheck({ memo, fhir, dic_id, ...(itemid !== undefined && { draft_id, itemid }) }),
         rename(p, name) {
           dc.checkStorable(name, '字典名稱');
@@ -1307,7 +1389,10 @@ export const TOOLS = [
         if (fixed.has(c.name)) c.warnings.push('W_NON_BIG5');
         if (asrNoted.has(c.name)) c.warnings.push('W_ASR_DELIMITER');
       }
-      return { ...out, warnings };
+      if (nagged.size !== naggedBefore) { fs.mkdirSync(path.dirname(nagFile), { recursive: true }); fs.writeFileSync(nagFile, JSON.stringify({ ids: [...nagged] })); }
+      const { memo_repeat, ...rest } = out;
+      if (memo_repeat.length) warnings.push(`W_MEMO_EXISTING_REPEAT：既有字典 ${memo_repeat.length} 本沒補述，上次已提醒（${memo_repeat.join('、')}）；既有字典的補述缺漏不擋定稿，要補請用 action memo 或 dictionary-assist 模式 3`);
+      return { ...rest, warnings };
     }
   },
   {

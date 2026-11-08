@@ -103,8 +103,11 @@ function rowFhir(row, cur) {
 }
 
 // 逐列套用；CSV 沒列到的字典不動。ops：check({ memo, fhir, dic_id, itemid }) 跑 dictionary_memo_check；rename(pending, 新名稱)；rebind(目前的列, 目標 id) 回 rebinds。note 欄由 skill 自己讀 CSV
+// 補述缺漏的兩個提醒（F-05：既有字典 bind 只提醒一次）
+const MEMO_NAG = new Set(['W_MEMO_INCOMPLETE', 'W_MEMO_NO_MEANING']);
+
 export function importPlan(d, rows, current, ops) {
-  const out = { applied: [], memo_items: [], rebinds: [], skipped: [], checks: [] };
+  const out = { applied: [], memo_items: [], rebinds: [], skipped: [], checks: [], memo_repeat: [] };
   const byId = new Map(current.filter(c => c.id).map(c => [c.id, c]));
   const byName = new Map(current.filter(c => !c.id).map(c => [c.dicName, c]));
   // 待新建字典可以改名：名稱對不上時用唯讀的 used_by 找回原本那一列
@@ -149,7 +152,14 @@ export function importPlan(d, rows, current, ops) {
       if (changed.length) fail(E.NOT_FOUND, `字典「${cur.dicName}」不在本機索引，無法檢查補述；請先 online_dictionary_search(update_index:true)`);
       return;
     }
-    record(cur, ops.check({ memo: patch, ...(fhirChanged && { fhir }), dic_id: cur.id }), extra);
+    let c = ops.check({ memo: patch, ...(fhirChanged && { fhir }), dic_id: cur.id });
+    // F-05：沒動補述的 action=bind 既有字典，補述缺漏的提醒只回一次；ops.nagged（上次已提醒的字典 id）有它時併成一條
+    if (ops.nagged && row.action.trim() === 'bind' && !changed.length) {
+      const nag = c.warnings.filter(w => MEMO_NAG.has(w.code));
+      if (nag.length && ops.nagged.has(cur.id)) { c = { ...c, warnings: c.warnings.filter(w => !MEMO_NAG.has(w.code)) }; out.memo_repeat.push(cur.dicName); }
+      else if (nag.length) ops.nagged.add(cur.id);
+    }
+    record(cur, c, extra);
     if (!changed.length) return;
     out.memo_items.push({ dic_id: cur.id, ...(Object.keys(patch).length && { memo: patch }), ...(fhirChanged && { fhir }) });
     out.applied.push({ name: cur.dicName, action: 'memo', changed });

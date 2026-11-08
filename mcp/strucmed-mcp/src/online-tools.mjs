@@ -25,6 +25,14 @@ function checkCode(v, field, required) {
 }
 
 const LARGE_CHARS = 50000;
+// javascript 區塊的字數（F-07）：本工具上架的區塊一定有產生器標記註解（// generated-by: strucmed-skill …），只有標記行時沒有任何程式碼，
+// 回 js_chars 0 並標 js_marker:true；有程式碼時 js_chars 仍是整個區塊的長度（含標記行）。W_SCRIPT_MODIFIED 的雜湊比對另走 verifyScriptBlock，不受影響
+function jsInfo(content) {
+  const text = String(content || '');
+  const marker = /^\/\/ generated-by:/.test(text);
+  const empty = marker && text.replace(/^(\/\/ generated-by:[^\n]*\n?)+/, '').trim() === '';
+  return { js_chars: empty ? 0 : text.length, js_marker: marker };
+}
 const FOLDER_PAGE_DEFAULT = 10;
 // 範本套件的摘要：online_template_get(save:true) 只回這些，整包留在存檔
 function summarize(pkg, chars) {
@@ -43,7 +51,7 @@ function summarize(pkg, chars) {
   for (const a of areas) types[a.itemtype] = (types[a.itemtype] || 0) + 1;
   return { template_id: String(t.templateID || ''), name: String(t.name || ''), shortcut: String(t.shortcut || ''), groups: Array.isArray(t.groups) ? t.groups : [],
     rev: t.rev ?? null, areas: areas.length, area_types: types, controls,
-    js_chars: String((form.find(x => x && x.itemtype === 'javascript') || {}).content || '').length,
+    ...jsInfo((form.find(x => x && x.itemtype === 'javascript') || {}).content),
     presets: Array.isArray(pkg && pkg.presets) ? pkg.presets.length : 0, dictionaries: Array.isArray(pkg && pkg.dictionaries) ? pkg.dictionaries.length : 0, chars };
 }
 
@@ -57,7 +65,7 @@ export const ONLINE_TOOLS = [
     description: '（online）以瀏覽器登入 strucmed 站台（OAuth 2.0 授權碼 + PKCE，回呼到本機 127.0.0.1）。站台自動判斷院內（LVAIW）或院外（使用者設定的網址），回應的 site 標明。' +
       '會以系統瀏覽器開啟站台登入頁，**HIS 帳密由使用者在登入頁輸入，不經過 AI 工具**；本 tool 沒有帳密參數，絕不在對話中索取密碼。' +
       '最多等約 2 分鐘；還沒完成時回 pending:true 與 authorize_url（瀏覽器沒開時請使用者自行開啟），使用者完成後再呼叫一次即可，不會重開新的登入。' +
-      '已登入時直接回目前狀態（already:true）。回傳的 login_flow 說明這次是 browser（經瀏覽器登入頁）或 reused（沿用本行程既有登入，沒開登入頁），dept_source 說明科部來源：login_page（登入頁送出）、session（沿用上次登入）、none（沒帶科部，另附 W_NO_DEPT）。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；access token 30 分鐘，其他線上 tool 會自動以 refresh token 換新，' +
+      '已登入時直接回目前狀態（already:true）。回傳的 login_flow 說明這次是 browser（經瀏覽器登入頁）或 reused（沿用本行程既有登入，沒開登入頁；上一次 browser 登入的回傳弄丟了，例如呼叫被中斷、使用者其實已在登入頁完成登入，下一次也會回 reused，請以 online_me 確認身分與科部），dept_source 說明科部來源：login_page（登入頁送出）、session（沿用上次登入）、none（沒帶科部，另附 W_NO_DEPT）。token 只存在本次 MCP 行程的記憶體，不回傳、不寫檔；access token 30 分鐘，其他線上 tool 會自動以 refresh token 換新，' +
       '同一次登入最長 8 小時，之後或 MCP 重啟（新對話、/reload-plugins）需重新登入。token 只能使用範本、字典與自己的 struNote 清單。',
     inputSchema: { type: 'object', properties: {
       dept_no: str('登入科部（token 的科部，選填）'), hospital: str('院區代碼（選填，預設 CGMH）') } },
@@ -103,7 +111,7 @@ export const ONLINE_TOOLS = [
   {
     name: 'online_template_get',
     description: '（online，唯讀）讀取範本套件 v2（GET api/v2/templates/{id}，strucmed.template/v2：form、presets、dictionaries、template、integrity）。' +
-      'save:true 時另存到 <workspace>/.strucmed/online/<id>.package.json，只回摘要（名稱、捷徑、作業別、rev、區塊與控制項數、JS 字數、存檔路徑），' +
+      'save:true 時另存到 <workspace>/.strucmed/online/<id>.package.json，只回摘要（名稱、捷徑、作業別、rev、區塊與控制項數、JS 字數、存檔路徑；js_chars 只算程式碼：javascript 區塊只有產生器標記註解時回 0 並帶 js_marker:true），' +
       '可接著用 form_import 載入（要更新同一張範本帶 for_update:true）；細節請從存檔讀，不要把整包讀進對話。include_package:true 才連同整包回傳。',
     inputSchema: { type: 'object', required: ['template_id'], properties: {
       template_id: str('範本 ID（templateID）'), save: { type: 'boolean', description: '另存到工作目錄供 form_import 使用（只回摘要）' },

@@ -99,6 +99,14 @@ export function referencesOf(n) {
 export function refsTo(draft, itemid) {
   const out = [];
   walk(draft, n => {
+    // 嵌入頁面區塊的 inputs／outputs 指向欄位 ID（embedInput／embedOutput）
+    if (isArea(n) && n.itemtype === 'embed') {
+      for (const [kind, m] of [['embedInput', n.inputs], ['embedOutput', n.outputs]]) {
+        if (!m || typeof m !== 'object') continue;
+        for (const v of Object.values(m)) if (String(v).trim() === String(itemid)) out.push({ from: n.itemid, kind });
+      }
+      return;
+    }
     if (!isControl(n)) return;
     for (const r of referencesOf(n)) if (r.id === String(itemid)) out.push({ from: n.itemid, kind: r.kind });
   });

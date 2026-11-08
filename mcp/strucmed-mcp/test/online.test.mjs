@@ -385,6 +385,31 @@ test('folder list and template get send the bearer token', async () => {
   assert.equal((await mcp.call('online_folder_list', { type: 'other' })).error.code, 'E_INVALID_INPUT');
 });
 
+// 3.10.2 F-07：javascript 區塊只有產生器標記註解時，js_chars 回 0、另給 js_marker
+test('online_template_get summary：只有標記註解的 javascript 區塊 js_chars 0＋js_marker；有程式碼照算', async () => {
+  await browserLogin(mcp, {});
+  const marker = '// generated-by: strucmed-skill 3.11.0 (mcp 2.13.0)';
+  const withJs = js => ONLINE_FORM.map(x => x.itemtype === 'javascript' ? { ...x, content: js } : structuredClone(x));
+  const get = async (id, js) => {
+    templates.set(id, { sha256: 'x'.repeat(8), template: { name: id }, form: withJs(js) });
+    const r = await mcp.call('online_template_get', { template_id: id, save: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    return r.data;
+  };
+  const only = await get('T-JS1', marker);
+  assert.equal(only.summary.js_chars, 0);
+  assert.equal(only.summary.js_marker, true);
+  assert.equal(only.warnings, undefined, '標記行不是改過的片段，沒有 W_SCRIPT_MODIFIED');
+  const body = 'function x() { return 1; }';
+  const code = await get('T-JS2', `${marker}\n${body}`);
+  assert.equal(code.summary.js_chars, marker.length + 1 + body.length, '有程式碼：整個區塊的長度');
+  assert.equal(code.summary.js_marker, true);
+  const orig = await get('T-JS3', body);
+  assert.deepEqual([orig.summary.js_chars, orig.summary.js_marker], [body.length, false]);
+  const empty = await get('T-JS4', '');
+  assert.deepEqual([empty.summary.js_chars, empty.summary.js_marker], [0, false]);
+});
+
 test('401 → refresh → retry with the new access token', async () => {
   await browserLogin(mcp, {});
   validAccess.clear();                         // access token 過期

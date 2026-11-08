@@ -10,5 +10,6 @@
   "playwrightVerify": false,
   "unattended": false,
   "formScript": false,
-  "formScriptAdvanced": false
+  "formScriptAdvanced": false,
+  "embedArea": true
 }

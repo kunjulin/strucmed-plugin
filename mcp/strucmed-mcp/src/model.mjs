@@ -189,6 +189,30 @@ export function buildStructuredArea(itemid, type, spec, auth) {
   return { itemtype: type, authread, authwrite, gettext, item: titles.map(t => ({ itemtype: 'td', datatitle: checkTitle(t), item: [] })), itemid: String(itemid) };
 }
 
+// ── 嵌入頁面（embed）區塊（flag embedArea）──────────────────────────────
+// 與 form、table1 平行的區塊；平台 PLAN-STRUCFORM-1.10.9 §1.1、契約 docs/EMBED-APP-GUIDE.md §4。
+// key 順序依編輯器 EmbedGetAreaData（平台 web/js/scripts.js）：itemtype、itemid、設定欄位、authread、authwrite、gettext。
+// 區塊沒有子項（item），不占格子；GetText 對 embed 回空字串（gettext 只是與其他區塊一致）。
+// inputs／outputs 存成 { key: itemid(數字) }：編輯器「重新編號」與附加表單時會跟著調整（EmbedRemapMap／EmbedShiftMap）。
+export const EMBED_FIELDS = ['title', 'url', 'params', 'height', 'inputs', 'outputs'];
+// 呼叫端可寫 12、"12" 或 "A12"，一律存成數字；其他值原樣留給檢查（E_EMBED_MAP）
+const idMap = m => Object.fromEntries(Object.entries(m).map(([k, v]) => { const x = /^\s*[Aa]?(\d+)\s*$/.exec(String(v)); return [k, x ? parseInt(x[1], 10) : v]; }));
+export function embedConfig(spec) {
+  const s = spec || {};
+  return {
+    title: s.title === undefined || s.title === null ? '' : String(s.title),
+    url: String(s.url === undefined || s.url === null ? '' : s.url).trim(),
+    params: s.params === undefined || s.params === null ? {} : (typeof s.params === 'object' && !Array.isArray(s.params) ? Object.fromEntries(Object.entries(s.params).map(([k, v]) => [k, v === null || v === undefined ? '' : String(v)])) : s.params),
+    height: s.height === undefined || s.height === null || s.height === '' ? 600 : (/^\s*\d+\s*(px)?\s*$/i.test(String(s.height)) ? parseInt(s.height, 10) : s.height),
+    inputs: s.inputs && typeof s.inputs === 'object' && !Array.isArray(s.inputs) ? idMap(s.inputs) : (s.inputs === undefined || s.inputs === null ? {} : s.inputs),
+    outputs: s.outputs && typeof s.outputs === 'object' && !Array.isArray(s.outputs) ? idMap(s.outputs) : (s.outputs === undefined || s.outputs === null ? {} : s.outputs)
+  };
+}
+export function buildEmbedArea(itemid, spec, auth) {
+  const { authread, authwrite, gettext } = auth;
+  return { itemtype: 'embed', itemid: String(itemid), ...embedConfig(spec), authread, authwrite, gettext };
+}
+
 export function areaObject(a) {
   return {
     itemtype: 'form',

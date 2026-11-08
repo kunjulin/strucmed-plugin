@@ -53,8 +53,13 @@
     "form": {
       "type": "array",
       "minItems": 2,
-      "description": "GetData() 陣列：區塊 …、{itemtype:'javascript'}、{itemtype:'iot'}",
-      "items": { "type": "object", "required": ["itemtype"] }
+      "description": "GetData() 陣列：區塊 …、{itemtype:'javascript'}、{itemtype:'iot'}。itemtype 'embed'（嵌入頁面）見 $defs/embedArea；網址主機、params 個資、outputs 目標等跨欄位規則由 form_validate（E_EMBED_*）檢查",
+      "items": {
+        "type": "object",
+        "required": ["itemtype"],
+        "if": { "properties": { "itemtype": { "const": "embed" } }, "required": ["itemtype"] },
+        "then": { "$ref": "#/$defs/embedArea" }
+      }
     },
     "presets": {
       "type": "array",
@@ -92,6 +97,44 @@
         "alg": { "const": "sha256(JSON.stringify({form,presets}))" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
+    }
+  },
+  "$defs": {
+    "embedArea": {
+      "title": "嵌入頁面區塊（itemtype embed）",
+      "description": "表單內以 sandbox iframe 顯示院內頁面，postMessage 交換 strucmed.context／strucmed.result。url 只接受 https＋院內主機（*.cgmh.org.tw、*.cgmf.org.tw、*.cgmh.me、10/8、172.16/12、192.168/16、localhost）；params 值只能是 {chtno}、{deptNo}、{user}、{opdno} 或常數；未列出的欄位編輯器原樣保留。",
+      "type": "object",
+      "required": ["itemtype", "itemid", "url"],
+      "properties": {
+        "itemtype": { "const": "embed" },
+        "itemid": { "type": "string", "pattern": "^\\d+$" },
+        "title": { "type": "string", "description": "iframe 上方的標題" },
+        "url": { "type": "string", "pattern": "^https://", "description": "嵌入頁網址（https、院內主機，可含固定 query；不可含 {…} 與帳密）" },
+        "params": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Za-z0-9_.\\-]+$" },
+          "additionalProperties": { "type": "string" },
+          "description": "附加到 query 的參數；值為 {chtno}／{deptNo}／{user}／{opdno} 或常數，名稱不可像身分證號或姓名"
+        },
+        "height": {
+          "oneOf": [
+            { "const": "fill" },
+            { "type": "integer", "minimum": 100, "maximum": 4000 },
+            { "type": "string", "pattern": "^\\d+(px)?$" }
+          ],
+          "description": "\"fill\"（一張表單最多一個）或像素 100–4000；未設定為 600"
+        },
+        "inputs": { "$ref": "#/$defs/embedMap", "description": "表單 → 嵌入頁：{ key: itemid }，欄位須參與計算" },
+        "outputs": { "$ref": "#/$defs/embedMap", "description": "嵌入頁 → 表單：{ key: itemid }，欄位須存在、不是 embed、不在 form／subgroup 內，多個 embed 不可重疊" },
+        "authread": { "type": "array", "items": { "type": "string" } },
+        "authwrite": { "type": "array", "items": { "type": "string" } },
+        "gettext": { "type": "boolean", "description": "與其他區塊一致；GetText 對 embed 一律回空字串" }
+      }
+    },
+    "embedMap": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_\\-]+$" },
+      "additionalProperties": { "type": ["integer", "string"], "pattern": "^\\s*\\d+\\s*$" }
     }
   }
 }

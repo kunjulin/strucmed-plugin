@@ -8,7 +8,8 @@
 4. **不直連倉儲**：plugin 只呼叫 strucmed API v2（院內 LVAIW 或院外站台，由 MCP 自動判斷；探測只 GET `api/health`、不帶憑證）、LlmGateway、FMapi（兩者只有院內）。`E_ONLINE_DISABLED` 時不嘗試其他連線方式。
 5. **禁止產生的函數與表單 JS**：OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO；CUSTOMFUNC 只允許呼叫同一 draft 以 `form_set_script` 的 `lookup` 片段定義的 `sm_<name>`（第一個參數必須是字串字面值；flag 關閉時一律禁止）；不嵌入圖片。表單 JS 只由 `form_set_script` 以白名單樣板產生（flag `formScript`，預設關：`style`、`guard`、`derive`、`lookup`、`required`；進階的 `autorun`、`table-rows` 另需 `formScriptAdvanced`，開文件時自動執行既有巨集與動態表格加列，不直接呼叫查詢或 AI 函數），draft 只存樣板參數、JS 在匯出或上架時由 MCP 渲染，不接受自由 JS、CSS 或選擇器字串；渲染後的程式碼必須原樣列在定稿計畫與匯入說明給使用者審閱。flag 關閉時 JS 區塊只有產生器標記註解。片段不得連外、不得讀寫身分與病歷脈絡、不得對 `ck_*` 賦值、不得存檔載入或整份搬運資料（渲染後掃描 `E_SCRIPT_FORBIDDEN_API`）。使用者需要其他 JS 時，請其匯入後在編輯器由人工加入並審查。
 6. **模型名稱不得憑記憶**：只用 `references/FormulaMacroRules.md` 的清單（Phase 3 起改用 `llmgateway_models` 的快取）；拼錯平台會靜默改用預設模型。
-7. **AI 資料流必須揭露**：有 LLM／語音巨集的表單，計畫與交付都要列 `W_AI_DATAFLOW`（哪些欄位會送出）。2026-10-22 決定：含 AI 巨集的上架不另設審查，但告知不可省略。
+7. **AI 資料流必須揭露**：有 LLM／語音巨集的表單，計畫與交付都要列 `W_AI_DATAFLOW`（哪些欄位會送出）。2026-10-22 決定：含 AI 巨集的上架不另設審查，但告知不可省略。嵌入頁面（embed 區塊、`OPENPANEL`）同等級：計畫、review.md 與交付都要列 `W_EMBED_DATAFLOW`（目標主機、帶出的參數、送出與寫回的欄位）。
 8. **核准前不得寫入**：G2 定稿前不呼叫任何線上寫入；核准 sidecar（`verify-plan.mjs`）不符時拒絕寫入。
 9. **不刪除、不覆寫線上範本與字典**：沒有也不會提供 trash、字典刪除、硬刪除紀錄的 tool。`templateUpdate` 開啟時只能更新「以該範本 import 後改版」的 draft，且帶 `If-Match`。
 10. **runtime 驗證只在本機**：`STRUCMED_RUNTIME_WEB` 是本機副本，harness 的 CSP 封鎖對外連線；不在 HIS 終端機上跑。
+11. **嵌入頁面只用宣告、不寫 JS**（flag `embedArea`，3.11.0 起預設開）：embed 區塊與 `OPENPANEL` 的網址只接受 https＋院內主機（`*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost；只看主機字串，不做 DNS）；網址與 `params` 不帶身分證號、姓名，參數值只能是 `{chtno}`、`{deptNo}`、`{user}`、`{opdno}` 或常數；嵌入頁要留在病歷的資料只經由 `outputs` 寫進一般控制項。不為嵌入頁寫自訂 JS，javascript 區塊照舊只放產生器標記（與第 5 條相同）；`OPENURL` 維持禁用。改版既有表單時原表單的 embed 原樣保留並檢查，原表單的自訂 JS 照標 `W_CUSTOM_JS`。

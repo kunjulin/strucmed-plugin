@@ -28,9 +28,11 @@
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`…）。拼錯時平台會靜默改用預設模型。
 - 計算式不能用巨集專用函數（HISQUERY、SETVALUEBYID、LLMQUERY…）。
 - **禁止產生**：OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO。使用者需要時，請其匯入後在編輯器由人工加入並審查。`CUSTOMFUNC("sm_<name>")` 只在 flag `formScript` 開啟、且本 draft 有同名的 `lookup` 片段（`trigger: customfunc`）時放行（`ScriptAddonRules.md` §2）；其他一律 `E_FORBIDDEN_FUNCTION`／`E_CUSTOMFUNC_UNDEFINED`。
+- `OPENPANEL(url, title)`（按鈕開院內頁面：StrucForm 1.10.9 起開在右側子面板，更早的版本開浮動面板）只在 flag `embedArea` 開啟時放行，只能用在巨集；`url` 必須是字串字面值，且通過與 embed 區塊 `url` 相同的檢查（`E_EMBED_URL`、`E_EMBED_SCHEME`、`E_EMBED_HOST`、`E_EMBED_PII`）。flag 關閉時 `E_FORBIDDEN_FUNCTION`。食譜見 `MacroRecipes.md` R10。`formula_check`（kind `macro`）與 `form_validate` 用同一組規則。
 
 **交付時必須告知**：
 - `W_AI_DATAFLOW`：哪些欄位會送到 LLM／語音服務（manifest「AI 資料流」）。模型白名單與上架審查待院方決議。
+- `W_EMBED_DATAFLOW`：embed 區塊與 OPENPANEL 會開哪個院內主機、帶出哪些參數、送出與寫回哪些欄位（manifest「嵌入頁面資料流」）。
 - `W_RENUMBER_MACRO`：匯入後**不要按「重新編號」**。
 - `W_FORMULA_FN_NEEDS_DEPLOY`：TEXT、VALUE、MEDIAN 等函數要等平台 #25 部署後才可用。
 - `W_PATIENT_DATA_READ`：HIS 參照與 lookup 函數會在 HIS 端讀取病人資料。

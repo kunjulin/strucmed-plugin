@@ -14,7 +14,57 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.10.1（MCP 2.12.0）— 未發佈：3.9.3 驗收的小修（作業別不再偷帶、登入回傳講清楚來源、資料夾清單精簡）
+## 3.11.0（MCP 2.13.0）— 2026-11-08：嵌入頁面（embed 區塊、OPENPANEL），flag `embedArea` 預設開
+
+平台 PLAN-STRUCFORM-1.10.9 §1.5（站台端 §1.1～§1.3 在 `kunjulin/strucmed` 的 embed 區塊 PR：runtime、編輯器、共用規則 `web/js/embed-block.js`，commit 26984f3）。契約是平台的 B1 嵌入頁 APP 開發說明 §4。
+
+**flag `embedArea`（2026-11-08 起預設 `true`）**
+- 關閉時 `form_add_area` 不接受 `type: "embed"`（`E_FEATURE_DISABLED`）、巨集 `OPENPANEL` 與其他開網址函數一樣 `E_FORBIDDEN_FUNCTION`；flag 事後關閉時，本工具新增的 embed 讓 `form_validate` 回 `E_FEATURE_DISABLED`（`form_remove_area` 仍可刪）。
+- 原本預設關，理由是站台編輯器的 `SetData` 遇到不認識的 itemtype 會弄壞範本，存檔後 embed 消失。2026-11-08 在院外站台編輯器實測後改為預設開（`feature-flags.json` 與 `src/flags.mjs` 的預設都是 `true`）：plugin 產生的 embed 區塊與編輯器存出的區塊鍵、順序、型別、值相同；兩張測試表單（`inputs`／`outputs` 空；非空且欄位留空號）匯入→存檔→重開，讀回與匯出檔逐鍵相同；「重新編號」後送出與寫回欄位仍指向同名欄位。不需要時把 `embedArea` 改成 `false`。
+- 已知問題（平台編輯器，與 embed 無關的既有問題）：「加載表單」附加含 embed 且 `inputs`／`outputs` 非空的表單時，編輯器位移 embed 的對應卻不位移文字區塊的欄位編號，對應會指到錯的欄位；存檔前檢查只攔得住指到不存在的欄位。平台編輯器 2026-11-08 已修正（文字區塊欄位編號、計算式與參照跟著位移），院外站台已部署並重測通過；院內站台更新前仍有此問題。`FormDesignRules.md`〈嵌入頁面〉、README 與 manifest「嵌入頁面資料流」（有送出或寫回欄位時）都寫明不要這樣用，要合併表單用 edit-form。
+- 匯入／改版既有含 embed 的表單時，不論 flag 一律原樣保留（含未知欄位）並檢查；原表單的錯誤是 warning（原表單既有），本次修改了它的 `inputs`／`outputs` 指到的欄位時是 error。
+
+**MCP**
+- `src/embed.mjs`（新）：平台 `embed-block.js` 逐行移植成 ESM，規則、錯誤碼、訊息、檢查順序相同：`E_EMBED_URL`、`E_EMBED_SCHEME`、`E_EMBED_HOST`、`E_EMBED_PII`、`E_EMBED_HEIGHT`、`E_EMBED_FILL`、`E_EMBED_INPUT`、`E_EMBED_OUTPUT_MISSING`、`E_EMBED_OUTPUT_EMBED`、`E_EMBED_OUTPUT_GROUP`、`E_EMBED_OUTPUT_DUP`、`E_EMBED_MAP`。網址只接受 https＋院內主機（`*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost；IP 以解析後的數字判斷網段）。
+- `form_add_area` 新增 `type: "embed"` 與 `url`、`params`、`height`、`inputs`、`outputs`（key 順序同編輯器 `EmbedGetAreaData`；`inputs`／`outputs` 可寫 `12`、`"12"`、`"A12"`，存成數字）。`E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 延後（回 `pending`），其他當下拒絕、draft 不變。`form_update_area` 可整項改這五項與 `title`；`form_remove_area` 直接刪 embed；被 `inputs`／`outputs` 參照的欄位 `form_remove_control` 拒絕（`embedInput`／`embedOutput`）。
+- `form_validate`：整張表單的 embed 檢查（與平台 `validateForm` 同一套）、每個 embed 與 OPENPANEL 列 `W_EMBED_DATAFLOW`（目標主機、網址參數、送出與寫回欄位；embed 另註明 `strucmed.context` 會送病歷號、科別、使用者、門診序號），回傳 `embeds` 清單與 `stats.embeds`／`stats.openpanels`。
+- `calx-catalog.mjs` 登記 `OPENPANEL`（新類別 `panel`）：flag 開時只能用在巨集，網址必須是字串字面值且通過與 embed `url` 相同的檢查（`E_EMBED_*`）；計算式 `E_FORMULA_MACRO_ONLY`。`formula_check` 走同一組規則。`OPENURL` 維持禁用。
+- `form_preview`（tree／markdown）顯示 embed 摘要：主機、路徑、高度、網址參數（占位符標中文）、送出與寫回欄位；manifest 新增「嵌入頁面資料流」表，有送出或寫回欄位時加一句不要用編輯器「加載表單」附加（`EMBED_APPEND_WARNING`）。
+- flag 被關閉時的錯誤訊息（`form_add_area`、`OPENPANEL`、`form_validate`）拿掉「實測前」的理由，改為說明 3.11.0 起預設開、目前被關掉。
+- `schemas/strucmed-template-v2.schema.json`：`$defs/embedArea`。
+
+**文件與 agent**
+- `FormDesignRules.md`〈嵌入頁面〉、`MacroRecipes.md` R10（OPENPANEL）、`FormulaMacroRules.md`、`SecurityInvariants.md` 第 7 條補揭露、新增第 11 條（embed 只宣告不寫 JS、網址規則、不帶個資；javascript 區塊照舊只放標記，原表單的自訂 JS 照標 `W_CUSTOM_JS`）、`Gates.md` 計畫格式加「### 嵌入頁面」、`form-reviewer` 的 review.md 新增「## 嵌入頁面資料流（實際）」（目標主機、帶出的參數、寫回欄位）。README（本 repo 與公開版）、MCP README。
+
+**skill 與 agent（2026-11-08 補，院內平台與院外站台已部署站台端 embed）**
+- `form_add_area` 的說明與 `type` 清單在列出工具時依 flag 決定：flag 關時清單沒有 `embed`、說明寫明需開 flag。skill 以「`form_add_area` 的 type 有 `embed`」判斷能不能用（同 `form_set_script` 之於 `formScript`）。
+- `form-planner` 7c（何時用 embed、何時用 OPENPANEL；網址只寫使用者給的、不猜；範圍外主機或要帶個資 → Blocked）、`form-builder`（embed 建置順序：寫回欄位建好後 `form_update_area` 補 `outputs`）、`Gates.md`「### 嵌入頁面」改成 builder 可照抄的表。
+- `create-form` 需求訪談加「嵌入院內頁面」、`edit-form` 的工具說明、`strucmed-form` 分流、`publish-form` 與交付格式必列 `W_EMBED_DATAFLOW`。
+- `build-form-app` B1 執行清單加「嵌入頁主機在 StrucForm 導向白名單」與「嵌入頁面資料流」兩列：1.10.9 DLL 起預設放行院內範圍、iframe 與 OPENPANEL 子面板走同一份白名單；被擋下時平台管理者可在管理頁依主機彙總 `NAV-DENIED`。
+- OPENPANEL 的說明對齊 1.10.9：開在右側子面板（與表單並存），子面板內的頁面收不到 `strucmed.context`；更早的 DLL 開浮動面板。
+
+測試：`test/embed.test.mjs`（19 項）：平台 `tests/web-js/embed-block.test.mjs` 的案例逐條搬來，並在 `STRUCMED_RUNTIME_WEB` 有平台 `js/embed-block.js` 時直接載入比對訊息與結果；平台與 1.10.9 DLL 共用的主機案例 `tests/fixtures/internal-hosts.json`（commit 44dac17）逐條抄來，平台倉儲在旁邊時直接讀那份 JSON 比對；flag 開關（含工具清單的 `type`）、tools、validate 嚴重度、匯入保留、OPENPANEL。院內 IP 在執行時組字串（發佈掃描）。
+
+文件（2026-11-08 補）：MCP README 的 `online_login`、`online_folder_list` 兩列補上 3.10.1（2.12.0）的 `login_flow`／`dept_source`／`logged_in_at` 與預設每頁 10 筆、精簡欄位、`more`（3.10.1 發佈時漏改）；`plugin.json` userConfig、README（本 repo 與公開版）的 `runtime_web` 說明改為實際搜尋順序 `<workspace>/strucmed/web`、`<workspace>/repo/strucmed/web`、`<workspace>/../strucmed/web`（3.10.2 待辦 F-06）。
+
+實測（2026-11-08，院外站台編輯器）：匯入、存檔重開、「重新編號」通過；「加載表單」第一次不通過（平台編輯器問題，見上），平台修正部署後重測通過：附加的欄位改為 3、5、6，embed 的送出與寫回對應指向同名欄位，存檔成功。尚未實測：HIS 端 iframe 載入與 `strucmed.context`／`result`（要 1.10.9 DLL 或院內白名單放行）；院內站台的編輯器。
+
+**3.10.2 待辦（3.10.1 驗收的小修）**
+
+3.10.1 市集版完整實跑（2026-11-06，9／10）發現的七項低／資訊級問題，使用者決定併進 3.11.0 一起發，版本號不動（本 repo 開發文件 18 §1 的 F-01、F-02、F-03、F-05、F-07、F-08、F-09；F-06 已在上面「文件」補，F-04 是環境問題與可選項，沒做）。
+- F-01（`form-reviewer`）：結構對照的選項改為**逐字比對**：草案「選項／範圍」的每個選項與 `form_preview(tree)` 的 options 順序與字都一字不差，不只比個數；轉寫失誤、錯字、全半形都列入「必須修正」，修法寫 `form_update_control` 的 `changes.options`。
+- F-02（`form-builder`、`Gates.md` §2）：回填「### 建置對照表」時一併把草案裡寫成 Calx 欄位參照 `A<itemid>` 的預測值（公式、依賴順序、嵌入頁面、表單 JS）改成實際 itemid；`Gates.md` §2 註明「計算式依賴以建置對照表為準」。
+- F-03（`create-form` §5）：最後一輪前，把審閱迴圈最近一次 review 的建議項列成選項（多選）問使用者一次「要不要採納」；採納的轉成必須修正交 builder，沒選的留在 G2「### 警告」；建議仍不自動改。
+- F-05（MCP `dictionary_plan_import`、`create-form` §5）：既有字典（`action=bind`、沒改補述）缺補述時，`W_MEMO_INCOMPLETE`／`W_MEMO_NO_MEANING` 只在第一次匯回提醒；同一本字典再匯回時從 `checks` 拿掉這兩個警告，併成 `warnings` 的一條 `W_MEMO_EXISTING_REPEAT`（「既有字典 N 本沒補述，上次已提醒」）。「已提醒」記在 `.strucmed/plans/<draft_id>/memo-nag.json`（不進 draft、不影響 draft 雜湊）；待新建字典（`action=new`）與改了補述的 `action=memo` 照常警告。`create-form` §5 寫明既有字典補述缺漏不擋定稿。
+- F-07（MCP `online_template_get`）：summary 的 `js_chars` 只算程式碼：javascript 區塊只有產生器標記註解（`// generated-by: strucmed-skill …`）時回 `js_chars: 0`、另給 `js_marker: true`；有程式碼時 `js_chars` 仍是整個區塊長度，`js_marker` 標有沒有標記行。`W_SCRIPT_MODIFIED` 的雜湊比對另走 `verifyScriptBlock`，不受影響。
+- F-08（MCP `online_login`、`connect-strucmed`）：`online_login` 描述補「上一次 browser 登入的回傳弄丟（例如呼叫被中斷）時，下一次也會回 `reused`」；`connect-strucmed` 登入步驟補「回 `login_flow: reused` 時以 `online_me` 確認身分與科部」。
+- F-09（`create-form` §3）：問題沒有答案（被別的訊息取代、略過）時採建議值，並在草案與定稿檔標「（預設，使用者未作答）」。
+
+測試：`test/review.test.mjs` 加「既有字典 bind 的補述缺漏只提醒一次」（第一次照常、第二次併成一條、`action=new` 與 `action=memo` 不受影響）、`test/online.test.mjs` 加「summary：只有標記註解的 javascript 區塊」（標記行、標記＋程式碼、無標記、空區塊；標記行沒有 `W_SCRIPT_MODIFIED`）。
+
+---
+
+## 3.10.1（MCP 2.12.0）— 2026-11-06：3.9.3 驗收的小修（作業別不再偷帶、登入回傳講清楚來源、資料夾清單精簡）
 
 3.9.3 以市集版完整實跑一張頁籤表單（2026-11-04，8.5／10，重建 0 次）後的收尾，發現編號對應驗收紀錄 `integration-3.9.3.md` 的 F-01～F-11。`online_login` 回傳多了欄位、`online_folder_list` 的預設筆數與回傳形狀改了，所以 MCP 升 2.12.0。
 
@@ -36,7 +86,9 @@ claude plugin update strucmed@strucmed-marketplace
 
 測試：`test/online.test.mjs` 加 F-01 的 `login_flow`／`dept_source`／`none` 與 F-09 的預設 10 筆、精簡欄位、`more`、最後一頁；假站台加 76 筆的資料夾情境。
 
-尚未實測：本版從市集安裝後的流程；`login_flow: reused` 在真站台 SSO 下的表現。
+實測（2026-11-06）：市集版完整實跑一張頁籤表單「疼痛評估測試 3101」（`integration-3.10.1.md`，9／10，重建 0 次，builder 24 次呼叫 0 次被拒）。F-01、F-02、F-03、F-05／F-07、F-08、F-09 都通過；`login_flow: reused` 在真站台驗到（第一次 `online_login` 被中斷、使用者已在登入頁完成登入，再呼叫回 `reused`＋`note`）；登入頁科部留空被平台擋，`W_NO_DEPT` 與 `next` 驗不到；字典與範本確認頁逐頁回報沒做到（第二段呼叫在呼叫內等到使用者按確認就回成功，沒有回 `pending`）。驗收發現九項（低／資訊）整理成 3.10.2 待辦（本 repo 開發文件 18）。
+
+發佈（2026-11-06）：strucmed-plugin `ff788c2`、tag `v3.10.1`、GitHub Release「strucmed 3.10.1（MCP 2.12.0）」；本 repo tag `v3.10.1-src`（`acd08a2`）。發佈樹測試 243 個（242 通過、1 略過），`claude plugin validate --strict` 通過。
 
 ## 3.10.0（MCP 2.11.0）— 2026-11-06：表單 JS 白名單片段 D1～D4（七種樣板，flag 預設關）
 

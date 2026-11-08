@@ -15,7 +15,7 @@
 | 條件 | 外層 `IF` 擋不住 LLMQUERY（每次都執行、不等待）；條件寫進 prompt |
 | 讀取 | 步驟內用 `A<itemid>` 讀欄位，被讀的欄位要勾「參與計算」；`MACRO` 會把換行與連續空白壓成一個空白 |
 | 不能寫入 | 動態表格（`table1`／`table2`）內的欄位：每列共用 itemid，會一次改到所有列（`E_MACRO_TARGET_TABLE`） |
-| 禁用 | `OPENURL`、`SAVEDOC`、`SETIOTHEADER`、`S_USERID`、`S_DEPTNO`（`E_FORBIDDEN_FUNCTION`）；需要時匯入後由人工在編輯器加並審查。`CUSTOMFUNC` 只放行本 draft `lookup` 片段定義的 `sm_<name>`（flag `formScript`；`ScriptAddonRules.md`） |
+| 禁用 | `OPENURL`、`SAVEDOC`、`SETIOTHEADER`、`S_USERID`、`S_DEPTNO`（`E_FORBIDDEN_FUNCTION`）；需要時匯入後由人工在編輯器加並審查。`CUSTOMFUNC` 只放行本 draft `lookup` 片段定義的 `sm_<name>`（flag `formScript`；`ScriptAddonRules.md`）。`OPENPANEL` 只在 flag `embedArea` 開啟時放行（R10），關閉時同樣 `E_FORBIDDEN_FUNCTION` |
 
 ## 2. 規劃時要問使用者的三件事
 
@@ -106,6 +106,19 @@
 
 ### R9 套用表單預設（APPLYPRESETBYNAME）
 - 步驟：`APPLYPRESETBYNAME("一般門診")`；預設由使用者在 HIS 端「管理表單預設」建立，名稱要一致。
+
+### R10 按鈕開院內頁面（OPENPANEL，flag `embedArea`）
+- 觸發：按鈕「開啟指引」（只在需要時才開；表單一載入就要顯示、或要把結果寫回欄位時改用 embed 區塊，`FormDesignRules.md`〈嵌入頁面〉）。
+- 控制項：`C_btn` action，`action_id` 留空（OPENPANEL 回傳 `ok`／`error`，不需要寫入欄位）。
+- 步驟：
+  ```
+  OPENPANEL("https://assistantai.cgmh.org.tw/guideline/", "治療指引")
+  ```
+- 規則：網址必須是**字串字面值**（不能用欄位或 `CONCATENATE` 組網址，`E_EMBED_URL`），並通過與 embed `url` 相同的檢查：https（`E_EMBED_SCHEME`）、院內主機 `*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost（`E_EMBED_HOST`）、網址不含 `{…}` 與身分證號、姓名類參數（`E_EMBED_PII`）。只能用在巨集（計算式 `E_FORMULA_MACRO_ONLY`）。
+- 行為：StrucForm 1.10.9 起開在右側**子面板**（與表單並存，上方「返回小助手」切回；走 DLL 同一份導向白名單）；子面板是獨立瀏覽器，頁面拿不到 HIS 橋接物件，也收不到 `strucmed.context`。主機被白名單擋下時提示「此主機未在 StrucForm 導向白名單」，DLL 另送 errorlog `NAV-DENIED`。1.10.9 以前的 DLL 改畫右側浮動面板（不取代表單、可關閉）；非 HIS 環境退回 `window.open`，verify-runtime 的 guard 照常擋。OPENPANEL 沒有 `params`、`inputs`、`outputs`，**不送 `strucmed.context`、不寫回欄位**；回傳 `ok`（已開啟或交給子面板）或 `error`（網址不合）。
+- 揭露：`W_EMBED_DATAFLOW`（目標主機）列進 manifest「嵌入頁面資料流」與 review.md。
+- `OPENURL` 維持禁用：它交給系統 Edge 開，離開表單視窗，也沒有主機檢查。
+- flag 關閉時：OPENPANEL 回 `E_FORBIDDEN_FUNCTION`；改版既有表單裡的 OPENPANEL 原封保留，以 warning（原表單既有）列出。
 
 ## 4. 建置與驗證
 

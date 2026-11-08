@@ -31,7 +31,7 @@
   - 字典命名依使用者規範；未定案前用 `<表單縮寫>_<欄位語意>` 大寫英數底線，並先搜尋避免重複。
   - 說明、補述、層級與升級見下一節。
 - **必填**：只標「沒有它表單就失去意義」的欄位；說明必填只在 HIS 端提醒，編輯器存檔不檢查。
-- **禁止**：預設值或選項放任何病人資料；自由撰寫表單 JS（只有 flag `formScript` 開啟時以白名單片段產生，見 `ScriptAddonRules.md`）；嵌入圖片；§3b 列出的禁用函數；任何刪除或覆寫線上範本與字典。線上寫入只限 §6 的病人紀錄存檔。
+- **禁止**：預設值或選項放任何病人資料；自由撰寫表單 JS（只有 flag `formScript` 開啟時以白名單片段產生，見 `ScriptAddonRules.md`；嵌入院內頁面用宣告式 embed 區塊，不寫 JS，見〈嵌入頁面〉）；嵌入圖片；§3b 列出的禁用函數；任何刪除或覆寫線上範本與字典。線上寫入只限 §6 的病人紀錄存檔。
 - 使用者要求超出範圍（例如「直接幫我把範本上傳到編輯器」）時，說明目前線上 tool 不含範本寫入，範本仍由使用者匯入 `.htm`；經 API 建立／更新範本的規劃（Phase 2）。
 
 ## 樣式（控制項欄位與片段）
@@ -39,6 +39,38 @@
 - **控制項層級**（不需 flag）：`form_add_control`／`form_update_control` 的 `font_color`、`font_size`（10–24 px，預設 14）、`back_color`，對應平台控制項既有的 `efontcolor`／`efontsize`／`ebackcolor`（編輯器屬性面板的色票，runtime 以 inline style 渲染）。顏色只接受 `#rrggbb`／`#rgb`／`rgb()`／色名白名單；`""` 或 0 清回預設。label 型控制項的字級同時影響說明文字。只影響畫面，不影響 HIS 文字輸出與倉儲。用在：必填或重點欄位淡黃底、結果數值放大、警示 label 紅字。
 - **區塊以上與整張主題**（flag `formScript`）：`form_set_script` 的 `style` 片段，見 `ScriptAddonRules.md`。
 - 樣式會影響列印版面；交付時提一句。不要用樣式藏欄位（`display`／`visibility` 不開放），藏欄位走區塊 `hidden` 與 `further`。
+
+## 嵌入頁面（embed 區塊，flag `embedArea`）
+
+> flag `embedArea` 3.11.0 起預設開（2026-11-08 站台編輯器實測：匯入、存檔重開、「重新編號」都完整保留）。flag 被關閉時 `form_add_area` 不接受 `embed`（`E_FEATURE_DISABLED`），巨集的 `OPENPANEL` 也視為禁用。**改版既有表單時原表單的 embed 一律原樣保留並檢查**，不論 flag。
+
+在表單內以 iframe 顯示院內第三方網頁（「B1 嵌入頁 APP」），與 `form`、`table1` 平行的區塊。表單設計者只宣告，**不寫自訂 JS**；嵌入頁要留在病歷的資料一律經由 `outputs` 寫進一般控制項，走表單既有的存檔、GetText、計算式與倉儲上傳。
+
+```json
+{ "itemtype": "embed", "itemid": "8", "title": "急診臨床決策支援",
+  "url": "https://assistantai.cgmh.org.tw/ERCDSS/", "params": { "chtno": "{chtno}", "dept": "{deptNo}" },
+  "height": "fill", "inputs": { "age": 2 }, "outputs": { "risk_score": 5, "suggestion": 6 },
+  "authread": ["doctor"], "authwrite": ["doctor"], "gettext": true }
+```
+
+| 參數（`form_add_area` type `embed`） | 規則（與站台編輯器、runtime 同一套；錯誤碼相同） |
+|---|---|
+| `title` | iframe 上方的標題（選用） |
+| `url` | **https**（`E_EMBED_SCHEME`）、主機在院內範圍 `*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost（`E_EMBED_HOST`；只看網址的主機字串、不做 DNS）；完整網址、不含帳密（`E_EMBED_URL`）；網址本身不可含 `{…}` 或身分證號樣式（`E_EMBED_PII`） |
+| `params` | 附加到 query 的 `{ 名稱: 值 }`：值只能是 `{chtno}`（病歷號）、`{deptNo}`（科別）、`{user}`（使用者）、`{opdno}`（門診序號）或常數；名稱只能英數字、`_`、`-`、`.`，不可像身分證號或姓名（`idno`、`pid`、`name`、`ptname`、`patientName`、`username`…）→ `E_EMBED_PII`。沒有身分證號、姓名的占位符 |
+| `height` | `"fill"` 或像素 100～4000，預設 600（`E_EMBED_HEIGHT`）；一張表單最多一個 `"fill"`（`E_EMBED_FILL`） |
+| `inputs` | 表單 → 嵌入頁 `{ key: itemid }`，載入時以 `strucmed.context.values` 送出；欄位必須存在且參與計算（`E_EMBED_INPUT`） |
+| `outputs` | 嵌入頁 → 表單 `{ key: itemid }`：欄位必須存在（`E_EMBED_OUTPUT_MISSING`）、不是 embed（`E_EMBED_OUTPUT_EMBED`）、不在彈出片語或群組控制項內（`E_EMBED_OUTPUT_GROUP`）；多個 embed 不可寫同一欄（`E_EMBED_OUTPUT_DUP`） |
+| key 格式 | `inputs`／`outputs` 的 key 只能是英數字、`_`、`-`，值是欄位 ID（`E_EMBED_MAP`；呼叫端可寫 `12`、`"12"` 或 `"A12"`，存成數字） |
+
+- 建置順序：`outputs` 的欄位常在區塊之後才建，`E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 先延後（回傳 `pending`），建好欄位後 `form_update_area(itemid, outputs: {...})` 補上；其他 `E_EMBED_*` 當下拒絕、draft 不變。`form_update_area` 的 `url`、`params`、`height`、`inputs`、`outputs` 整項取代。
+- 寫回欄位用 `textbox`／`textarea`／`numberbox`（數字欄位收到非數字會被 runtime 拒絕）；要進倉儲就綁字典。被 `inputs`／`outputs` 參照的欄位不能 `form_remove_control`（先改 embed）。
+- runtime：表單載入後送 `strucmed.context`（**病歷號、科別、使用者、門診序號**，加 `inputs` 欄位值），只接受來源等於 `url` 的 `strucmed.result`；嵌入頁本身不進 HIS 文字輸出與紀錄 XML。`authread` 不允許顯示時不載入 iframe。
+- **不要用編輯器的「加載表單」把含嵌入頁面、且有送出或寫回欄位（`inputs`／`outputs`）的表單附加到其他表單**：目前編輯器加載時會位移嵌入頁面的對應，卻不位移文字區塊的欄位編號，對應會指到錯的欄位；指到存在但錯的欄位時存檔不會報錯。要合併表單請用 edit-form 在 plugin 內做；單獨匯入、存檔、「重新編號」都沒有問題。manifest「嵌入頁面資料流」在有送出或寫回欄位時會寫這句，交付時要轉告使用者。
+- 揭露：`form_validate` 每個 embed 列 `W_EMBED_DATAFLOW`（目標主機、網址參數、送出與寫回欄位），manifest「嵌入頁面資料流」、form-reviewer 的 review.md 都要列；與 AI 資料流同等級，交付時不可省略。
+- HIS 端要 StrucForm 導向白名單放行該主機：1.10.9 DLL 起預設放行院內範圍（程式碼已完成、抽換時程依 HIS 端）；院內範圍以外的主機由平台在站台的集中白名單登錄，plugin 不產生範圍以外的網址（`E_EMBED_HOST`）。被擋下時 iframe 空白、runtime 提示並送 errorlog `NAV-DENIED`，管理者可依主機彙總查詢。1.10.7／1.10.8 的白名單只認設定主機，會擋掉院內頁面。verify-runtime 的 harness 不載入外部 iframe，只驗表單邏輯。
+- 嵌入頁的開發條件（`frame-ancestors`、Chromium 104、postMessage 格式、身分分級）在平台的 B1 嵌入頁 APP 開發說明，不在 plugin 範圍。
+- 只在按下按鈕時才開的頁面改用巨集 `OPENPANEL`（`MacroRecipes.md` R10；1.10.9 起開在右側子面板，收不到 `strucmed.context`、不能寫回欄位），不用 embed。
 
 ## 字典說明、補述與層級
 

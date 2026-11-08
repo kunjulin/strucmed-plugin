@@ -414,7 +414,7 @@ Codex：`codex plugin marketplace add <資料夾路徑>`。Antigravity：把資�
 | 院外站台網址 | 通常留空（預設 `https://cgmh.ddns.net`）。只有資訊室公告新網址時才填（必須是 https）；填 `none` 則不探測院外 |
 | FMapi 金鑰、平台 `web/` 副本 | 選用，可留空 |
 
-token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。四個欄位都是選填：`claude plugin configure` 會把沒填的列在 unconfigured，那不是待辦；留空時預覽用工作目錄的 `repo/strucmed/web`、線上用內建的院外站台。從 2.x 升級：舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理。
+token 存在 Claude Code 的安全儲存區，不寫進設定檔或對話。設定後執行 `/reload-plugins`（或開新工作階段）。四個欄位都是選填：`claude plugin configure` 會把沒填的列在 unconfigured，那不是待辦；留空時預覽依序找工作目錄下的 `strucmed/web`、`repo/strucmed/web`，再找上一層的 `strucmed/web`；線上用內建的院外站台。從 2.x 升級：舊的「院內 HIS 帳號／密碼」欄位已移除，不需處理。
 
 #### 環境變數（Codex、Copilot CLI、其他 MCP client）
 
@@ -554,6 +554,11 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 - 「開文件時自動跑巨集」「動態表格預設幾列並預填」：另開 `formScriptAdvanced`（`autorun`、`table-rows`）。AI／查詢步驟會在開文件時自動送出，預覽頁會實跑給你看送出了什麼。
 - 怎麼開：本機資料夾安裝（開發者）改 plugin 根目錄的 `feature-flags.json`；市集安裝時改快取目錄的同一個檔（Claude Code 在 `~/.claude/plugins/cache/strucmed-marketplace/strucmed/<版本>/feature-flags.json`，更新版本後要再改一次），或在啟動工具的 shell 設 `STRUCMED_FLAGS` 指向自己的 JSON 檔（內容例如 `{ "formScript": true }`）。改完開新工作階段。
 - 渲染後的程式碼會原樣列在定稿 G2 與匯入說明給你審閱；片段只在 2.0 runtime 執行，不影響 HIS 文字輸出與倉儲；樣式會影響列印版面。規則見 [references/ScriptAddonRules.md](references/ScriptAddonRules.md)。
+
+**嵌入頁面（3.11.0，flag `embedArea` 預設開）**：
+- 表單內嵌入院內網頁（`form_add_area` type `embed`：`url`、`params`、`height`、`inputs`、`outputs`）與按鈕開頁面的巨集 `OPENPANEL(url, title)`。網址只接受 https＋院內主機（`*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost），參數只能是病歷號、科別、使用者、門診序號的占位符或常數，不寫自訂 JS。規則與站台編輯器相同（`E_EMBED_*`），交付時列 `W_EMBED_DATAFLOW`（主機、參數、寫回欄位）。
+- 已在站台編輯器實測（2026-11-08）：plugin 產生的嵌入頁面匯入、存檔、重開、「重新編號」都完整保留，送出與寫回欄位跟著欄位走。不需要時把 `feature-flags.json` 的 `embedArea` 改成 `false`。改版既有表單時原表單的嵌入頁面一律原樣保留並檢查。
+- **不要用編輯器的「加載表單」把含嵌入頁面、且有送出或寫回欄位（`inputs`／`outputs`）的表單附加到其他表單**：目前編輯器加載時會位移嵌入頁面的對應，卻不位移文字區塊的欄位編號，對應會指到錯的欄位；指到存在但錯的欄位時存檔不會報錯。要合併表單請用 edit-form 在 plugin 內做；單獨匯入、存檔、「重新編號」都沒有問題。規則見 [references/FormDesignRules.md](references/FormDesignRules.md)〈嵌入頁面〉、[references/MacroRecipes.md](references/MacroRecipes.md) R10。
 
 需求這樣描述就會用到（flag 開啟時）：
 

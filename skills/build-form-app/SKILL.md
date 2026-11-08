@@ -25,6 +25,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
    - `llm_gateway.enabled: false` → 表單內的 LLM／語音仍走舊的院內端點，不經閘道（由平台管理者啟用）。
    - `runtime.save`／`query` → 登入者是否在 HIS 端存檔／查詢白名單（影響 HIS 端體驗，不影響表單設計）。
 4. 範本：捷徑＋作業別都有才會出現在 HIS 清單；`online_template_versions` 確認 `current` rev。
+4b. 嵌入頁面（範本有 embed 區塊或 `OPENPANEL` 時）：以 `form_validate` 的 `embeds` 列出每個目標主機。HIS 端 StrucForm 要放行它們：1.10.9 DLL 起預設放行院內範圍，iframe 與 OPENPANEL 的子面板走同一份白名單；1.10.7／1.10.8 只認設定主機，會擋掉院內頁面。DLL 版本請 HIS 端確認。被擋下時畫面空白並送 errorlog `NAV-DENIED`，平台管理者可在管理頁「導向白名單擋下的主機」依主機彙總查看（plugin 沒有管理權限，只寫進清單提醒）。嵌入頁本身的條件（`frame-ancestors` 允許 `http://localhost` 與站台、https 憑證、Chromium 104）由嵌入頁開發者負責，列在平台的 B1 嵌入頁 APP 開發說明。
 5. 交付《B1 執行清單》（寫到 `<workspace>/output/<範本名>.b1-checklist.md` 並在對話摘要）：
 
 ```markdown
@@ -37,6 +38,8 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 | LlmGateway 啟用（api/llm-config） | ✓／✗ | 由平台管理者啟用 |
 | 巨集模型在白名單 | ✓／✗ | 列出每個 LLMQUERY／LLMvision 的別名 → 閘道模型 → 狀態 |
 | AI 資料流（W_AI_DATAFLOW） | 已告知 | 哪些欄位會送到 LLM／語音 |
+| 嵌入頁主機在 StrucForm 導向白名單（有 embed／OPENPANEL 時） | 請 HIS 端確認 | 列出主機；1.10.9 DLL 起預設放行院內範圍（1.10.7／1.10.8 會擋）；上線一週內請平台管理者看「導向白名單擋下的主機」 |
+| 嵌入頁面資料流（W_EMBED_DATAFLOW） | 已告知 | 每個嵌入頁的主機、帶出的參數（病歷號、科別、使用者、門診序號）、寫回欄位 |
 | 身分（R3） | 說明 | HIS 端身分由 HIS 傳入 |
 | 匯入後勿按「重新編號」 | 提醒 | |
 ```

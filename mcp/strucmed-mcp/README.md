@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.12.0）
+# strucmed-mcp（v2.13.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.12.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.13.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -96,10 +96,10 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 ### Tools
 | tool | API | 說明 |
 |---|---|---|
-| `online_login` | `GET api/v2/auth/authorize`（瀏覽器）、`POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH），沒有帳密；見上方「瀏覽器登入」。`client_id` 固定 `strucmed-mcp`，平台只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。完成時回 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；未完成回 `pending`、`authorize_url` |
+| `online_login` | `GET api/v2/auth/authorize`（瀏覽器）、`POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH），沒有帳密；見上方「瀏覽器登入」。`client_id` 固定 `strucmed-mcp`，平台只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。完成時回 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；2.12.0 起另回 `login_flow`（`browser`＝這次經瀏覽器登入頁；`reused`＝沿用本行程既有登入、沒開登入頁，另附 `note`，要換科部或帳號先 `online_logout`；上一次 `browser` 登入的回傳弄丟（呼叫被中斷、使用者已在登入頁完成登入）時，下一次也會回 `reused`，以 `online_me` 確認身分與科部）、`dept_source`（`login_page`／`session`／`none`）、`logged_in_at`；未完成回 `pending`、`authorize_url` |
 | `online_logout` | `POST api/v2/auth/revoke` | 作廢登入並清除記憶體中的 token |
-| `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`（選填，預設 `usr`）：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size` |
-| `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft |
+| `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`（選填，預設 `usr`）：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size`（2.12.0 起預設 10）。每筆只回 `template_id`、`name`、`shortcut`、`groups`、`modify_date`、`creator`（不回 `description`），另回 `folder`、`exists`、`total`、`page`、`page_size`、`duplicates`／`corrupt`（有才回）；`total` 超過 `page×page_size` 時附 `more` 說明還剩幾筆與下一頁，要找特定範本請帶 `q` |
+| `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft；摘要的 `js_chars` 只算程式碼，javascript 區塊只有產生器標記註解時回 `0` 並帶 `js_marker: true` |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
 | `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
 | `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact\|all&q=&page=&pageSize=` | 唯讀；`update_index:true` 且不帶 `q` 時只回摘要（`index_count`、`level_counts`、`duplicates` 數、warnings），不回 `items`。每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |
@@ -146,8 +146,8 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `form_import` | **v1**：載入既有表單（套件 v2 `.htm`／`.package.json`、舊版 `.htm`、`.json`；`source_path` 或 `source_text` 擇一）為新 draft；所有區塊、計算式、巨集、JS 原封保留；輸出為新表單（不沿用 templateID，捷徑與作業別預設不沿用） |
 | `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字（頂層 `label_text`）、預設值、必填、選項、字典、單位（`changes.unit`，只存 draft，優先於說明文字）。`changes` 的未知鍵回 `E_UNKNOWN_KEY`，什麼都不改 |
 | `form_remove_control` | **v1**：兩段式移除控制項（仍被參照時拒絕；子項一併移除） |
-| `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字；`after_itemid` 插在指定區塊之後（0＝最前面） |
-| `form_update_area` | 改區塊 `title`（有可見標題行時一起改，依標記找，不限第一行）、`visible_title`、`hidden`；`titles` 改頁籤（tab1／tab2）的頁籤名稱與動態表格的欄列標題：完整清單，同名保留、其餘依序改名、多的新增、少的刪除（有控制項時拒絕並列出 itemid），回 `mapping`；`his_text_keys` 的鍵是這次改名或刪掉的頁籤時，`W_HIS_TEXT_KEYS` 寫明「頁籤 comment 已改名 note」並給 `form_update_meta(his_text_keys: […])` 的完整清單；原表單區塊的權限不改 |
+| `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字；`after_itemid` 插在指定區塊之後（0＝最前面）；`embed`（嵌入頁面，flag `embedArea`，3.11.0 起預設開）帶 `url`、`params`、`height`、`inputs`、`outputs`，規則與站台 `embed-block.js` 相同（`E_EMBED_*`；欄位還沒建的 `E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 延後到 `form_validate`） |
+| `form_update_area` | 改區塊 `title`（有可見標題行時一起改，依標記找，不限第一行）、`visible_title`、`hidden`；`titles` 改頁籤（tab1／tab2）的頁籤名稱與動態表格的欄列標題：完整清單，同名保留、其餘依序改名、多的新增、少的刪除（有控制項時拒絕並列出 itemid），回 `mapping`；`his_text_keys` 的鍵是這次改名或刪掉的頁籤時，`W_HIS_TEXT_KEYS` 寫明「頁籤 comment 已改名 note」並給 `form_update_meta(his_text_keys: […])` 的完整清單；原表單區塊的權限不改；embed 區塊的 `url`、`params`、`height`、`inputs`、`outputs` 整項取代（flag `embedArea`） |
 | `form_remove_area` | 刪空區塊，不需要 confirm；還有控制項、說明文字或被連動引用時拒絕 |
 | `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述 |
 | `form_move_control` | 搬控制項（連同說明文字與同一行的後綴文字）到別的區塊、格子或位置，itemid 不變、參照不受影響；`after_itemid` 0＝最前面；搬進動態表格的限制同 `form_add_control` |
@@ -169,7 +169,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
   - 錯誤：`E_NOT_FOUND`（沒有意見檔）、`E_INVALID_INPUT`（JSON 壞掉、draft 不符、`seq` 不是正整數）。
   - 警告：`W_REVIEW_EMPTY`（`revise` 但沒有任何修改或意見，不是定稿）、`W_REVIEW_STALE`（選項與 draft 目前不符，或欄位、字典已不在，不產生該筆）、`W_REVIEW_OPTION_REF`（改了選項文字，計算式或巨集以字串比對舊選項）、`W_REVIEW_ITEM`（內容不合法，略過）、`W_DICT_NOT_IN_INDEX`。
 - **`dictionary_plan_export({ draft_id, out_path? })`**：一本字典一列（綁定的既有字典去重＋待新建字典），預設寫 `.strucmed/plans/<draft_id>/dictionaries.csv`，重跑覆寫，`out_path` 必須在工作目錄內。UTF-8 帶 BOM、CRLF、RFC 4180；HTTP 模式另回 `csv_text`。`= + - @ '` 開頭與 `1-12` 這類會被 Excel 改掉的值前面加一個 `'`，import 時拿掉。`asr` 多值以 `／` 串接，表頭寫成 `asr（多值以／分隔）`（import 時去掉括號註解，舊表頭 `asr` 也認得）。
-- **`dictionary_plan_import({ draft_id, csv_path? | csv_text? })`**：只改本機 draft；都不帶時讀預設路徑。`action`：`new`（更新待新建字典的 desc、補述、FHIR、名稱）、`bind`（沿用，補述有變才視同 memo）、`memo`（不寫 draft，回 `memo_items`）、`rebind:<id>`（該字典所有欄位改綁，回 `rebinds`）、`skip`。每列跑 `dictionary_memo_check`，error 的列進 `skipped`（`row` 是試算表列號，表頭＝1）；`checks` 列每本的 errors／warnings。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；`note` 欄工具不處理，skill 自己讀 CSV。
+- **`dictionary_plan_import({ draft_id, csv_path? | csv_text? })`**：只改本機 draft；都不帶時讀預設路徑。`action`：`new`（更新待新建字典的 desc、補述、FHIR、名稱）、`bind`（沿用，補述有變才視同 memo）、`memo`（不寫 draft，回 `memo_items`）、`rebind:<id>`（該字典所有欄位改綁，回 `rebinds`）、`skip`。每列跑 `dictionary_memo_check`，error 的列進 `skipped`（`row` 是試算表列號，表頭＝1）；`checks` 列每本的 errors／warnings；既有字典（`bind`、沒改補述）缺補述的 `W_MEMO_INCOMPLETE`／`W_MEMO_NO_MEANING` 只在第一次提醒，之後併成 `warnings` 的一條 `W_MEMO_EXISTING_REPEAT`（「已提醒」記在 `.strucmed/plans/<draft_id>/memo-nag.json`）。CSV 可以只含要改的列（表頭要完整），沒列到的字典不動；`note` 欄工具不處理，skill 自己讀 CSV。
   - 錯誤：`E_INVALID_INPUT`（缺 `action`、`dicName` 欄；路徑在工作目錄外）、`E_NOT_FOUND`（找不到檔案）；單列的錯誤（`id` 被改、action 不認識、`E_INVALID_FHIR`、`E_PHI_SUSPECT`）進 `skipped`。
   - 警告：`W_ASR_DELIMITER`（`asr` 用了 `;`、`,`、`|`〔含全形〕分隔，已拆成多筆；或只有一筆但含「、」）、`W_NON_BIG5`（desc 或補述有存不下的字元：有對照的已改寫，例如 `≥` → 大於等於；沒有對照的該列進 `skipped`）、`W_DESC_READONLY`（既有字典的 desc 不可改）、`W_DICT_NOT_IN_INDEX`。
   - `online_dictionary_batch` 不寫 FHIR：待新建字典的 `fhir` 留在 draft 與 `.htm` 的字典套件；走線上時由 `publish-form` 先記在 `pending-fhir.json`，字典建好後以 `online_dictionary_memo_batch` 補（`references/PublishWorkflow.md` §2、§4）。
@@ -187,7 +187,7 @@ cd mcp/strucmed-mcp && npm test
 - `test/formula-explain.test.mjs`：`formula_check` 的標籤化公式（`labeled`、`ref_labels`）與試算（`samples`）：運算子優先順序、百分比、常用函數、缺值與不支援時回報不猜、BMI 身高體重對調回 `E_FORMULA_SAMPLE_MISMATCH`、進位函數與 MOD 和 Calx 2.2.8 一致（BMI 160／80 → 31.2、只差最後一位的提示）、固定表格的說明格。
 - `test/e2e.test.mjs`：以真實 stdio 協定走完 create → export 兩段式流程，驗證套件 v2 與 `.htm` 內嵌套件一致，並以編輯器匯入器相同邏輯擷取 `var tempdata`。
 - `test/v1.test.mjs`：改版流程（合成的既有表單 fixture）：三種來源格式、未修改時逐位元組保真、新增／修改／移除與參照保護、嚴重度分級、`derivedFrom`。
-- `test/online.test.mjs`：線上 tool，以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次、倉儲失敗後的 `next`；`online_folder_list` 的 `type` 預設 `usr`；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
+- `test/online.test.mjs`：線上 tool（含 `online_template_get` 摘要的 `js_chars`／`js_marker`），以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次、倉儲失敗後的 `next`；`online_folder_list` 的 `type` 預設 `usr`；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
 - `test/llmgw.test.mjs`：LlmGateway tool，以 127.0.0.1 上的假閘道：未設定時隱藏與 `E_LLMGW_DISABLED`、網址限制、bearer、快取寫入與別名對應、401／轉址／空清單、`formula_check` 對照白名單（不在清單、deprecated、視覺）、`form_validate` 的 `W_LLM_WHITELIST_STALE`、chat_test（flag、白名單、個資、標頭、思考模式、429）；金鑰不出現在 stdout、stderr、工作目錄。
 - `test/fmapi.test.mjs`：FMapi tool，以假 FMapi：未設定時隱藏、errorlog 狀態、相關站台過濾與 `W_SITE_DOWN`、uptime 被拒／停用只回 warnings；金鑰不外洩。
 - `test/review.test.mjs`：預覽審閱：serve 的 `/__review`（Host、Origin、Content-Type、大小、draft_id、seq 遞增、latest 覆寫）、`/__preview` 注入 meta、meta 內容與沿用、`form_review_read`（`suggested_calls` 保留連動、`memo_items`、`W_REVIEW_STALE`、`W_REVIEW_OPTION_REF`）、字典 CSV 往返（逗號、引號、換行、Excel 保護、有無 BOM、action 五種、`id` 被改）、`asr` 分隔符與 `W_ASR_DELIMITER`、`W_HIS_TEXT_KEYS`。
@@ -195,6 +195,7 @@ cd mcp/strucmed-mcp && npm test
 - `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、別版 plugin 的 harness 不沿用（`version`、`serve`、`W_PREVIEW_OTHER_HARNESS`）、工作目錄固定、`runtime_web` 的尋找順序。
 - `test/v392.test.mjs`：3.9.1 實跑的發現：`form_update_area(titles)` 改名、增減、調換頁籤與拒絕刪除有欄位的頁籤、可見標題行被搬動後仍找得到（`W_BEFORE_TITLE`）、改名或刪頁籤後 `W_HIS_TEXT_KEYS` 指出頁籤並給改好的清單（3.9.3）、`dictionary_suggest` 預設 5 筆與 `full_memo`、型別不一致的降級理由。
 - `test/script.test.mjs`：表單 JS 白名單片段（flag `formScript`）：flag 關不列出、S1 style 的主題與規則渲染成一個 `<style>`（控制項層級加 `!important`）、CSS 屬性與值白名單、S4 guard 的事件綁定與條件 lint、訊息字元限制、禁用 token 掃描（字串與註解不算）、`form_remove_control`／`form_remove_area` 擋片段參照、flag 事後關閉時驗證與匯出拒絕、匯出計畫與 manifest 列出渲染後的 JS、改版 draft 原 JS 在前片段在後；D2：S2 derive（目標不能是 label／自己／動態表格）、S3 lookup（`sm_<name>`、`CUSTOMFUNC` 只放行片段定義的名稱、未定義可延後 `E_CUSTOMFUNC_UNDEFINED`、名稱重複）、S5 required（目標須 required）、`W_CUSTOM_JS_FINDINGS`、`verifyScriptBlock` 雜湊比對、`hide_prev_icon`；D4：flag `formScriptAdvanced` 關閉時 autorun／table-rows 拒絕、開啟後渲染（`performActionByID`、`TableRowAdd`＋預填）、事後關閉驗證與匯出拒絕。
+- `test/embed.test.mjs`：嵌入頁面（flag `embedArea`）：平台 `tests/web-js/embed-block.test.mjs` 的案例逐條搬來（主機範圍、https、params 個資、height、buildUrl、outputs 目標、fill 與重疊、結果值），12 個 `E_EMBED_*` 訊息與平台相同（`STRUCMED_RUNTIME_WEB` 有 `js/embed-block.js` 時直接載入平台檔比對）；平台與 1.10.9 DLL 共用的主機案例（`tests/fixtures/internal-hosts.json`，平台倉儲在旁邊時直接讀那份比對）；工具清單的 `type` 依 flag 才有 `embed`；flag 關時 `form_add_area` 拒絕、`OPENPANEL` 禁用；`form_add_area`／`form_update_area` 當下拒絕與延後的錯誤、GetData key 順序、預覽摘要、`W_EMBED_DATAFLOW` 與 manifest「嵌入頁面資料流」、寫回欄位不能刪、flag 事後關閉；匯入含 embed 的表單原樣保留（原表單錯誤為 warning）；`OPENPANEL` 的字串字面值、主機、巨集專用與 `formula_check`。院內 IP 在執行時組字串。
 - `test/style-fields.test.mjs`：S0 控制項樣式欄位（`font_color`／`font_size`／`back_color` → `efontcolor`／`efontsize`／`ebackcolor`）：新增與更新、清回預設、無效值拒絕、`form_fields` 的 `style` 與 `form_preview(tree)` 顯示、`form_import` 既有值保留不算修改。
 - `test/rebuild.test.mjs`：`form_move_control`、`form_update_area`、`form_remove_area`、`form_add_area(after_itemid)`、`from_draft_id`、`W_APPLIED_SEQ_RESET`、補述自動檢查、`W_NON_BIG5`、`formulas_from_review`。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。

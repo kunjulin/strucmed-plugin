@@ -61,10 +61,20 @@ Inputs: dept_no=33F00; groups=; publish=false; folder=usr; his_text_keys=Report,
 | C12 | action LLMQUERY | prompt 摘要… | | qwen332b | → C13 |
 
 - formula 型 label 在「### 結構」的 datatype 寫 `label`，公式寫在這裡；builder 全部欄位建好後才補。
+- 計算式依賴以「### 建置對照表」為準：草案裡 `A<n>` 形式的 itemid 是建置前的預測，builder 建完會把它們改成實際 itemid（與對照表一致）；兩者不同時信對照表。
 - 每條 formula 都要有「白話」。**不寫試算例**：reviewer 依白話自己出（見 `agents/form-reviewer.md`），結果進 review.md。
 
 ### AI 資料流（W_AI_DATAFLOW）
 哪些欄位會送到 LLM／語音服務；沒有則寫「無」。
+
+### 嵌入頁面（W_EMBED_DATAFLOW；flag embedArea 開啟或改版的原表單有 embed／OPENPANEL 時才有）
+embed 區塊在「### 結構」佔一列（`A5 | 決策支援（embed） | — |…`），設定寫在這裡，builder 照抄成 `form_add_area` 的參數；OPENPANEL 寫在「### 計算式與巨集」（類型 `action OPENPANEL`），這裡再列一行揭露。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。沒有則省略這段。
+| ID | 標題 | url | params | height | 送出（inputs） | 寫回（outputs） | 目標主機與揭露 |
+|---|---|---|---|---|---|---|---|
+| A5 | 急診臨床決策支援 | `https://assistantai.cgmh.org.tw/ERCDSS/` | `chtno={chtno}`（病歷號）、`mode=his` | fill | age→C2 | risk_score→C7、suggestion→C8 | assistantai.cgmh.org.tw；載入後 strucmed.context 送病歷號、科別、使用者、門診序號 |
+| C9 | （OPENPANEL「治療指引」） | `https://assistantai.cgmh.org.tw/guideline/` | — | — | — | — | assistantai.cgmh.org.tw；子面板，不送 context |
+
+- 寫回欄位（outputs）要先列在「### 結構」：textbox／textarea／numberbox，要進倉儲就綁字典；不能放在群組、彈出片語內，也不能被兩個 embed 寫。
 
 ### 版面配置（有固定表格、頁籤或動態表格時才有）
 每個表格一段，用文字畫出格線（列寬 → 各格的說明文字與 `C*`；頁籤與動態表格列出 `index` 與標題），格式見 `references/LayoutPatterns.md` §6。builder 照它的順序建格子，reviewer 拿它對 `form_preview`。
@@ -127,6 +137,7 @@ Revision: 1
 
 - 審查：error 0、warning n（review.md 路徑）；warning 逐條
 - W_AI_DATAFLOW：…
+- W_EMBED_DATAFLOW：…（有嵌入頁面時；主機、參數、寫回欄位）
 
 ### HIS 文字輸出
 - 模式：histextbyblock；回 HIS 的區塊：…

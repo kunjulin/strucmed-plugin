@@ -28,6 +28,7 @@ allowed-tools: Read, Bash(node *)
    - 回 `pending: true`：把 `authorize_url` 給使用者（`browser_opened: false` 時請其自行開啟），等使用者說完成後**再呼叫一次** `online_login`（會接著等同一個登入，不會重開）。
    - 回 `E_AUTH`「拒絕」：使用者在登入頁按了拒絕，問是否要重新登入。
    - 登入頁顯示「帳號或密碼錯誤」或「嘗試次數過多」是在瀏覽器裡處理的事（HIS 密碼每三個月變更；同一帳號連續 5 次錯誤鎖 15 分鐘），不要在對話中索取密碼。
+   - 回 `login_flow: reused`（沒開登入頁、附 `note`）：沿用本行程既有登入。常見原因是上一次 `online_login` 的回傳弄丟了（呼叫被中斷、使用者其實已在登入頁完成登入）；**以 `online_me` 確認身分與科部**，對得上就往下，科部空白或不是要用的帳號才 `online_logout` 後重登。
    - 回應的 `site.label` 告訴使用者目前是院內或院外站台。token 只存在 MCP 記憶體，30 分鐘自動更新，同一次登入最長 8 小時；開新工作階段或 `/reload-plugins` 後需重新登入。
 3. 選填設定（LlmGateway）：LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `LLMGW_API_KEY` 提供）。院外站台網址不需要設定（內建 `https://cgmh.ddns.net`），只有資訊室公告新網址時才以「院外站台網址」或 `STRUCMED_EXTERNAL_URL` 覆寫。四個設定項都是選填，`plugin configure` 列在 unconfigured 不代表要填，留空時預覽與線上照常可用。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
 4. 登入後：
