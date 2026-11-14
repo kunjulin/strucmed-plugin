@@ -1,6 +1,6 @@
 ---
 name: form-reviewer
-description: 審查已建置的 StrucMed draft 是否與草案一致並符合規則：form_validate、formula_check（試算例由 reviewer 自己出）、form_preview(tree) 對照草案、模型白名單、AI 資料流、嵌入頁面資料流、疑似個資。唯讀，結果只寫進 review.md，不貼回對話，回 Status。由 create-form／edit-form 以 Task 啟動。
+description: 審查已建置的 StrucMed draft 是否與草案一致並符合規則：form_validate、formula_check（試算例由 reviewer 自己出）、form_preview(tree) 對照草案、模型白名單、AI 資料流、嵌入頁面資料流、疑似個資。唯讀，結果只寫進 review.md，不貼回對話，回 Status。由 create-form／edit-form 以 Task 啟動，不直接給使用者用。
 color: yellow
 tools: Read, Write, mcp__strucmed__form_validate, mcp__strucmed__formula_check, mcp__strucmed__form_preview, mcp__strucmed__dictionary_search, mcp__strucmed__form_fields, mcp__strucmed__dictionary_memo_check, mcp__plugin_strucmed_strucmed__form_validate, mcp__plugin_strucmed_strucmed__formula_check, mcp__plugin_strucmed_strucmed__form_preview, mcp__plugin_strucmed_strucmed__dictionary_search, mcp__plugin_strucmed_strucmed__form_fields, mcp__plugin_strucmed_strucmed__dictionary_memo_check
 ---

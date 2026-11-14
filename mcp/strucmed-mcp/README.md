@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.13.1）
+# strucmed-mcp（v2.14.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -8,7 +8,7 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 - **站台偵測只看 `api/health`**：啟動時探測站台（只 GET、不帶憑證）；`STRUCMED_SITE=offline` 時完全不連線，`tools/list` 不列出線上 tool，呼叫一律回 `E_ONLINE_DISABLED`。
 - 只寫入 `<workspace>/.strucmed/`（draft、字典索引）與 `<workspace>/output/`（產出），兩者皆 gitignore。
 - 輸出與刪除 draft 採**兩段式確認**（`confirm_token`：HMAC、綁定內容雜湊、10 分鐘有效、金鑰只存在本次行程）。
-- 線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫另有**瀏覽器寫入確認頁**（2.3.0，`src/approve.mjs`）：在 127.0.0.1 開一頁列出 plan，使用者按「確認寫入」才寫入；還沒按時回 `pending` 與 `approve_url`，再呼叫一次接著等；按取消回 `E_REJECTED`。每次確認只能用一次，無法關閉；網址含一次性 nonce，POST 檢查 Host／Origin，頁面內容一律跳脫並帶嚴格 CSP。`STRUCMED_APPROVE_WAIT_MS` 調整單次等待（預設 120 秒）。
+- 線上寫入（範本新建／更新、字典、struNote 清單）的第二次呼叫另有**瀏覽器寫入確認頁**（2.3.0，`src/approve.mjs`）：在 127.0.0.1 開一頁列出 plan，使用者按「確認寫入」才寫入；還沒按時回 `pending` 與 `approve_url`，再呼叫一次接著等；按取消回 `E_REJECTED`。同一個 draft 已取得計畫、還沒開過頁的寫入（字典、補述、範本）列在同一頁，按一次涵蓋頁上全部（2.14.0；開頁後才取得的計畫另開一頁）；每份計畫的確認只能用一次，同一份內容（同雜湊）重新取得計畫時沿用確認；無法關閉；網址含一次性 nonce，POST 檢查 Host／Origin，頁面內容一律跳脫並帶嚴格 CSP。`STRUCMED_APPROVE_WAIT_MS` 調整單次等待（預設 120 秒）。
 - stdout 只輸出 JSON-RPC；診斷訊息寫 stderr。
 - 表單 JS 區塊預設只寫入產生器標記註解，不產生可執行程式碼；flag `formScript` 開啟時只由 `form_set_script` 的白名單樣板渲染（draft 只存樣板參數，不接受自由 JS／CSS；渲染後掃描禁用 token，定稿計畫原樣列出），進階的 `autorun`／`table-rows` 另需 `formScriptAdvanced`。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.13.1 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.14.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |

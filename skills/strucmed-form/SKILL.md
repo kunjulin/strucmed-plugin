@@ -2,9 +2,9 @@
 name: strucmed-form
 description: >
   長庚結構化病歷 2.0（StrucMed）表單製作的入口：依使用者意圖分流到設計新表單、改版既有表單、runtime 驗證、上架與表單 APP。
-  USE WHEN 使用者提到 StrucMed、結構化病歷 2.0、結構化表單、表單編輯器，或「幫我做一張 XX 表單／評估單／紀錄單」且涉及長庚 HIS 作業
-  （門診／住院／急診／手術／檢查／AI 小助手）；「以既有表單為範本改版／在原表單加欄位」；「加計算式／BMI／巨集按鈕／LLM 按鈕」；
-  「上架／發佈到編輯器」；「做成 app／平板用」。不處理：病人資料下載、刪除或覆寫線上表單與字典、直接寫入倉儲、在對話中要求密碼。
+  USE WHEN 使用者提到 StrucMed、結構化病歷 2.0、結構化表單、表單編輯器，但還看不出要做哪一件事（新表單、改版、預覽、字典、提示詞、上架、APP），
+  或問規則、問某個控制項怎麼寫。意圖已明確時直接用對應的流程 skill（create-form、edit-form、verify-runtime、dictionary-assist、tune-prompt、
+  publish-form、build-form-app），不必先經過這裡。不處理：病人資料下載、刪除或覆寫線上表單與字典、直接寫入倉儲、在對話中要求密碼。
 user-invocable: true
 argument-hint: "<表單需求，或：改版 <檔案或範本ID> | 預覽 <draft_id> | 調校 <draft_id> <itemid> | 上架 <draft_id> | app <範本ID>>"
 allowed-tools: Read, Glob, Grep, AskUserQuestion, Task, Bash(node *)
@@ -38,7 +38,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/check-env.mjs" --workspace <workspace>
 | 預覽表單、看計算式與 HIS 文字輸出 | `verify-runtime` | 需要 draft 已存在；預設只給連結與文字輸出 |
 | 這個欄位要綁哪個字典、別科有沒有現成的字典、幫字典寫補述、整理既有表單的字典讓別的表單引用 | `dictionary-assist` | 模式 1 找字典引用、2 G2 前以 CSV 補述、3 既有表單補述；寫入既有字典的補述要線上模式 |
 | 改某一顆 LLM 按鈕的提示詞、AI 回覆不好、想試跑或比較模型 | `tune-prompt` | 需要 draft 與 itemid；試跑要 flag `llmChatTest` 與去識別化樣本 |
-| 上架到編輯器／範本庫、更新線上範本 | `publish-form` | 定稿 G2 的執行段，可單獨對既有 draft 使用；唯一寫入線上的流程；離線時換成 `form_export` 由使用者匯入 |
+| 上架到編輯器／範本庫、更新線上範本 | `publish-form` | 定稿 G2 的執行段，可單獨對既有 draft 使用；範本與新字典只由它寫入線上（既有字典的補述另可由 `dictionary-assist` 以補述計畫核准後寫入）；離線時換成 `form_export` 由使用者匯入 |
 | 上線前檢查、AI 走閘道、做成 app／平板用 | `build-form-app` | B1：HIS 內執行的執行清單；B2：獨立 PWA（H0 本機 Docker 預設、H1 既有 struNote、H2 站台） |
 | 表單要自動提示、強調欄位、美化版面 | `edit-form`（既有表單）或 `create-form` | 欄位顏色字級底色用 `form_update_control` 的樣式欄位；區塊以上的樣式、即時提示、連動寫值、對照表、必填提醒是 `form_set_script` 的白名單片段，需 flag `formScript`（預設關；開文件自動跑巨集與表格加列另需 `formScriptAdvanced`）；規則 `references/ScriptAddonRules.md` |
 | 在表單裡嵌入院內網頁或決策支援系統、按鈕開院內頁面 | `create-form` 或 `edit-form` | embed 區塊與巨集 `OPENPANEL`，需 flag `embedArea`（3.11.0 起預設開；工具清單的 `form_add_area` type 有 `embed` 表示開著）；網址只接受 https 院內主機，參數只有病歷號、科別、使用者、門診序號與常數；規則 `references/FormDesignRules.md`〈嵌入頁面〉 |

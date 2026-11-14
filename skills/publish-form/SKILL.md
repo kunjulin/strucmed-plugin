@@ -2,11 +2,11 @@
 name: publish-form
 description: >
   定稿閘門 G2 的執行段：把驗證結果、HIS 文字輸出、字典與上架 plan 寫成定稿檔一次核准，再經 strucmed API v2 依序寫入：待新建字典（flag dictionaryWrite）→ 補述 → 新建範本（POST folders/{type}/templates）或更新以該範本改版的 draft（PUT templates/{id}，If-Match，flag templateUpdate）；離線時換成 form_export。
-  唯一會寫入線上的流程，全部兩段式並經閘門 G2。create-form、edit-form 在階段 4 內嵌，也可單獨對既有 draft 使用。USE WHEN 使用者說「上架」「發佈」「定稿」「存到編輯器／範本庫」「更新線上範本」。
+  範本與新字典只由本流程寫入線上，全部兩段式並經閘門 G2（既有字典的補述另可由 dictionary-assist 以 memo-plan.md 核准後寫入）。create-form、edit-form 在階段 4 內嵌，也可單獨對既有 draft 使用。USE WHEN 使用者說「上架」「發佈」「定稿」「存到編輯器／範本庫」「更新線上範本」。
   不處理：刪除範本、刪除字典、sys 資料夾、病人紀錄。
 user-invocable: true
 argument-hint: "<draft_id> [--folder usr|sub|dpt] [--update <templateID>]"
-allowed-tools: Read, Write, Edit, AskUserQuestion, Bash(node *)
+allowed-tools: Read, Write, Edit, AskUserQuestion, Bash(node *), mcp__strucmed__form_validate, mcp__strucmed__formula_check, mcp__strucmed__form_preview, mcp__strucmed__form_review_read, mcp__strucmed__form_import, mcp__strucmed__form_export, mcp__strucmed__dictionary_plan_export, mcp__strucmed__dictionary_plan_import, mcp__strucmed__online_me, mcp__strucmed__online_template_get, mcp__strucmed__online_template_versions, mcp__plugin_strucmed_strucmed__form_validate, mcp__plugin_strucmed_strucmed__formula_check, mcp__plugin_strucmed_strucmed__form_preview, mcp__plugin_strucmed_strucmed__form_review_read, mcp__plugin_strucmed_strucmed__form_import, mcp__plugin_strucmed_strucmed__form_export, mcp__plugin_strucmed_strucmed__dictionary_plan_export, mcp__plugin_strucmed_strucmed__dictionary_plan_import, mcp__plugin_strucmed_strucmed__online_me, mcp__plugin_strucmed_strucmed__online_template_get, mcp__plugin_strucmed_strucmed__online_template_versions
 ---
 
 # publish-form
@@ -50,10 +50,12 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
 
 ## 執行
 
-6. 依序（`PublishWorkflow.md` §4）：字典新建（`online_dictionary_batch`／`create`）→ 補述（`online_dictionary_memo_batch`：同一份 `items`、`draft_id`、plan 的 `etags`）→ 範本（更新帶 `if_match`），各做第二次呼叫。離線只有 `form_export` 第二次呼叫。
+6. **先說一句會跳幾頁確認**：沒有待新建字典時「接下來會在瀏覽器開一頁確認，列出這次的全部寫入，按一次即可」；有待新建字典時「會開兩頁：先確認字典（與補述），字典建好後再確認範本」（範本的 plan 要等字典有 id 才拿得到）。離線不用說。
+   **token 快過期時先重取**：第二次呼叫前，若該項的第一次呼叫已超過 8 分鐘（`confirm_token` 10 分鐘失效），先重新做第一次呼叫；plan 與定稿檔相同就直接帶新的 `confirm_token` 做第二次呼叫，不必重核准，已在確認頁按過的同一份內容也不會再開頁；不同才 `Revision` +1 重新呈現。
+   依序（`PublishWorkflow.md` §4）：字典新建（`online_dictionary_batch`／`create`）→ 補述（`online_dictionary_memo_batch`：同一份 `items`、`draft_id`、plan 的 `etags`）→ 範本（更新帶 `if_match`），各做第二次呼叫。離線只有 `form_export` 第二次呼叫。
    - 有 `pending-fhir.json` 時：字典完成後，把新字典的 `{ dic_id, fhir }` 併進 `memo-items.json`，重新做補述的第一次呼叫，plan 與定稿檔比對後才做第二次呼叫（`PublishWorkflow.md` §4 第 2 步）；`reused` 的字典不併入，列給使用者決定。
    - 有建字典時：字典完成後才做範本的第一次呼叫，plan 與「### 上架」比對。這是 G2 核准後的第一次呼叫，一樣只取計畫：先再說一次「這次只產生計畫，不寫入；若被權限擋下請允許」。相同就原樣列給使用者、接著第二次呼叫；不同就停下來，`Revision` +1 重新呈現。
-   - 第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起）：回 `pending`（附 `approve_url`）時，請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，再帶同一個 `confirm_token` 呼叫一次。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消）就停止，需要時重新取得計畫。確認頁被關掉時把 `approve_url` 給使用者重開（`PublishWorkflow.md` §4）。
+   - 第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起），呼叫內最多等約 2 分鐘。**同一個 draft 已取得計畫的寫入列在同一頁**（MCP 2.14.0，回傳 `bundled` 是頁上的項數），使用者按一次就涵蓋全部，其餘幾項的第二次呼叫直接寫入、不再開頁。回 `pending`（附 `approve_url`）時**先不要問使用者**：直接帶同一個 `confirm_token` 再呼叫一次（再等約 2 分鐘）；仍是 `pending` 才請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，按完回到對話說一聲。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消，頁上全部都不寫）就停止，需要時重新取得計畫。確認頁被關掉時把 `approve_url` 給使用者重開（`PublishWorkflow.md` §4）。
    - 補述回 `E_CONFLICT` 時以 `details.stale` 合併後重取 plan 並重新給使用者確認（不影響已完成的步驟）。token 過期就重新第一次呼叫，plan 相同時定稿檔不用改。錯誤依 `PublishWorkflow.md` §4 處理；範本的 `E_UPSTREAM` 帶 `pending` 時**不要重試**；字典寫入失敗（`pending_left` 非空或 `E_UPSTREAM`）照回傳的 `next` 重做第一次呼叫，plan 與定稿相同時不必重核准。
 7. **收尾**：`online_template_get`（`save: true`，只回摘要）取回確認名稱、捷徑、作業別與控制項數；更新另跑 `online_template_versions`。最後交付（`PublishWorkflow.md` §5，≤ 15 行）：有體系升級建議時註明「請轉給體系字典管理者在字典頁升級；升級不改 id，這次上架的表單不用改」。
 

@@ -6,7 +6,7 @@ description: >
   不處理：覆寫線上原範本、刪除範本、病人資料。
 user-invocable: true
 argument-hint: "<來源 .htm／.json 路徑或範本 ID> <要改什麼>"
-allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *)
+allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *), mcp__strucmed__form_import, mcp__strucmed__form_preview, mcp__strucmed__form_validate, mcp__strucmed__formula_check, mcp__strucmed__form_add_area, mcp__strucmed__form_add_control, mcp__strucmed__form_update_control, mcp__strucmed__form_update_area, mcp__strucmed__form_update_meta, mcp__strucmed__form_move_control, mcp__strucmed__form_remove_control, mcp__strucmed__form_remove_area, mcp__strucmed__form_set_script, mcp__strucmed__form_fields, mcp__strucmed__form_review_read, mcp__strucmed__dictionary_search, mcp__strucmed__dictionary_suggest, mcp__strucmed__dictionary_plan_import, mcp__strucmed__online_template_get, mcp__strucmed__online_folder_list, mcp__strucmed__online_dictionary_search, mcp__plugin_strucmed_strucmed__form_import, mcp__plugin_strucmed_strucmed__form_preview, mcp__plugin_strucmed_strucmed__form_validate, mcp__plugin_strucmed_strucmed__formula_check, mcp__plugin_strucmed_strucmed__form_add_area, mcp__plugin_strucmed_strucmed__form_add_control, mcp__plugin_strucmed_strucmed__form_update_control, mcp__plugin_strucmed_strucmed__form_update_area, mcp__plugin_strucmed_strucmed__form_update_meta, mcp__plugin_strucmed_strucmed__form_move_control, mcp__plugin_strucmed_strucmed__form_remove_control, mcp__plugin_strucmed_strucmed__form_remove_area, mcp__plugin_strucmed_strucmed__form_set_script, mcp__plugin_strucmed_strucmed__form_fields, mcp__plugin_strucmed_strucmed__form_review_read, mcp__plugin_strucmed_strucmed__dictionary_search, mcp__plugin_strucmed_strucmed__dictionary_suggest, mcp__plugin_strucmed_strucmed__dictionary_plan_import, mcp__plugin_strucmed_strucmed__online_template_get, mcp__plugin_strucmed_strucmed__online_folder_list, mcp__plugin_strucmed_strucmed__online_dictionary_search
 ---
 
 # edit-form
@@ -50,9 +50,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 ## 4. 階段 3：審閱迴圈
 
-同 `create-form` §4：`form_preview(html)` 與 `verify-runtime` 給連結 → 使用者在預覽頁看 → `form_review_read` → 三類處理 → 重新 `form_preview(html, applied_seq)` → 每輪 ≤ 5 行。沒有預覽頁時退回對話。
+同 `create-form` §4：`form_preview(html)` 與 `verify-runtime` 給連結 → 使用者在預覽頁看 → `form_review_read` → 三類處理（`references/ReviewLoop.md` §1）→ 重新 `form_preview(html, applied_seq)` → 每輪 ≤ 5 行。沒有預覽頁時退回對話。
 
-大改結構走 `create-form` §4〈重建流程〉，差別只有第 3 步：**重新 `form_import`**（同來源、同 `for_update`）得到新 `draft_id`，builder 在新 draft 上重做，舊 draft 保留不刪。`form_import` 沒有 `from_draft_id`，補述一律走第 4 步的 CSV。
+大改結構走 `references/ReviewLoop.md` §2〈重建流程〉，差別只有第 3 步：**重新 `form_import`**（同來源、同 `for_update`）得到新 `draft_id`，builder 在新 draft 上重做，舊 draft 保留不刪。`form_import` 沒有 `from_draft_id`，補述一律走第 4 步的 CSV。
 
 ## 5. 階段 4、5：定稿 G2 與交付
 

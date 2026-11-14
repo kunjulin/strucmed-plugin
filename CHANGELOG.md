@@ -14,6 +14,30 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.11.2（MCP 2.14.0）— 2026-11-14：提示詞稽核與少問幾輪——觸發不重疊、寫入說法一致、確認頁合併成一頁
+
+**MCP 2.14.0：同一個 draft 的線上寫入合併在一頁確認**
+- `approve.mjs`：`offer` 多帶 `group`（draft_id）。第一次開確認頁時，同 group、還沒開過頁的計畫（字典新建、補述、範本）列在同一頁，按一次「確認寫入」涵蓋頁上全部，其餘幾項的第二次呼叫直接寫入；按取消則頁上全部不寫。開頁後才取得的計畫不加進已開的頁，另開一頁。每份計畫仍綁自己的 payload 雜湊與 `confirm_token`，確認只能用一次。`pending` 回傳多一個 `bundled`（頁上項數）。
+- 已確認、還沒寫入的計畫以同一份內容（同雜湊）重新取得計畫時沿用確認並延長效期；確認後效期從按下確認起算。token 過期重取計畫不必再按一次。
+- 效果：沒有待新建字典時確認頁從最多 2 頁（補述、範本）變 1 頁；有待新建字典時從最多 3 頁變 2 頁（範本的 plan 要等字典有 id 才拿得到）。
+- `online_dictionary_memo_batch` 的 handler 讀 `draft_id`（schema 本來就有）當 group。新增 `test/approve-bundle.test.mjs`。`SecurityInvariants.md` 第 2 條、MCP README 同步。
+
+**少問幾輪（skill）**
+- `create-form` 需求階段寫明 `AskUserQuestion` 一次最多 4 題、每題 4 個選項：超過時取優先的 4 題，其餘採建議值標「（預設，使用者未作答）」，不拆第二輪。
+- 他科候選字典不再在建 draft 前停下來問：先列待新建建好，第一輪審閱時與其他問題一起問，採用就 `form_update_control` 改綁。
+- reviewer 的建議項（版面類、`W_PROMPT_*`）併進審閱迴圈那一輪的提問，不在定稿前另問一輪；沒問過的才保留原本的定稿前一問。
+- `publish-form`：寫入前先說會跳幾頁確認；第一次呼叫超過 8 分鐘就先重取 plan（同內容不必重核准、不再開頁）；回 `pending` 時先直接再呼叫一次（再等約 2 分鐘），仍未確認才請使用者回對話說一聲。
+
+**提示詞稽核**
+
+- **入口 `strucmed-form` 不再搶具體動作的觸發**：描述原本含「幫我做一張 XX 表單」「上架／發佈」「做成 app」「以既有表單為範本改版」，與 `create-form`、`publish-form`、`build-form-app`、`edit-form` 重複，模型可能任選一個，且經入口時多載入一次。改為只在意圖不明或問規則時觸發，並寫明意圖明確時直接用流程 skill。
+- **「唯一寫入線上的流程」改成與實際一致**：`dictionary-assist` 的既有字典補述本來就能以 `memo-plan.md`（或單本 plan＋瀏覽器確認頁）在 G2 之外寫入（`hooks/gate-check.js` 的 `DRAFT_OPTIONAL`）。`publish-form`、`strucmed-form`、`AGENTS.md` 第 3 條、README 改寫為「範本與新字典只由 publish-form 寫入」並註明補述例外。
+- **`dictionary-assist` 模式 1 單本補述**：寫明仍要先給使用者看 plan、核准後才帶 `confirm_token`（不帶 `draft_id` 時 hooks 不檢查計畫檔）；在 create-form／edit-form 流程中改走 G2 前的 CSV 補述，不單本寫入。描述註明建 draft 前的字典綁定由 `form-planner` 負責，不另外載入本 skill。
+- **`create-form`、`edit-form`、`publish-form` 的 `allowed-tools` 補上直接呼叫的 MCP tool**（本機 draft 操作與唯讀查詢；線上寫入 tool 與 `form_delete` 不列入，仍照常確認），審閱迴圈不再每次跳權限確認。
+- **`create-form` 小表單捷徑**：存檔欄位 ≤ 12、區塊 ≤ 3，且沒有計算式、巨集、LLM 按鈕、表格、頁籤、表單 JS、嵌入頁面、不找他科字典時，本 skill 自己寫草案、依 `form-builder` 的規則建置、以 `form_validate`＋`form_preview(tree)` 驗證，不啟動 `form-planner`／`form-builder`／第一輪 `form-reviewer`。G2 前最後一輪仍是 `form-reviewer`；審閱中加了不符條件的東西時，那次新增回到子代理流程。
+- **審閱迴圈的三類處理表與〈重建流程〉移到 `references/ReviewLoop.md`**：`create-form` §4 只留步驟與指標（主 skill 少約 4KB，審閱迴圈第一次進入時才讀）；`edit-form` 的兩處引用改指向新檔。
+- **agent 描述**：`form-builder` 的描述只寫用途，「每輪一個呼叫」「不跑 verify-plan」留在內文；`form-reviewer` 補「不直接給使用者用」；`AGENTS.md` 第 2 條的 headless 子代理補上 `dictionary-annotator`。
+
 ## 3.11.1（MCP 2.13.1）— 2026-11-08：manifest 不再提醒避開「加載表單」；README 補嵌入頁面使用須知
 
 - 站台編輯器平台 PR 188（2026-11-08 起部署的院內站台已含）已修正加載表單的欄位編號位移，實測含嵌入頁面的表單附加後 `inputs`／`outputs` 與計算式都正確。移除 `export.mjs` 的 `EMBED_APPEND_WARNING`：manifest「嵌入頁面資料流」不再附這句提醒；README、`FormDesignRules.md` 註明更早的站台才需避開。`test/embed.test.mjs` 改為斷言 manifest 不含「加載表單」。

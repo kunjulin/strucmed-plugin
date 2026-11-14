@@ -4,7 +4,7 @@ description: >
   StrucMed 欄位字典助手：(1) 為存檔欄位、計算式、巨集、LLM prompt 找合適的字典並給引用方式；(2) 定稿 G2 前以 CSV 補述：字典一覽輸出成 CSV，AI 先起草新字典的補述
   （表單功能、使用情境、交換引用等 11 個欄位＋FHIR），使用者編輯後匯回；(3) 解析既有表單，為它用到的字典補上補述，讓之後的表單可以引用。
   USE WHEN 使用者說「這個欄位要綁哪個字典」「有沒有現成的字典」「別科有沒有」「幫字典寫補述／說明」「整理這張表單的字典」
-  「讓別的表單可以引用」，或 create-form／edit-form／tune-prompt 需要選字典、寫補述時。不處理：刪除或改名字典、升級為體系字典
+  「讓別的表單可以引用」，或 create-form／edit-form 的審閱迴圈、G2 前、tune-prompt 需要選字典、寫補述時（建 draft 前的字典綁定由 form-planner 負責，不另外載入本 skill）。不處理：刪除或改名字典、升級為體系字典
   （由體系字典管理者在字典頁操作）、改別人寫的字典說明 desc、病人資料。
 user-invocable: true
 argument-hint: "find <draft_id> <itemid> | csv <draft_id> | annotate <template_id|.htm|draft_id>"
@@ -37,7 +37,7 @@ allowed-tools: Read, Write, AskUserQuestion, Task, Bash(node *), mcp__strucmed__
    - 寫計算式、巨集：用 `cite.ref`（`A<itemid>`）引用欄位，計算式說明參考 `cite.calx`。
    - 寫 LLM prompt：欄位描述用 `cite.prompt`（即 `memo.llm`），交給 `tune-prompt`。
    - 沒有合適的：規劃新建字典（`dictionary.name`＋`dictionary.comment`），補述由模式 2 起草。
-5. 選定的字典沒有補述或缺三個角度時，提議順手補（模式 3 的單本版：`online_dictionary_memo_set`）。
+5. 選定的字典沒有補述或缺三個角度時，提議順手補（模式 3 的單本版：`online_dictionary_memo_set`）。仍是兩段式：第一次呼叫的 plan 原樣給使用者看、`AskUserQuestion` 核准後才帶 `confirm_token`；不帶 `draft_id` 時 hooks 不檢查計畫檔，核准只靠這一步與瀏覽器確認頁，不要省略。在 create-form／edit-form 流程中不單本寫入：改在 G2 前的 CSV 補述（模式 2，該列 `action` 改 `memo`）處理，到 G2 一起寫入。
 
 ## 模式 2：G2 前以 CSV 補述
 

@@ -124,7 +124,7 @@ function planCommon(d, v, built, user, base) {
 // 寫入性質放在描述最前面（M15）：Claude Code auto mode 的分類器看描述判斷，第一次呼叫只產生計畫不該被當成寫入（F-42）
 const TWO_STEP = '（只產生計畫，不寫入）第一次呼叫不帶 confirm_token，只回 plan。（寫入，需 confirm_token 與瀏覽器確認）第二次帶 confirm_token 才寫入。';
 // 範本與字典都走同一段確認（approve.mjs）：等 STRUCMED_APPROVE_WAIT_MS（預設 2 分鐘），使用者按得快就在這次呼叫內完成，來不及才回 pending（F-44）
-const SECOND_CALL = '第二次呼叫會在瀏覽器開啟寫入確認頁，並在呼叫內等候最多約 2 分鐘：使用者按「確認寫入」就直接寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次（確認頁被關掉可重開 approve_url）。';
+const SECOND_CALL = '第二次呼叫會在瀏覽器開啟寫入確認頁，並在呼叫內等候最多約 2 分鐘：使用者按「確認寫入」就直接寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次（確認頁被關掉可重開 approve_url）。同一個 draft 已取得計畫、還沒開過頁的寫入（字典、補述、範本）會列在同一頁，按一次確認涵蓋全部，其餘幾項的第二次呼叫直接寫入；開頁後才取得的計畫另開一頁。已確認的內容重新取得計畫（例如 token 過期）時沿用確認。';
 
 export const ONLINE_WRITE_TOOLS = [
   {
@@ -144,7 +144,7 @@ export const ONLINE_WRITE_TOOLS = [
       const h = confirm.hashPayload({ action: 'create', base, user: user.userId, draft: draftHash(d), folder_type });
       if (!confirm_token) {
         const plan = { action: '新增範本', folder_type, folder_code: folderCode(folder_type, user.deptNo, user.userId), ...planCommon(d, v, built, user, base) };
-        approve.offer('online_template_create', h, '新增範本', plan);
+        approve.offer('online_template_create', h, '新增範本', plan, draft_id);
         return {
           plan,
           confirm_token: confirm.issue('online_template_create', h),
@@ -217,7 +217,7 @@ export const ONLINE_WRITE_TOOLS = [
         const plan = { action: `更新範本 ${id}`, template_id: id, if_match: etag, meta: m.meta, diff, ...common,
           name: m.write.name, shortcut: m.write.shortcut, groups: m.write.groups, description: m.write.description,
           publish_on_save: !!(m.write.shortcut && m.write.groups.length), warnings: [...warnings, ...common.warnings] };
-        approve.offer('online_template_update', h, `更新範本 ${id}`, plan);
+        approve.offer('online_template_update', h, `更新範本 ${id}`, plan, draft_id);
         return {
           plan,
           confirm_token: confirm.issue('online_template_update', h),
@@ -281,7 +281,7 @@ export const ONLINE_WRITE_TOOLS = [
       if (!confirm_token) {
         const plan = { action: '新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept', name, comment: desc, memo: memoObj, dic_comment_json: dicComment, force: !!force, used_by_itemids: usedBy,
           note: '同名未刪除字典存在時會沿用既有（reused），不會重複建立', warnings: [...(desc ? [] : ['W_DICT_NO_DESC：沒有一行說明，字典建立後別人看不懂用途']), ...keyWarnings] };
-        approve.offer('online_dictionary_create', h, '新增字典', plan);
+        approve.offer('online_dictionary_create', h, '新增字典', plan, draft_id);
         return {
           plan,
           confirm_token: confirm.issue('online_dictionary_create', h),
@@ -332,7 +332,7 @@ export const ONLINE_WRITE_TOOLS = [
         const plan = { action: '批次新增字典', site: base, user_id: user.userId, dept_no: user.deptNo, scope: 'dept',
           rows: (d.pendingDictionaries || []).map(p => ({ name: p.name, comment: p.comment || '', memo: p.memo || null })),
           warnings: [...(d.pendingDictionaries || []).filter(p => !(p.comment || '').trim()).map(p => `W_DICT_NO_DESC：「${p.name}」沒有一行說明`), ...keyWarnings] };
-        approve.offer('online_dictionary_batch', h, '批次新增字典', plan);
+        approve.offer('online_dictionary_batch', h, '批次新增字典', plan, draft_id);
         return { plan, confirm_token: confirm.issue('online_dictionary_batch', h),
           next: '請把 plan 給使用者確認，同意後帶 confirm_token 再呼叫一次' };
       }
@@ -411,7 +411,7 @@ export const ONLINE_WRITE_TOOLS = [
         fhir: { type: 'array', items: { type: 'object' }, description: 'FHIR 對應（整組取代）' } } } },
       draft_id: str('選填：補述計畫對應的 draft（hooks 會檢查 .strucmed/plans/<draft_id>/memo-plan.md 或 publish-plan.md 的核准）'),
       etags: { type: 'object', description: '第二次呼叫帶入 plan 的 etags（{ dic_id: etag }）' }, confirm_token: str('第二次呼叫帶入') } },
-    async handler({ items, etags, confirm_token }) {
+    async handler({ items, draft_id, etags, confirm_token }) {
       if (!Array.isArray(items) || !items.length) fail(E.INVALID_INPUT, 'items 至少一本');
       if (items.length > MEMO_BATCH_MAX) fail(E.LIMIT, `一次最多 ${MEMO_BATCH_MAX} 本`);
       const ids = items.map(x => checkId(x && x.dic_id, 'items[].dic_id'));
@@ -438,7 +438,7 @@ export const ONLINE_WRITE_TOOLS = [
           rows: rows.map(r => ({ dic_id: r.cur.id, name: r.cur.dicName, dic_type: r.cur.dicType, level: dc.LEVEL_LABEL[r.cur.level] || r.cur.level, desc: r.cur.desc,
             memo_by: r.cur.memo_by || '', memo_at: r.cur.memo_at || '', before: { memo: r.cur.memo, fhir: r.cur.fhir }, after: r.after })),
           etags: Object.fromEntries(rows.map(r => [r.cur.id, r.cur.etag])), no_change: noChange, warnings };
-        approve.offer('online_dictionary_memo_batch', h, `批次更新字典補述（${rows.length} 本）`, plan);
+        approve.offer('online_dictionary_memo_batch', h, `批次更新字典補述（${rows.length} 本）`, plan, draft_id);
         return { plan, etags: plan.etags, confirm_token: confirm.issue('online_dictionary_memo_batch', h),
           next: '請把 plan（逐本改前／改後）給使用者確認，同意後帶 confirm_token 與 etags 再呼叫一次' };
       }

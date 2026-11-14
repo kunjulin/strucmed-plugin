@@ -4,6 +4,9 @@
 //   - plan 在第一段呼叫時記下（offer），第二段只顯示記下的那份，與 confirm_token 綁同一個 payload 雜湊
 //   - 每次確認只能用一次（consume）；按取消、逾時或 MCP 重啟都要重新取得計畫
 //   - 只聽 127.0.0.1；網址含一次性 nonce，POST 另檢查 Host／Origin；頁面內容一律跳脫，不載入外部資源
+//   - 合併確認（3.11.2）：offer 帶 group（draft_id）時，第一次開頁會把同 group、還沒開過頁的計畫一起列在同一頁，
+//     按一次「確認寫入」就涵蓋頁上每一份（各自仍綁自己的 payload 雜湊與 confirm_token）；之後才記下的計畫不在頁上，要另開一頁
+//   - 已確認但還沒寫入的計畫，以同一份 payload（同雜湊）重新 offer 時沿用確認並延長效期：token 過期重取計畫不必再按一次
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -12,22 +15,25 @@ import { E, fail } from './errors.mjs';
 const TTL_MS = 10 * 60_000;   // 與 confirm_token 相同
 const waitMs = () => { const n = Number(process.env.STRUCMED_APPROVE_WAIT_MS); return Number.isFinite(n) && n >= 0 ? Math.min(n, 300_000) : 120_000; };
 
-const offers = new Map();     // `${action}|${hash}` → { title, plan, expires, flow, approved }
+const offers = new Map();     // `${action}|${hash}` → { title, plan, group, expires, flow }
 
 const key = (action, hash) => `${action}|${hash}`;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function sweep() {
   const now = Date.now();
-  for (const [k, o] of offers) if (now > o.expires) { closeFlow(o); offers.delete(k); }
+  for (const [k, o] of offers) if (now > o.expires) { offers.delete(k); closeFlow(o); }
 }
 
-// 第一段呼叫：記下要給使用者確認的 plan
-export function offer(action, hash, title, plan) {
+// 第一段呼叫：記下要給使用者確認的 plan。group＝draft_id（同一次定稿的寫入），沒有就不合併
+export function offer(action, hash, title, plan, group = '') {
   sweep();
   const k = key(action, hash);
-  closeFlow(offers.get(k));
-  offers.set(k, { title, plan, expires: Date.now() + TTL_MS, flow: null, approved: false });
+  const old = offers.get(k);
+  if (old && old.flow && old.flow.result === 'approved') { old.expires = Date.now() + TTL_MS; return; }   // 同內容已確認：沿用
+  offers.delete(k);
+  closeFlow(old);
+  offers.set(k, { title, plan, group: String(group || ''), expires: Date.now() + TTL_MS, flow: null });
 }
 
 const LABELS = {
@@ -48,29 +54,43 @@ function value(v) {
   return esc(v);
 }
 
-function page(o, nonce, state) {
-  const plan = o.plan || {};
+function table(plan = {}) {
   const keys = [...SHOWN_FIRST.filter(k => k in plan), ...Object.keys(plan).filter(k => !SHOWN_FIRST.includes(k))];
-  const rows = keys.map(k => `<tr><th>${esc(LABELS[k] || k)}</th><td>${value(plan[k])}</td></tr>`).join('');
+  return `<table>${keys.map(k => `<tr><th>${esc(LABELS[k] || k)}</th><td>${value(plan[k])}</td></tr>`).join('')}</table>`;
+}
+
+function page(members, nonce, state) {
+  const o = members[0];
+  const title = members.length > 1 ? `${members.length} 項寫入` : o.title;
+  const sections = members.length > 1
+    ? `<p><b>這頁一次確認下列 ${members.length} 項寫入</b>，按「確認寫入」即涵蓋全部，依序執行；按取消則全部不寫入。</p>` +
+      members.map((m, i) => `<h2>${i + 1}. ${esc(m.title)}</h2>${table(m.plan)}`).join('')
+    : table(o.plan);
   const body = state === 'approved' ? '<p class="ok">已確認。可以關閉此頁，回到 AI 工具。</p>'
     : state === 'rejected' ? '<p class="no">已取消，不會寫入。可以關閉此頁。</p>'
     : `<form method="post" action="/decide"><input type="hidden" name="n" value="${esc(nonce)}">` +
       '<button name="d" value="approve" class="ok">確認寫入</button> <button name="d" value="reject">取消</button></form>' +
       '<p class="m">10 分鐘內未確認即失效；按取消不會寫入。</p>';
+  const head = title;
   return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    `<title>strucmed 寫入確認：${esc(o.title)}</title><style>body{font-family:system-ui,'Microsoft JhengHei',sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#222}` +
+    `<title>strucmed 寫入確認：${esc(head)}</title><style>body{font-family:system-ui,'Microsoft JhengHei',sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#222}` +
     'h1{font-size:20px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;font-size:14px}' +
     'th{width:9em;background:#f5f5f5;white-space:nowrap}pre{margin:0;white-space:pre-wrap;font-size:12px}button{font-size:16px;padding:8px 20px;margin-right:8px;cursor:pointer}' +
-    'button.ok{background:#0b6e4f;color:#fff;border:0}p.ok{color:#0b6e4f;font-weight:bold}p.no{color:#a00;font-weight:bold}.m{color:#777}</style></head><body>' +
-    `<h1>strucmed 寫入確認：${esc(o.title)}</h1><p>這是 AI 工具要寫入線上 strucmed 的內容，請核對站台、登入者、資料夾與名稱。只有在這頁按「確認寫入」才會寫入。</p>` +
-    `<table>${rows}</table>${body}</body></html>`;
+    'h2{font-size:16px;margin-top:20px}button.ok{background:#0b6e4f;color:#fff;border:0}p.ok{color:#0b6e4f;font-weight:bold}p.no{color:#a00;font-weight:bold}.m{color:#777}</style></head><body>' +
+    `<h1>strucmed 寫入確認：${esc(head)}</h1><p>這是 AI 工具要寫入線上 strucmed 的內容，請核對站台、登入者、資料夾與名稱。只有在這頁按「確認寫入」才會寫入。</p>` +
+    `${sections}${body}</body></html>`;
 }
 
+// 頁面由同頁的計畫共用：還有別份計畫在用這一頁時只解除這一份，最後一份才關掉伺服器
 function closeFlow(o) {
-  if (o && o.flow) { try { o.flow.server.close(); } catch { /* 已關閉 */ } o.flow = null; }
+  if (!o || !o.flow) return;
+  const f = o.flow;
+  o.flow = null;
+  if ([...offers.values()].some(x => x.flow === f)) return;
+  try { f.server.close(); } catch { /* 已關閉 */ }
 }
 
-async function startFlow(o) {
+async function startFlow(members) {
   const nonce = crypto.randomBytes(16).toString('hex');
   let resolve;
   const done = new Promise(r => { resolve = r; });
@@ -83,7 +103,7 @@ async function startFlow(o) {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(400, '<p>連結無效</p>');
     if (req.method === 'GET' && u.pathname === '/approve') {
       if (u.searchParams.get('n') !== nonce) return send(404, '<p>連結無效或已失效，請回到 AI 工具重新取得計畫。</p>');
-      return send(200, page(o, nonce, state));
+      return send(200, page(members, nonce, state));
     }
     if (req.method === 'POST' && u.pathname === '/decide') {
       const origin = req.headers.origin;
@@ -96,7 +116,7 @@ async function startFlow(o) {
         const ok = n.length === nonce.length && crypto.timingSafeEqual(Buffer.from(n), Buffer.from(nonce));
         if (!ok || state !== 'pending') return send(400, '<p>連結無效或已處理過，請回到 AI 工具。</p>');
         state = f.get('d') === 'approve' ? 'approved' : 'rejected';
-        send(200, page(o, nonce, state));
+        send(200, page(members, nonce, state));
         resolve(state);
         setTimeout(() => server.close(), 1000).unref();
       });
@@ -107,7 +127,8 @@ async function startFlow(o) {
   await new Promise((ok, no) => { server.once('error', no); server.listen(0, '127.0.0.1', ok); });
   const url = `http://127.0.0.1:${server.address().port}/approve?n=${nonce}`;
   const flow = { server, url, done, result: null };
-  done.then(r => { flow.result = r; });
+  // 確認後效期從按下確認起算：同頁其餘幾份要等前面的寫入做完才輪到
+  done.then(r => { flow.result = r; if (r === 'approved') for (const m of members) m.expires = Date.now() + TTL_MS; });
   return flow;
 }
 
@@ -131,12 +152,21 @@ export async function awaitApproval(action, hash) {
   const o = offers.get(k);
   if (!o) fail(E.CONFIRM_MISMATCH, '找不到這份計畫的確認（已過期、已使用，或 MCP 重新啟動過），請重新取得計畫');
   let opened = null;
-  if (!o.flow) { o.flow = await startFlow(o); opened = openBrowser(o.flow.url); }
+  if (!o.flow) {
+    // 同一次定稿（同 group）還沒開過頁的計畫一起列在這一頁
+    const members = [o, ...(o.group ? [...offers.values()].filter(x => x !== o && x.group === o.group && !x.flow) : [])];
+    const flow = await startFlow(members);
+    for (const m of members) m.flow = flow;
+    opened = openBrowser(flow.url);
+  }
   const f = o.flow;
+  const count = [...offers.values()].filter(x => x.flow === f).length;
   const r = f.result || await Promise.race([f.done, new Promise(ok => setTimeout(ok, waitMs()).unref())]);
   if (!r) {
     return { pending: true, approve_url: f.url, browser_opened: opened,
+      ...(count > 1 && { bundled: count }),
       message: (opened === false ? '無法自動開啟瀏覽器，請使用者自行開啟 approve_url。' : '已在瀏覽器開啟寫入確認頁。') +
+        (count > 1 ? `這一頁一次列出本次定稿的 ${count} 項寫入，按一次確認即涵蓋全部，之後其餘幾項的第二次呼叫不會再開頁。` : '') +
         '請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，完成後帶同一個 confirm_token 再呼叫一次；尚未寫入。' };
   }
   offers.delete(k);
