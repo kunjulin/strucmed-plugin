@@ -1,4 +1,4 @@
-# LLM 提示詞樣板（LLMQUERY／LLMvision／LLM 控制項）
+# LLM 提示詞樣板（LLMQUERY／LLMvision／LLMATTACH／LLM 控制項）
 
 > 由 `form-planner`、`form-reviewer`、`create-form`、`edit-form`、`tune-prompt` 載入。依據：GitBook「LLM 控制項 › Prompt 文字指令」「函數(巨集專用) › 生成式 AI 巨集函數」與平台 runtime 實測。模型名稱以 `references/ModelWhitelist.md`（`llmgateway_models` 快取）為準。
 > 工作流（多步驟巨集、語音、HIS 帶入）見 `references/MacroRecipes.md`；語法陷阱見 `references/FormulaMacroRules.md`。
@@ -73,6 +73,12 @@ IF(LEN(A16) < 10,
 - 步驟 2 `LLMQUERY(A<整理>, …, "qwen332b")`：把步驟 1 的文字整理成需要的格式（B 樣板），或給出印象（C 樣板）。
 - 不要在一個 prompt 同時要求「看圖＋推論」，視覺模型推理弱、文字模型看不到圖。
 - 影像由使用者在 HIS 端選取並以 base64 送出；目標欄位必須是 textarea（`E_MACRO_TARGET_TYPE`）。
+
+### D2. 附件容器（LLMATTACH，flag `attachBox`）
+- 一個步驟就把影像、文件文字、逐字稿一起送出：`LLMATTACH(A<結果>, prompt, "", "<容器id>")`（`MacroRecipes.md` R11）。文件的文字會自動附在 prompt 後面的「【附件內容】」，影像的說明附在「【影像說明】」，prompt 不必自己接。
+- prompt 照 P1～P5 寫，並說明每種附件要做什麼：「影像只描述與轉錄看到的數值；報告與指引以文字為準；附件沒有的資訊寫 not available」。
+- 視覺模型推理弱：要從截圖取數值再推論時，仍建議分兩步：`LLMATTACH` 只轉錄，接著 `LLMQUERY` 整理（同 D 樣板）。模型夠強（能讀影像又能推理）時可以一步完成。
+- 大型對照表（例 ICD-10 的 Excel）不要整份送：用 `ATTACHTEXT(容器id, 關鍵字, 字數上限)` 只取含關鍵字的列。
 
 ### E. 臨床建議（衛教、處置提醒）
 - 模型：`qwen3627b`；prompt 除 P1～P5 外加：「依據請標示來自紀錄的哪一句」「不要開立藥物劑量」「最後一行固定『※ AI 產生，需由醫師查核』」。

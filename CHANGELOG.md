@@ -14,6 +14,34 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.0（MCP 2.15.0）— 2026-11-15：附件容器（attachbox 控制項、巨集 LLMATTACH），flag `attachBox` 預設關
+
+平台已有附件容器（kunjulin/strucmed #242～#254：影像、PDF、Excel／CSV、文字、音檔轉逐字稿；院外站台已部署並實測，院內尚未部署）。這一版讓 plugin 能產生、檢查、預覽用到它的表單。
+
+**MCP 2.15.0**
+- **flag `attachBox`（預設關）**：開啟後 `form_add_control` 的 datatype 多一個 `attachbox`（工具清單依 flag 列出，skill 以此判斷可不可用）。關閉時新增回 `E_FEATURE_DISABLED`；改版表單裡既有的容器與巨集原樣保留，問題以 warning（原表單既有）列出。
+- **控制項**：`datavalue` 是容器上的提示文字；`attach_kinds`（image／pdf／sheet／text／audio，預設全部）、`attach_max`（1–30，預設 8）、`attach_pages`（1–100，預設 20），`form_update_control` 可改。產生的欄位與站台編輯器存下的相同（`tocalc` false、`attachkinds`、`attachmax`、`attachpages`）。不能綁字典、必填、To SAS、參與計算，也不能放動態表格（`E_ATTACH_IN_TABLE`、`E_ATTACH_TOCALC`、`E_ATTACH_REQUIRED`、`E_ATTACH_DICT`、`E_ATTACH_KINDS`、`E_ATTACH_LIMIT`）。
+- **巨集步驟 `LLMATTACH(回覆id, 提示詞, "模型", "容器id")`、`ATTACHTRANSCRIBE(容器id)`**：檢查括號與多餘文字、回覆目標型別、容器 id（必須直接寫 itemid 數字並指到附件容器，`E_ATTACH_SOURCE`；省略＝表單上所有容器；容器晚於按鈕建立時延後到 `form_validate`）。
+- **`LLMATTACH` 的模型**：內建代號與 LLMvision 相同；不在代號表的名稱不是錯誤（`W_LLM_MODEL_PASSTHROUGH`）——平台經 LlmGateway 時原樣當模型 id 送出，所以新模型可以直接寫 `llmgateway_models` 的 id。有白名單快取時檢查存在（大小寫要完全相同）、狀態與視覺能力：容器會送影像而模型沒有視覺能力是 `E_LLM_MODEL_NO_VISION`，只收文字類附件時只提醒。
+- **函數**：`ATTACHCOUNT(容器id)` 計算式與巨集都可用；`ATTACHTEXT(容器id, 篩選字, 字數上限)` 只能用在巨集或 LLM 按鈕的 prompt。
+- **AI 資料流**：`LLMATTACH`、`ATTACHTRANSCRIBE` 各列一步，寫明送出哪些容器、可放入的類型、模型或語音服務；prompt 裡的 `ATTACHTEXT` 列為來源。`form_fields` 的容器欄位標示「內容不存檔」與哪個按鈕會送出它；manifest 的 AI 資料流表同步。
+- **預覽頁**（`tools/v0-harness/preview-shim.js`）：容器可以實際放入檔案（解碼與文字抽取在瀏覽器內完成）；`LLMATTACH` 與 `ATTACHTRANSCRIBE` 不呼叫任何服務，只在目標欄位顯示將送出的容器、影像張數、文件字數。審閱模式不對容器顯示必填與回填。
+- 新增 `test/attachbox.test.mjs`（9 項）、`test/make-harness-fixture-attachbox.mjs`（產生 `tools/v0-harness/fixtures/generated-attachbox.json`）。
+- 預覽頁實測（2026-11-15，平台 main `f1a42ce` 的本機副本）：容器放入 PNG、CSV、PDF 都成功（預覽伺服器的 CSP 不允許 worker，PDF.js 退回主執行緒解析，文字照常抽出）；按「產生草稿」在結果欄顯示「容器 #2：影像 1 張、文件文字 2 份共 70 字」，按「轉逐字稿」只記錄不呼叫；存檔值裡沒有容器。
+
+**規則文件與 skill**
+- `FormDesignRules.md`〈附件容器〉、`MacroRecipes.md` R11、`PromptPatterns.md` D2、`FormulaMacroRules.md`、`ModelWhitelist.md`、`SecurityInvariants.md` 第 12 條（附件不落地、一律揭露）、`Gates.md`（草案的 AI 資料流要寫容器）。
+- `form-planner` 7d、`form-builder`、`form-reviewer` 6c；`create-form` 需求表多一列「附件交給 LLM」，小表單捷徑排除附件容器；`edit-form`、`strucmed-form` 補說明。
+
+**編輯器往返實測（2026-11-15）**
+- **院外站台**：以這一版 MCP 建測試表單「P4 附件容器往返測試」新建到個人資料夾（不上架），取回後容器的 `attachkinds`／`attachmax`／`attachpages`／`tocalc`、`LLMATTACH`、`ATTACHTRANSCRIBE`、`ATTACHCOUNT` 都與送出的相同。
+- **真實編輯器程式（harness，平台 main 的本機副本）**：`generated-attachbox`（文字區塊、固定表格、頁籤內共四個容器）載入→存檔 F→G1 只有環境欄位不同、G1→G2 沒有差異、沒有錯誤。
+- **「重新編號」**：容器本身的 itemid 會改，但巨集裡的容器 id（`LLMATTACH(…,"12,13")`、`ATTACHTRANSCRIBE(12)`）與計算式裡的 `ATTACHCOUNT(12)` 不會跟著改（編輯器只更新計算式的 `A<n>`）。`W_RENUMBER_MACRO` 的說明補上附件容器 id，只有計算式用到 `ATTACHCOUNT`／`ATTACHTEXT` 時也會提醒。平台已在同日修正（編輯器的「重新編號」與「加載表單」會跟著更新容器 id 與 `LLMATTACH` 的回覆目標；院外站台已部署，院內尚未）；其他巨集步驟的目標 id 與巨集裡的 `A<n>` 仍不會跟著改，所以提醒保留。
+
+**尚未驗證**
+- 在站台編輯器的畫面上實際操作（開啟、存檔、重開）；上面兩項分別驗了伺服器存下的內容與編輯器的載入／存檔程式，沒有經過畫面操作。
+- flag 維持預設關：院內站台還沒有部署附件容器。
+
 ## 3.11.2（MCP 2.14.0）— 2026-11-14：提示詞稽核與少問幾輪——觸發不重疊、寫入說法一致、確認頁合併成一頁
 
 **MCP 2.14.0：同一個 draft 的線上寫入合併在一頁確認**

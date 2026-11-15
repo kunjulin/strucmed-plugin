@@ -13,3 +13,4 @@
 9. **不刪除、不覆寫線上範本與字典**：沒有也不會提供 trash、字典刪除、硬刪除紀錄的 tool。`templateUpdate` 開啟時只能更新「以該範本 import 後改版」的 draft，且帶 `If-Match`。
 10. **runtime 驗證只在本機**：`STRUCMED_RUNTIME_WEB` 是本機副本，harness 的 CSP 封鎖對外連線；不在 HIS 終端機上跑。
 11. **嵌入頁面只用宣告、不寫 JS**（flag `embedArea`，3.11.0 起預設開）：embed 區塊與 `OPENPANEL` 的網址只接受 https＋院內主機（`*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost；只看主機字串，不做 DNS）；網址與 `params` 不帶身分證號、姓名，參數值只能是 `{chtno}`、`{deptNo}`、`{user}`、`{opdno}` 或常數；嵌入頁要留在病歷的資料只經由 `outputs` 寫進一般控制項。不為嵌入頁寫自訂 JS，javascript 區塊照舊只放產生器標記（與第 5 條相同）；`OPENURL` 維持禁用。改版既有表單時原表單的 embed 原樣保留並檢查，原表單的自訂 JS 照標 `W_CUSTOM_JS`。
+12. **附件容器的內容不落地**（flag `attachBox`，預設關）：附件、抽出的文字、逐字稿只存在使用者當次的表單頁，plugin 不讀取、不保存、不放進範本或預設值；容器不綁字典、不存檔。用到容器的巨集（`LLMATTACH`、`ATTACHTRANSCRIBE`、prompt 裡的 `ATTACHTEXT`）一律列進 `W_AI_DATAFLOW`，寫明哪些容器、可放入的類型、送給哪個模型或語音服務；院外站台送出前的確認由平台負責，plugin 不能關閉。

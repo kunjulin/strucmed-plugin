@@ -24,11 +24,12 @@
 - `ROUND`／`ROUNDUP`／`ROUNDDOWN` 一定要寫位數（`ROUND(x, 0)`），少了位數 runtime 會算出 NaN。
 - `ROUND` 剛好落在 5 的邊界時以 runtime（Calx）的浮點結果為準，可能和手算差最後一位：BMI 160 cm／80 kg 數學上是 31.25，runtime 顯示 31.2 不是 31.3。`formula_check` 的試算例與需求裡的範例值都避開 .x5 邊界；臨床切點剛好落在邊界時在白話註明「以 runtime 顯示值為準」。
 - 巨集步驟的字串裡**不要放半形括號**（會打亂步驟切分），需要時用 `CHAR(40)`／`CHAR(41)`。
-- 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
+- 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`LLMATTACH`、`ATTACHTRANSCRIBE`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`…）。拼錯時平台會靜默改用預設模型。
 - 計算式不能用巨集專用函數（HISQUERY、SETVALUEBYID、LLMQUERY…）。
 - **禁止產生**：OPENURL、SAVEDOC、SETIOTHEADER、S_USERID、S_DEPTNO。使用者需要時，請其匯入後在編輯器由人工加入並審查。`CUSTOMFUNC("sm_<name>")` 只在 flag `formScript` 開啟、且本 draft 有同名的 `lookup` 片段（`trigger: customfunc`）時放行（`ScriptAddonRules.md` §2）；其他一律 `E_FORBIDDEN_FUNCTION`／`E_CUSTOMFUNC_UNDEFINED`。
 - `OPENPANEL(url, title)`（按鈕開院內頁面：StrucForm 1.10.9 起開在右側子面板，更早的版本開浮動面板）只在 flag `embedArea` 開啟時放行，只能用在巨集；`url` 必須是字串字面值，且通過與 embed 區塊 `url` 相同的檢查（`E_EMBED_URL`、`E_EMBED_SCHEME`、`E_EMBED_HOST`、`E_EMBED_PII`）。flag 關閉時 `E_FORBIDDEN_FUNCTION`。食譜見 `MacroRecipes.md` R10。`formula_check`（kind `macro`）與 `form_validate` 用同一組規則。
+- 附件容器的函數（flag `attachBox`，關閉時 `E_FEATURE_DISABLED`）：巨集步驟 `LLMATTACH(回覆id, 提示詞, "模型", "容器id")` 與 `ATTACHTRANSCRIBE(容器id)`；`ATTACHTEXT(容器id, 篩選字, 字數上限)` 只能用在巨集步驟或 LLM 按鈕的 prompt（計算式用 `E_FORMULA_MACRO_ONLY`）；`ATTACHCOUNT(容器id)` 計算式與巨集都可用。容器 id 一律**直接寫 itemid 數字**（`2`、`"2,5"`），不是 `A2`——`LLMATTACH`／`ATTACHTRANSCRIBE` 的容器位置不經計算（`E_ATTACH_SOURCE`）。寫法與模型規則見 `MacroRecipes.md` R11。
 
 **交付時必須告知**：
 - `W_AI_DATAFLOW`：哪些欄位會送到 LLM／語音服務（manifest「AI 資料流」）。模型白名單與上架審查待院方決議。

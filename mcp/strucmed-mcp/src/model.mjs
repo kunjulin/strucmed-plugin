@@ -13,6 +13,25 @@ export const DATATYPES_V01 = ['textbox', 'numberbox', 'textarea', 'calendar', 's
   'radiobutton', 'checkbox', 'submenu', 'label'];
 // v0.2：label 的計算式與 HIS 參照、巨集按鈕 action、LLM 按鈕 action2
 export const DATATYPES_V02 = [...DATATYPES_V01, 'action', 'action2'];
+// 附件容器（flag attachBox；平台 web/js/attachbox.js）：使用者貼上、拖放或選檔放入影像、PDF、Excel／CSV、文字、音檔，供巨集 LLMATTACH 送給 LLM。
+// 內容只留在當次畫面：不存檔、不進 HIS 文字、不綁字典、不參與計算
+export const DATATYPES_ALL = [...DATATYPES_V02, 'attachbox'];
+export const ATTACH_KINDS = ['image', 'pdf', 'sheet', 'text', 'audio'];
+export const ATTACH_DEFAULTS = { attachkinds: ATTACH_KINDS.join(','), attachmax: 8, attachpages: 20 };
+// attach_kinds（陣列或逗號分隔字串）→ 'image,pdf,…'（依 ATTACH_KINDS 的順序）；attach_max 1–30；attach_pages 1–100
+export function attachFields(c, now = {}) {
+  const out = {};
+  if (c.attach_kinds !== undefined && c.attach_kinds !== null) {
+    const list = (Array.isArray(c.attach_kinds) ? c.attach_kinds : String(c.attach_kinds).split(/[\s,]+/)).map(k => String(k).trim()).filter(Boolean);
+    const bad = list.filter(k => !ATTACH_KINDS.includes(k));
+    if (bad.length || !list.length) fail(E.INVALID_INPUT, `attach_kinds 必須是 ${ATTACH_KINDS.join(' / ')} 的組合（至少一種）${bad.length ? `；不認得：${bad.join('、')}` : ''}`);
+    out.attachkinds = ATTACH_KINDS.filter(k => list.includes(k)).join(',');
+  }
+  const int = (v, lo, hi, name) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) fail(E.INVALID_INPUT, `${name} 必須是 ${lo}–${hi} 的整數`); return n; };
+  if (c.attach_max !== undefined && c.attach_max !== null) out.attachmax = int(c.attach_max, 1, 30, 'attach_max');
+  if (c.attach_pages !== undefined && c.attach_pages !== null) out.attachpages = int(c.attach_pages, 1, 100, 'attach_pages');
+  return { ...now, ...out };
+}
 const LATER = { imgbox: '（不支援新增）', form: '（不支援新增）', subgroup: '（不支援新增）' };
 export const LABEL_FORMATS = ['defaultValue', 'Reference', 'formula', 'hisquery'];
 const CHOICE = new Set(['selection', 'combobox', 'radiobutton', 'checkbox']);
@@ -65,10 +84,11 @@ const furtherStr = f => (Array.isArray(f) && f.length ? f.map(n => String(parseI
 
 export function buildControl(itemid, c) {
   const dt = c && c.datatype;
-  if (!DATATYPES_V02.includes(dt)) {
+  if (!DATATYPES_ALL.includes(dt)) {
     fail(E.UNSUPPORTED, LATER[dt] ? `datatype「${dt}」${LATER[dt]}` : `未知的 datatype「${dt}」`,
       { supported: DATATYPES_V02 });
   }
+  if (dt !== 'attachbox' && ['attach_kinds', 'attach_max', 'attach_pages'].some(k => c[k] !== undefined)) fail(E.INVALID_INPUT, 'attach_kinds／attach_max／attach_pages 只適用附件容器（attachbox）');
   const o = base(itemid, dt);
   if (c.datavalue !== undefined) o.datavalue = String(c.datavalue);
   if (c.required !== undefined) o.required = !!c.required;
@@ -125,6 +145,14 @@ export function buildControl(itemid, c) {
       o.hisQueryTitle = c.his_query_title !== undefined ? String(c.his_query_title) : '';
     } else if (c.hisquery) fail(E.INVALID_INPUT, `format=${f} 不能帶 hisquery`);
     if (f === 'Reference' && !c.reference) fail(E.INVALID_INPUT, 'format=Reference 需要 reference（資料引用來源 itemid）');
+  }
+  if (dt === 'attachbox') {
+    // 編輯器新增時的預設（平台 web/js/modules/quill-form-handler.js case 'attachbox'）：tocalc false、五種類型都收、8 項、PDF 頁面影像 20 頁。datavalue 是容器上的提示文字
+    if (c.tocalc === true) fail(E.INVALID_INPUT, '附件容器不參與計算（tocalc 必須 false）');
+    if (c.required) fail(E.INVALID_INPUT, '附件容器不能設必填（內容不存檔，必填檢查看不到它）');
+    if (c.toSAS) fail(E.INVALID_INPUT, '附件容器的內容不存檔，不能 To SAS');
+    o.tocalc = false;
+    Object.assign(o, attachFields(c, ATTACH_DEFAULTS));
   }
   if (dt === 'action' || dt === 'action2') {
     // 編輯器巨集面板的三個欄位（平台 web/js/scripts.js:2849-2854）；actionID 存成字串

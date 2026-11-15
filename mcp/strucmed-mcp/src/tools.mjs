@@ -7,7 +7,7 @@ import { E, fail } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
+import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE, EMBED_DEFERRABLE } from './validate.mjs';
 import { validateForm as embedValidateForm, summarize as embedSummarize, summaryText as embedSummaryText } from './embed.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
@@ -215,6 +215,7 @@ function checkTableCell(where, { dict, dicrole, tocalc, datatype, script }) {
   if (dict || (dicrole && dicrole !== 'nohis')) fail(E.UNSUPPORTED, `${where}：動態表格內的欄位執行時不上傳 HIS，編輯器載入時也會把字典角色改成 nohis；需要寫入倉儲請改放固定表格、文字區塊或頁籤`);
   if (tocalc === true) fail(E.UNSUPPORTED, `${where}：動態表格每一列共用同一個 itemid，欄位不能參與計算（tocalc 必須 false）`);
   if (['action', 'action2'].includes(datatype) || script) fail(E.UNSUPPORTED, `${where}：動態表格每一列會複製同一組欄位，計算式、HIS 參照與巨集請放在表格外`);
+  if (datatype === 'attachbox') fail(E.UNSUPPORTED, `${where}：附件容器不能放在動態表格（每一列共用同一個 itemid，編輯器也不允許）`);
 }
 // 區塊的可見標題行（form_add_area 的 visible_title）：獨立一行的文字＋換行；回 { items, at } 或 null。
 // 有 visibleTitle 標記時依內容（＝區塊 title）找，不限第一行：欄位被 form_move_control 搬到最前面後，標題行就不在第一行了
@@ -366,8 +367,14 @@ const DICT_REF_PROPS = {
   memo: { type: 'object', description: '新字典的補述（meaning／type／unit／range／func／usecase／interop／asr／calx／llm／scope；值給 "" 清除該鍵）' },
   fhir: { type: 'array', items: { type: 'object' }, description: '新字典的 FHIR 對應（整組取代）' }
 };
+const ATTACH_PROPS = {
+  attach_kinds: { type: ['array', 'string'], items: { type: 'string', enum: ATTACH_KINDS }, description: '附件容器（attachbox）可放入的類型：image（PNG／JPEG／TIFF）、pdf、sheet（Excel／CSV）、text、audio（轉逐字稿）；陣列或逗號分隔，預設全部' },
+  attach_max: { type: 'number', description: '附件容器的項目上限 1–30（預設 8）' },
+  attach_pages: { type: 'number', description: '附件容器：PDF 勾選「一併送出頁面影像」時最多轉幾頁 1–100（預設 20）' }
+};
 const CHANGE_PROPS = {
-  datavalue: str('預設值（禁止放病人資料）'), required: bool('必填'), tocalc: bool('參與計算'), toSAS: bool('To SAS'),
+  ...ATTACH_PROPS,
+  datavalue: str('預設值（禁止放病人資料）；附件容器是容器上的提示文字'), required: bool('必填'), tocalc: bool('參與計算'), toSAS: bool('To SAS'),
   options: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { value: { type: 'string' }, further: { type: 'array', items: { type: 'number' } } } }] } },
   multiple: bool('多選'), row: { type: 'number' }, datagroup: str('連動群組'), filter: bool('篩選'),
   minval: { type: 'number' }, maxval: { type: 'number' }, numpad: bool('數字鍵盤'), format: str('calendar：date|time|datetime'),
@@ -387,6 +394,7 @@ const CHANGE_PROPS = {
 };
 const CONTROL_PROPS = {
   datatype: str('控制項類型', { enum: DATATYPES_V02 }),
+  ...ATTACH_PROPS,
   dictionary: { type: 'object', additionalProperties: false, properties: DICT_REF_PROPS },
   dicrole: str('nohis | tohis | fromhis | puthis', { enum: ['nohis', 'tohis', 'fromhis', 'puthis'] }),
   datavalue: str('預設值（禁止放病人資料）'), required: bool('必填（只在 HIS 端提醒）'),
@@ -756,6 +764,16 @@ export const TOOLS = [
         if (changes.options !== undefined) n.option = probe.option;
         for (const k of ['multiple', 'row', 'datagroup', 'filter', 'minval', 'maxval', 'numpad', 'format']) if (changes[k] !== undefined) n[k] = probe[k];
       }
+      const attachKeys = ['attach_kinds', 'attach_max', 'attach_pages'].filter(k => changes[k] !== undefined);
+      if (attachKeys.length) {
+        if (n.datatype !== 'attachbox') fail(E.INVALID_INPUT, `${attachKeys.join(', ')} 只適用附件容器（#${itemid} 是 ${n.datatype}）`);
+        if (!enabled('attachBox')) fail(E.FEATURE_DISABLED, 'feature flag attachBox 未開啟（feature-flags.json）：附件容器的設定不能修改；原表單的容器會原樣保留');
+        Object.assign(n, attachFields(changes));
+      }
+      if (n.datatype === 'attachbox') {
+        if (changes.tocalc === true || changes.required === true || changes.toSAS === true) fail(E.INVALID_INPUT, '附件容器不參與計算、不能設必填或 To SAS（內容不存檔）');
+        if ((changes.dictionary && (changes.dictionary.id || changes.dictionary.name)) || (changes.dicrole && changes.dicrole !== 'nohis')) fail(E.INVALID_INPUT, '附件容器的內容不存檔，不能綁字典');
+      }
       if (changes.datavalue !== undefined) {
         if (Array.isArray(n.datavalue)) fail(E.UNSUPPORTED, `#${itemid}（${n.datatype}）的預設值是子項陣列，不能以文字取代`);
         n.datavalue = String(changes.datavalue);
@@ -777,7 +795,7 @@ export const TOOLS = [
       if (label_text !== undefined) cats.push('label');
       if (changes.datavalue !== undefined) cats.push('value');
       if (['required', 'tocalc', 'toSAS'].some(k => changes[k] !== undefined)) cats.push('flags');
-      if (wantsShape) cats.push('shape');
+      if (wantsShape || attachKeys.length) cats.push('shape');
       if (changes.dictionary !== undefined || changes.dicrole !== undefined) cats.push('dict');
       if (['label_format', 'formula', 'hisquery', 'reference', 'action_script', 'action_id', 'fur_action_id'].some(k => changes[k] !== undefined)) cats.push('formula');
       if (['action_name', 'his_query_title'].some(k => changes[k] !== undefined)) cats.push('label');
@@ -937,18 +955,21 @@ export const TOOLS = [
   },
   {
     name: 'form_add_control',
-    description: `在區塊末端加入「說明文字＋控制項（＋換行）」。支援的 datatype：${DATATYPES_V02.join(', ')}。` +
+    // 說明與 datatype 清單在列出工具時依 flag attachBox 決定：skill 以「datatype 有 attachbox」判斷附件容器可不可用（同 form_add_area 的 embed）
+    get description() { return `在區塊末端加入「說明文字＋控制項（＋換行）」。支援的 datatype：${(enabled('attachBox') ? DATATYPES_ALL : DATATYPES_V02).join(', ')}。` +
+      (enabled('attachBox') ? 'attachbox＝附件容器（flag attachBox 已開啟）：使用者貼上、拖放或選檔放入影像、PDF、Excel／CSV、文字、音檔，由巨集 LLMATTACH(回覆id, 提示詞, "模型", "容器id") 送給 LLM；內容不存檔、不進 HIS 文字，不能綁字典、不能放動態表格；datavalue 是容器上的提示文字，attach_kinds／attach_max／attach_pages 設定可放入的類型與上限。' : '（attachbox 附件容器需 feature flag attachBox，目前未開啟，不在 datatype 清單）') +
       'label 可用 format=formula（計算式）或 hisquery（HIS 參照）；action 為巨集按鈕、action2 為 LLM 按鈕。公式與腳本寫入前會先檢查。' +
       'after_itemid 指定插在同一區塊（或同一格）的哪個控制項之後，不帶則加在末端；平台平行呼叫時順序不保證，要控制順序請依序呼叫並帶 after_itemid。' +
-      '綁定字典時用 dictionary.id（須存在於字典索引）或 dictionary.name（本科部比對範圍內體系優先、同層級唯一才自動綁 id；有 alias_of 改綁目標；查無則列為待新建，匯入後角色一律為 tohis）。新字典請帶 dictionary.comment（一行說明）與 dictionary.memo（補述），會寫進字典 JSON。',
-    inputSchema: { type: 'object', required: ['draft_id', 'area_itemid', 'control'], properties: {
+      '綁定字典時用 dictionary.id（須存在於字典索引）或 dictionary.name（本科部比對範圍內體系優先、同層級唯一才自動綁 id；有 alias_of 改綁目標；查無則列為待新建，匯入後角色一律為 tohis）。新字典請帶 dictionary.comment（一行說明）與 dictionary.memo（補述），會寫進字典 JSON。'; },
+    get inputSchema() { return { type: 'object', required: ['draft_id', 'area_itemid', 'control'], additionalProperties: false, properties: {
       draft_id: str('draft id'), area_itemid: { type: 'number' },
       cell: { type: 'object', description: '表格／頁籤區塊內的位置：formtable 用 {row, col}；tab1/tab2/table1/table2 用 {index}（皆從 0 起算）。文字區塊不用帶',
         properties: { row: { type: 'number' }, col: { type: 'number' }, index: { type: 'number' } } },
       label_text: str('控制項前的說明文字（不可含換行）'),
       after_itemid: { type: 'number', description: '插在這個控制項之後（須在同一區塊，或 cell 指定的同一格）；不帶則加在末端' },
       newline_after: bool('控制項後換行（預設 true；只用於本工具新建的文字區塊）'),
-      control: { type: 'object', required: ['datatype'], additionalProperties: false, properties: CONTROL_PROPS } } },
+      control: { type: 'object', required: ['datatype'], additionalProperties: false,
+        properties: { ...CONTROL_PROPS, datatype: str('控制項類型', { enum: enabled('attachBox') ? DATATYPES_ALL : DATATYPES_V02 }) } } } }; },
     arg_hints: { caption: '說明文字用頂層 label_text', datatype: 'datatype 放在 control 內', unit: '單位放在 control.unit' },
     handler({ draft_id, area_itemid, label_text, after_itemid, newline_after = true, control, cell }) {
       checkKeys(control, CONTROL_KEYS(), 'control');
@@ -966,6 +987,10 @@ export const TOOLS = [
       // 頁籤依角色上傳（平台 20261101 起），只有動態表格有限制
       if (kind === 'table') checkTableCell(target.where, { dict: control.dictionary && (control.dictionary.id || control.dictionary.name), dicrole: control.dicrole, tocalc: control.tocalc, datatype: control.datatype,
         script: control.datatype === 'label' && (control.formula || control.hisquery || ['formula', 'hisquery'].includes(control.format)) });
+      if (control.datatype === 'attachbox') {
+        if (!enabled('attachBox')) fail(E.FEATURE_DISABLED, 'feature flag attachBox 未開啟（feature-flags.json，預設關）：本工具不產生附件容器；站台也要開啟 V2:Attachments 才會顯示');
+        if (control.dictionary && (control.dictionary.id || control.dictionary.name) || (control.dicrole && control.dicrole !== 'nohis')) fail(E.INVALID_INPUT, '附件容器的內容不存檔，不能綁字典');
+      }
       const itemid = d.nextItemId;
       const obj = buildControl(itemid, control);
       if (kind === 'table') obj.tocalc = false;   // 與編輯器在表格格子內新增控制項相同（scripts.js:689-692）

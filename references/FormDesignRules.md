@@ -74,6 +74,26 @@
 - 嵌入頁拿到的 `user`、`deptNo` 是 L1（工作站自稱、無簽章），只做顯示與稽核；表單設計不要把開立、簽核等不可逆動作放在嵌入頁內完成（等 L2 token）。
 - 只在按下按鈕時才開的頁面改用巨集 `OPENPANEL`（`MacroRecipes.md` R10；1.10.9 起開在右側子面板，收不到 `strucmed.context`、不能寫回欄位），不用 embed。
 
+## 附件容器（attachbox 控制項，flag `attachBox`）
+
+> flag `attachBox` 預設關。站台也要開啟附件容器（`V2:Attachments`；院外站台已開，院內站台尚未部署）才會顯示；沒開的站台上容器只顯示「尚未啟用」。工具清單的 `form_add_control` datatype 有 `attachbox` 才可用；flag 關閉時改版表單裡既有的容器原樣保留。
+
+使用者在表單頁把檔案貼上、拖放或選檔放進容器，再由巨集 `LLMATTACH` 送給 LLM（`MacroRecipes.md` R11）。容器是一個控制項，放在文字區塊、固定表格或頁籤裡：
+
+| 參數（`form_add_control` datatype `attachbox`） | 規則 |
+|---|---|
+| `datavalue` | 容器上的提示文字（例「請放入 PACS 截圖與報告 PDF」）；不是預設值，不可放病人資料 |
+| `attach_kinds` | 可放入的類型，預設全部：`image`（PNG、JPEG、TIFF；不收 WebP）、`pdf`、`sheet`（Excel、CSV）、`text`、`audio`（WAV、MP3、M4A、AAC、OGG、FLAC；不收影片） |
+| `attach_max` | 項目上限 1–30，預設 8 |
+| `attach_pages` | PDF 勾選「一併送出頁面影像」時最多轉幾頁 1–100，預設 20 |
+
+- **內容不存檔**：附件、抽出的文字、逐字稿都只留在當次畫面，不進倉儲、不進 HIS 文字、重新開表單就沒有。要留下的結果由巨集寫進 `textarea` 等欄位，那個欄位才綁字典。
+- 不能綁字典、不能必填、不參與計算（`tocalc` 固定 false）、不能放動態表格（`E_ATTACH_IN_TABLE`）。
+- 各類型送給 LLM 的方式：影像當影像；PDF、Excel／CSV、文字當文字（PDF 的文字一律送，使用者可在卡片上勾選一併送頁面影像；沒有文字層的掃描檔會自動勾選）；音檔先轉逐字稿再當文字。
+- 音檔一個最長 2 小時；院外站台 10 分鐘一段轉寫，院內 30 秒一段（長音檔會遇到每分鐘次數上限而等待）。
+- 院外站台每次送出前都會跳確認，列出送出的影像張數、文件數與對象；語音轉寫另有語音服務的同意畫面。
+- 揭露：用到容器的巨集列進 `W_AI_DATAFLOW`（哪些容器、可放入的類型、送給哪個模型），`form_fields` 的容器欄位也會標示。
+
 ## 字典說明、補述與層級
 
 字典的說明欄（dicComment）是一個 JSON 容器（MCP 2.4.0 起），由 MCP 與平台用同一份規格組裝，**不要自己拼 JSON**：

@@ -40,7 +40,7 @@ export function readResource(uri) {
 const LABEL = {
   textbox: '文字', numberbox: '數字', textarea: '段落', calendar: '日期時間', selection: '下拉', combobox: '組合框',
   radiobutton: '單選', checkbox: '核取', submenu: '階層選單', label: '計算式/顯示', imgbox: '圖片',
-  form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕'
+  form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕', attachbox: '附件容器'
 };
 
 function control(c) {

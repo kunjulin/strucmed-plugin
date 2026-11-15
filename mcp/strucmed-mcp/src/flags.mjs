@@ -22,6 +22,7 @@ export const DEFAULTS = {
   unattended: false,       // 無人值守：所有閘門一律取消並記錄，不自動核准
   formScript: false,       // 表單 JS 增益集：白名單片段（form_set_script／form_script_preview；docs/13）
   formScriptAdvanced: false, // 進階片段 autorun／table-rows（docs/13 §九；需 formScript 也開）
+  attachBox: false,        // 附件容器：form_add_control datatype attachbox、巨集 LLMATTACH／ATTACHTRANSCRIBE、函數 ATTACHTEXT／ATTACHCOUNT。預設關：站台要開 V2:Attachments（院外 cgmh.ddns.net 已開，院內尚未部署）；匯入既有含附件容器的表單不受 flag 影響
   embedArea: true          // 嵌入頁面：form_add_area type embed、巨集 OPENPANEL。3.11.0 起預設開（2026-11-08 站台編輯器實測：匯入、存檔重開、重新編號都完整保留）；匯入既有含 embed 的表單不受 flag 影響
 };
 

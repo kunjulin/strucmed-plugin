@@ -60,7 +60,7 @@ const TEXT_BAD = /[<>{}\[\]()=\\`$;]|[\u0000-\u001f]/;
 const VALUE_BAD = /[<>{}\\`$;]|[\u0000-\u001f]/;
 const TEXT_WORDS = /\b(ck_\w+|window|document|eval|location|fetch|script)\b/i;
 // SetValueByID 寫得進去的控制項（label 的值由計算式決定、按鈕與圖片沒有值）
-const NOT_WRITABLE = new Set(['label', 'action', 'action2', 'imgbox', 'drawbox', 'picture']);
+const NOT_WRITABLE = new Set(['label', 'action', 'action2', 'imgbox', 'drawbox', 'picture', 'attachbox']);
 
 // ── 渲染後的禁用 token（docs/13 §2.3）：掃的是去掉字串字面值後的程式碼 ───────────────
 export const FORBIDDEN_TOKENS = [

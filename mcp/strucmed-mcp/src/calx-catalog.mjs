@@ -54,7 +54,10 @@ export const BUILTIN = new Set([
 //   custom   CUSTOMFUNC：只允許呼叫同 draft 以 form_set_script 的 lookup 片段定義的函數（flag formScript）；其餘視同 forbidden
 //   panel    OPENPANEL(url, title)：只能用在巨集，flag embedArea 開啟時才允許；網址必須是字串字面值且通過 embed 區塊 url 的同一組檢查
 //            （E_EMBED_URL／E_EMBED_SCHEME／E_EMBED_HOST／E_EMBED_PII）；flag 關閉時 E_FORBIDDEN_FUNCTION（平台 web/js/TempHtml.js registerFunction）
+//   attach   附件容器的函數（flag attachBox）：ATTACHCOUNT(容器id) 回項目數，計算式與巨集都可用；ATTACHTEXT(容器id, 篩選字, 字數上限) 回容器內
+//            PDF／試算表／文字／逐字稿的文字，只用在巨集（計算式每次重算都會取一次全文）。第一個參數必須是附件容器的 itemid（平台 web/js/attachbox.js）
 export const RUNTIME = {
+  ATTACHCOUNT: 'attach', ATTACHTEXT: 'attach',
   CHECKREQUIRED: 'setting', CKAUTOXML: 'setting', CKAUTODWLOOKUP: 'setting', CKAUTOUPLOAD: 'setting', CKIOTOW: 'setting',
   GETTEXT: 'context', GETVALUE: 'context', NOW2: 'context', NOWTIME: 'context',
   G_USERNM: 'context', G_USERID: 'context', G_CHTNO: 'context', G_DEPTNO: 'context', G_OPDNO: 'context',
@@ -72,7 +75,8 @@ export const BUILTIN_POLICY = {
   GRAPH: 'forbidden'     // 需要 flot 繪圖套件，runtime 沒有載入
 };
 // 巨集步驟指令（區分大小寫的前綴）
-export const STEP = { LLMQUERY: 'ai', LLMvision: 'ai', MACRO: 'write', VOICETOTEXT: 'ai' };
+// LLMATTACH(id, prompt[, model[, 容器id…]])：附件容器的影像與文件文字連同提示詞送給 LLM；ATTACHTRANSCRIBE(容器id…)：容器內的音檔轉逐字稿（flag attachBox；平台 web/js/TempHtml.js calcSetval）
+export const STEP = { LLMQUERY: 'ai', LLMvision: 'ai', LLMATTACH: 'ai', ATTACHTRANSCRIBE: 'ai', MACRO: 'write', VOICETOTEXT: 'ai' };
 
 // runtime 載入計算式前，含下列字串（區分大小寫，連字串內也算）的 formula 會被整個換成錯誤訊息
 // （平台 web/js/TempHtml.js:4372-4383）
@@ -103,3 +107,9 @@ export const LLM_ALIASES = {
 export const LLM_REMOVED = ['medgemma:27b', 'gemma3_27b', 'gemma4_31b', 'tgemma4_31b'];
 export const VISION_MODELS = { '': 'gemma3:12b（預設）', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma:4b_vision' };
 export const ASR_PROVIDERS = ['ASUS', 'QWEN'];
+// LLMATTACH 的模型代號（平台 web/js/attachbox.js VISION_MODELS）：與 LLMvision 相同。不在表內的名稱不會被改成預設——經 LlmGateway 時原樣當模型 id 送出，
+// 直連時才改用預設；院外站台一律用使用者在「LLM 服務設定」選的模型
+export const ATTACH_MODELS = VISION_MODELS;
+// 附件容器可放入的類型（控制項 JSON 的 attachkinds，逗號分隔；沒有這個欄位的舊容器只收影像）
+export const ATTACH_KINDS = ['image', 'pdf', 'sheet', 'text', 'audio'];
+export const ATTACH_KIND_LABELS = { image: '影像', pdf: 'PDF', sheet: 'Excel／CSV', text: '文字', audio: '音檔' };

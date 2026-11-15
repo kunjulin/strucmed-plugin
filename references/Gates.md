@@ -65,7 +65,7 @@ Inputs: dept_no=33F00; groups=; publish=false; folder=usr; his_text_keys=Report,
 - 每條 formula 都要有「白話」。**不寫試算例**：reviewer 依白話自己出（見 `agents/form-reviewer.md`），結果進 review.md。
 
 ### AI 資料流（W_AI_DATAFLOW）
-哪些欄位會送到 LLM／語音服務；沒有則寫「無」。
+哪些欄位會送到 LLM／語音服務；沒有則寫「無」。用到附件容器（`LLMATTACH`、`ATTACHTRANSCRIBE`、prompt 裡的 `ATTACHTEXT`；flag `attachBox`）時另寫：哪個容器、可放入的類型、送給哪個模型或語音服務，並註明「附件不存檔」。容器在「### 結構」佔一列（datatype `attachbox`，備註寫可放入的類型與上限）。
 
 ### 嵌入頁面（W_EMBED_DATAFLOW；flag embedArea 開啟或改版的原表單有 embed／OPENPANEL 時才有）
 embed 區塊在「### 結構」佔一列（`A5 | 決策支援（embed） | — |…`），設定寫在這裡，builder 照抄成 `form_add_area` 的參數；OPENPANEL 寫在「### 計算式與巨集」（類型 `action OPENPANEL`），這裡再列一行揭露。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。沒有則省略這段。

@@ -1,0 +1,387 @@
+{
+ "name": "generated-attachbox",
+ "description": "strucmed-mcp 產生的附件容器表單（文字區塊、固定表格、頁籤內的容器；LLMATTACH、ATTACHTRANSCRIBE、ATTACHCOUNT）；預期 F→G1 只有環境欄位差異",
+ "deptNo": "TEST0",
+ "dicsource": [],
+ "form": [
+  {
+   "itemtype": "form",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "datatype": "text",
+     "datavalue": "附件："
+    },
+    {
+     "itemid": 2,
+     "datatype": "attachbox",
+     "datavalue": "請放入影像、PDF、Excel 或音檔",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "",
+     "tocalc": false,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "attachbox",
+     "id": "ctrl_2",
+     "format": "",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "attachkinds": "image,pdf,sheet,text,audio",
+     "attachmax": 8,
+     "attachpages": 20
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "影像："
+    },
+    {
+     "itemid": 3,
+     "datatype": "attachbox",
+     "datavalue": "只收影像",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "",
+     "tocalc": false,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "attachbox",
+     "id": "ctrl_3",
+     "format": "",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "attachkinds": "image",
+     "attachmax": 3,
+     "attachpages": 5
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "結果："
+    },
+    {
+     "itemid": 4,
+     "datatype": "textarea",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "textarea",
+     "id": "ctrl_4",
+     "format": "",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "reference": "",
+     "fromTemplate": false,
+     "fromTemplateID": ""
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "itemid": 5,
+     "datatype": "action",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "action",
+     "id": "ctrl_5",
+     "format": "",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "actionName": "產生摘要",
+     "actionID": "",
+     "actionScript": "LLMATTACH(4,\"只根據附件內容摘要，附件沒有的資訊寫 not available\",\"\",\"2,3\")"
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "itemid": 6,
+     "datatype": "action",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "",
+     "tocalc": true,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "action",
+     "id": "ctrl_6",
+     "format": "",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "actionName": "轉逐字稿",
+     "actionID": "",
+     "actionScript": "ATTACHTRANSCRIBE(2)"
+    },
+    {
+     "datatype": "newline"
+    },
+    {
+     "datatype": "text",
+     "datavalue": "附件數："
+    },
+    {
+     "itemid": 7,
+     "datatype": "label",
+     "datavalue": "",
+     "dictionary": "",
+     "dicid": "",
+     "dicrole": "nohis",
+     "tag": "",
+     "formula": "ATTACHCOUNT(2) + ATTACHCOUNT(3)",
+     "tocalc": true,
+     "toSAS": false,
+     "fromdict": false,
+     "efontcolor": "",
+     "efontsize": 14,
+     "ebackcolor": "",
+     "required": false,
+     "panelId": "quill-form-editor",
+     "type": "label",
+     "id": "ctrl_7",
+     "format": "formula",
+     "hisquery": "",
+     "hisQueryTitle": "",
+     "textareaHeight": "",
+     "furActionID": "",
+     "multiple": false,
+     "datagroup": "",
+     "option": [],
+     "text": "選項控制項",
+     "reference": ""
+    }
+   ],
+   "itemid": "1"
+  },
+  {
+   "itemtype": "formtable",
+   "itemid": "8",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "row",
+     "columns": "3,3",
+     "item": [
+      {
+       "itemtype": "form",
+       "item": []
+      },
+      {
+       "itemtype": "form",
+       "item": [
+        {
+         "datatype": "text",
+         "datavalue": "表格內："
+        },
+        {
+         "itemid": 9,
+         "datatype": "attachbox",
+         "datavalue": "",
+         "dictionary": "",
+         "dicid": "",
+         "dicrole": "nohis",
+         "tag": "",
+         "formula": "",
+         "tocalc": false,
+         "toSAS": false,
+         "fromdict": false,
+         "efontcolor": "",
+         "efontsize": 14,
+         "ebackcolor": "",
+         "required": false,
+         "panelId": "quill-form-editor",
+         "type": "attachbox",
+         "id": "ctrl_9",
+         "format": "",
+         "hisquery": "",
+         "hisQueryTitle": "",
+         "textareaHeight": "",
+         "furActionID": "",
+         "multiple": false,
+         "datagroup": "",
+         "option": [],
+         "text": "選項控制項",
+         "attachkinds": "pdf,sheet",
+         "attachmax": 8,
+         "attachpages": 20
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "itemtype": "tab2",
+   "authread": [
+    "doctor"
+   ],
+   "authwrite": [
+    "doctor"
+   ],
+   "gettext": true,
+   "item": [
+    {
+     "itemtype": "td",
+     "datatitle": "影像",
+     "item": []
+    },
+    {
+     "itemtype": "td",
+     "datatitle": "文件",
+     "item": [
+      {
+       "datatype": "text",
+       "datavalue": "頁籤內："
+      },
+      {
+       "itemid": 11,
+       "datatype": "attachbox",
+       "datavalue": "",
+       "dictionary": "",
+       "dicid": "",
+       "dicrole": "nohis",
+       "tag": "",
+       "formula": "",
+       "tocalc": false,
+       "toSAS": false,
+       "fromdict": false,
+       "efontcolor": "",
+       "efontsize": 14,
+       "ebackcolor": "",
+       "required": false,
+       "panelId": "quill-form-editor",
+       "type": "attachbox",
+       "id": "ctrl_11",
+       "format": "",
+       "hisquery": "",
+       "hisQueryTitle": "",
+       "textareaHeight": "",
+       "furActionID": "",
+       "multiple": false,
+       "datagroup": "",
+       "option": [],
+       "text": "選項控制項",
+       "attachkinds": "text,audio",
+       "attachmax": 30,
+       "attachpages": 20
+      }
+     ]
+    }
+   ],
+   "itemid": "10"
+  },
+  {
+   "itemtype": "javascript",
+   "content": "// generated-by: strucmed-skill harness-fixture"
+  },
+  {
+   "itemtype": "iot",
+   "editorver": "1.6",
+   "sheetid": "",
+   "f_opdno": false,
+   "f_chtno": true,
+   "templateID": "",
+   "f_histext": "histextbyblock",
+   "f_hideprevicon": false,
+   "f_hideAssist": false,
+   "f_hidePreset": false,
+   "f_day": "30",
+   "d_url": "",
+   "modifiedUser": "strucmed-skill",
+   "modifiedDept": "",
+   "modifiedDate": 0
+  }
+ ]
+}

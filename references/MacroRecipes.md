@@ -8,7 +8,7 @@
 | 規則 | 內容 |
 |---|---|
 | 步驟 | `action_script` 以**最外層逗號**分隔，依序執行；runtime 只算括號深度不理引號，字串內的括號或逗號會打亂切分（`E_MACRO_SPLIT`） |
-| 等待 | `LLMQUERY`、`LLMvision`、`VOICETOTEXT` 是非同步步驟，**大小寫完全相同且在步驟開頭**時 runtime 才會等它完成再做下一步 |
+| 等待 | `LLMQUERY`、`LLMvision`、`LLMATTACH`、`ATTACHTRANSCRIBE`、`VOICETOTEXT` 是非同步步驟，**大小寫完全相同且在步驟開頭**時 runtime 才會等它完成再做下一步 |
 | 中止 | 任一步驟出錯就中止整個序列並顯示錯誤；之前已寫入的欄位不會回復 |
 | 結果 | 最後一個一般運算式的結果寫入 `action_id`（0 或空白＝不回傳）；要寫多個欄位用 `MACRO(id, 運算式)` 或 `SETVALUEBYID(id, 值)` |
 | 觸發 | 點按鈕；`textbox` 的 `fur_action_id`（輸入後觸發）；`action_name` 留空＝隱藏按鈕，只能被前者觸發 |
@@ -119,6 +119,25 @@
 - 揭露：`W_EMBED_DATAFLOW`（目標主機）列進 manifest「嵌入頁面資料流」與 review.md。
 - `OPENURL` 維持禁用：它交給系統 Edge 開，離開表單視窗，也沒有主機檢查。
 - flag 關閉時：OPENPANEL 回 `E_FORBIDDEN_FUNCTION`；改版既有表單裡的 OPENPANEL 原封保留，以 warning（原表單既有）列出。
+
+### R11 附件送給 LLM（LLMATTACH，flag `attachBox`）
+- 觸發：按鈕「產生草稿」。使用者先把影像、PDF、Excel／CSV、文字或音檔放進附件容器（`FormDesignRules.md`〈附件容器〉）。
+- 控制項：`C_box` attachbox、`C_out` textarea（回覆寫入，可綁字典）、`C_btn` action（`action_id` 留空）。
+- 腳本：
+  ```
+  LLMATTACH(<C_out>, "只根據附件內容整理成報告草稿，附件沒有的資訊寫 not available，不要開場白", "", "<C_box>")
+  ```
+- 參數：`LLMATTACH(回覆寫入的 id, 提示詞, "模型", "容器id")`。
+  - 回覆寫入：`textarea`／`textbox`／`label`，回覆串流寫入。
+  - 提示詞：Calx 運算式，可以用 `CONCAT` 接欄位（`A<n>`）；容器內文件的文字與逐字稿會自動附在提示詞後面，不必自己接 `ATTACHTEXT`。
+  - 模型：`""`＝預設（gemma3:12b）；內建代號 `gemma3`、`gemma3_12b`、`medgemma` 與 LLMvision 相同。**其他名稱不會被改成預設**：經 LlmGateway 時原樣當模型 id 送出，所以新模型直接寫 `llmgateway_models` 查到的 id（大小寫要完全相同；`W_LLM_MODEL_PASSTHROUGH`，白名單裡沒有時 `E_LLM_MODEL_NOT_ON_GATEWAY`）。院外站台不看這個參數，用使用者在「LLM 服務設定」選的模型。
+  - 容器 id：直接寫 itemid 數字，多個寫 `"2,5"`；省略＝表單上所有容器。不能寫 `A2`（`E_ATTACH_SOURCE`）。
+- 容器會送影像而模型沒有視覺能力時 `E_LLM_MODEL_NO_VISION`；容器只收 Excel／CSV、文字、音檔時文字模型也能用（只提醒）。
+- 音檔：`LLMATTACH` 送出前會自動把還沒轉寫的音檔轉成逐字稿。要讓使用者先看、先改逐字稿，就另放一顆按鈕 `ATTACHTRANSCRIBE(<C_box>)`（使用者也可以按卡片上的「轉逐字稿」）。
+- 只要文字、不送影像時：`LLMQUERY(<C_out>, CONCAT("只根據下列內容回答，無資料時回答 not available：", ATTACHTEXT(<C_box>, "", 8000)), "qwen332b")`。`ATTACHTEXT(容器id, 篩選字, 字數上限)` 的篩選字只留含該字的列（查 ICD-10 對照表這類大表時用），字數上限 0 或省略＝不限。
+- 計算式可用 `ATTACHCOUNT(<C_box>)`（項目數）做提示，例 `IF(ATTACHCOUNT(<C_box>) > 0, "", "尚未放入附件")`。
+- 揭露：`W_AI_DATAFLOW` 列出每一步送出的容器、可放入的類型與模型；`ATTACHTRANSCRIBE` 列為送語音服務。
+- 限制：附件與逐字稿不存檔；一次送出的請求上限約 19 MB（影像多時減少張數或 PDF 頁面影像）；flag 關閉時 `LLMATTACH`、`ATTACHTRANSCRIBE`、`ATTACHTEXT`、`ATTACHCOUNT` 回 `E_FEATURE_DISABLED`，改版表單裡既有的原封保留、以 warning 列出。
 
 ## 4. 建置與驗證
 

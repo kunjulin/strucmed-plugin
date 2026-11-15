@@ -12,6 +12,8 @@
 
 對應程式：`mcp/strucmed-mcp/src/policy.mjs`（`gatewayModelFor(alias, fn)`）。LLMvision 只有 `gemma3`、`gemma3_12b`、`medgemma`（→ `medgemma:4b_vision`）與預設 `gemma3:12b`。
 
+`LLMATTACH`（附件容器，flag `attachBox`）的內建代號與 LLMvision 相同；**不在代號表的名稱不會被改成預設**，經 LlmGateway 時原樣當模型 id 送出（`W_LLM_MODEL_PASSTHROUGH`）。所以還沒有代號的新模型，直接寫 `llmgateway_models` 回傳的 id，大小寫要完全相同；有白名單快取時會檢查存在、狀態與視覺能力。直連（沒有 Gateway）時未知名稱改用預設；院外站台用使用者在設定畫面選的模型。
+
 ## 2. 白名單快取
 
 - `llmgateway_models` → `GET /v1/models`（只列這把金鑰可用的模型，不計配額）→ 寫 `<workspace>/.strucmed/llm-models.json`：`{ fetched_at, base_url, models:[{ id, owned_by, context_length, vision, thinking, status, description }] }`。
@@ -23,6 +25,7 @@
 | `status: deprecated` | `E_LLM_MODEL_DEPRECATED`，請換模型 |
 | `status: maintenance` | `W_LLM_MODEL_MAINTENANCE`，上線前確認 |
 | LLMvision 用無 `vision` 的模型 | `E_LLM_MODEL_NO_VISION`（閘道會回 400） |
+| LLMATTACH 用無 `vision` 的模型 | 容器會送影像（收 image 或 pdf）→ `E_LLM_MODEL_NO_VISION`；只收文字類附件 → `W_LLM_MODEL_NO_VISION` |
 | 沒有快取但表單有 AI 步驟 | `W_LLM_WHITELIST_STALE`（只以靜態表檢查） |
 | 快取超過 7 天 | `W_LLM_WHITELIST_STALE`，建議重新取得 |
 

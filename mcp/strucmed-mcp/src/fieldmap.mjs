@@ -48,6 +48,7 @@ export function fieldMap(draft, idx, policy = {}) {
       for (const a of sf.ai) {
         for (const id of a.inputs || []) push(aiRole, String(id), `${a.kind || 'LLM'}（#${n.itemid}「${n.actionName || name(n.itemid)}」）的輸入`);
         if (a.target) push(aiRole, String(a.target), `${a.kind || 'LLM'}（#${n.itemid}「${n.actionName || name(n.itemid)}」）的回覆寫入`);
+        for (const b of a.attachments || []) push(aiRole, String(b.itemid), `${a.kind}（#${n.itemid}「${n.actionName || name(n.itemid)}」）${a.kind === 'ATTACHTRANSCRIBE' ? '把容器內的音檔送語音服務轉逐字稿' : '把容器內的附件送給 LLM'}`);
       }
     }
   }
@@ -63,6 +64,7 @@ export function fieldMap(draft, idx, policy = {}) {
     const roles = [];
     if (n.datatype === 'label' && n.formula) roles.push(`計算結果：${clip(n.formula, 80)}（引用 ${out.filter(r => r.kind === 'formula').map(r => r.to_caption).join('、') || '無'}）`);
     if (n.datatype === 'label' && n.format === 'hisquery') roles.push('HIS 參照（顯示 HIS 查到的資料）');
+    if (n.datatype === 'attachbox') roles.push(`附件容器（可放入 ${String(n.attachkinds || 'image')}，最多 ${n.attachmax || 8} 項；內容不存檔、不進 HIS 文字）`);
     if (n.datatype === 'action') roles.push(`巨集按鈕「${n.actionName || caption}」`);
     if (n.datatype === 'action2') roles.push(`LLM 按鈕「${n.actionName || caption}」，回覆寫入 ${name(n.actionID)}`);
     const byKind = k => inn.filter(r => r.kind === k).map(r => r.from_caption);
@@ -77,7 +79,7 @@ export function fieldMap(draft, idx, policy = {}) {
     else if (n.dicrole === 'puthis') roles.push('存檔時寫回 HIS');
     else if (n.dicrole === 'tohis' && dict) roles.push('存檔進倉儲（可被其他表單以字典引用）');
     if (n.required) roles.push('必填');
-    if (!roles.length && !['action', 'action2'].includes(n.datatype)) roles.push('使用者輸入');
+    if (!roles.length && !['action', 'action2', 'attachbox'].includes(n.datatype)) roles.push('使用者輸入');
     const min = n.minval !== undefined && n.minval !== '' ? String(n.minval) : '', max = n.maxval !== undefined && n.maxval !== '' ? String(n.maxval) : '';
     // 單位的優先順序：form_update_control 設定的（draft.units）→ 說明文字推得 → 字典補述
     const unitSet = (draft.units || {})[id] || '', unitCaption = unitOf(caption), unitMemo = (dict && dict.memo && dict.memo.unit) || '';

@@ -3,7 +3,7 @@
 // actionID / furActionID / 計算式與巨集中的 A<n>。
 // 嚴重度：本工具新增或修改的部分 → error；既有表單原封保留的部分 → warning（標示「原表單既有」）。
 // v0.2：計算式、巨集、HIS 參照的檢查（scriptlint）也依同一套分級；修改類別為 formula。
-import { RUNTIME_ROLE, DATATYPES_V02, cellKind } from './model.mjs';
+import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import * as dc from './dictcomment.mjs';
@@ -33,6 +33,8 @@ export function scriptFindings(c, ctlMap, policy = {}, tableIds = null, scriptFn
     const r = lintFormula(c.formula, ctx, { context: 'formula', what: c.datatype === 'label' ? '計算式' : '圖片函數網址' });
     found.push(...r.findings);
     if (c.datatype === 'label') formulaRefs = r.refs;
+    // 計算式裡的附件容器 id（ATTACHCOUNT(2)）是數字不是 A<n>：編輯器「重新編號」不會更新它（2026-11-15 以真實編輯器實測）
+    if (/ATTACH(COUNT|TEXT)\s*\(/i.test(c.formula)) macroIds = true;
     if (c.datatype === 'label' && c.format !== 'formula') found.push({ code: 'E_FORMULA_FORMAT', level: 'error', message: `format 是「${c.format || '（空）'}」但 formula 不是空的：runtime 仍會計算它（TempHtml.js:4368）` });
   }
   if (c.datatype === 'label' && c.format === 'formula' && !String(c.formula || '').trim()) found.push({ code: 'E_FORMULA_EMPTY', level: 'error', message: '計算式是空的：請用 form_update_control 補上 formula' });
@@ -73,7 +75,7 @@ export function tableControlIds(draft) {
   return ids;
 }
 // 新增／修改時可以延後處理的錯誤（參照對象可能稍後才建立）；其餘錯誤當下就拒絕
-export const DEFERRABLE = new Set(['E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE', 'E_FORMULA_EMPTY', 'E_CUSTOMFUNC_UNDEFINED']);
+export const DEFERRABLE = new Set(['E_ATTACH_SOURCE', 'E_REF_BROKEN', 'E_FORMULA_REF_NOT_CALC', 'E_MACRO_TARGET_TYPE', 'E_FORMULA_CYCLE', 'E_REF_TYPE', 'E_FORMULA_EMPTY', 'E_CUSTOMFUNC_UNDEFINED']);
 
 // 文字輸出（GetJsonText）的鍵：[鍵:] 標記，來自頁籤名稱（GetText2 以「[頁籤名稱:]」分段）與說明文字、label
 const HIS_KEY_RE = /\[([^\]\r\n]+):\]/g;
@@ -185,7 +187,22 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   const knownIds = new Set(dictIndex ? dictIndex.entries.map(e => e.id).filter(Boolean) : []);
   for (const { node: c, area } of controls) {
     const fresh = freshFor(c, area);
-    if (fresh && !draft.source && !DATATYPES_V02.includes(c.datatype)) report(true, 'E_UNSUPPORTED_DATATYPE', `datatype ${c.datatype} 不在本工具支援範圍`, c.itemid);
+    if (fresh && !draft.source && !DATATYPES_ALL.includes(c.datatype)) report(true, 'E_UNSUPPORTED_DATATYPE', `datatype ${c.datatype} 不在本工具支援範圍`, c.itemid);
+    // 附件容器（平台 web/js/attachbox.js）：內容不存檔、不參與計算、不綁字典、不能放動態表格。本工具新增或修改的 → error；原表單既有的 → warning
+    if (c.datatype === 'attachbox') {
+      const aFresh = freshFor(c, area, 'shape', 'flags', 'dict', 'moved');
+      if ((!area.imported || cats(c).includes('added')) && !enabled('attachBox')) report(true, 'E_FEATURE_DISABLED', `#${c.itemid}：本工具新增的附件容器需要 feature flag attachBox（預設關）：開啟 flag，或以 form_remove_control 移除`, c.itemid);
+      if (cellKind(areaNode(area).itemtype) === 'table') report(aFresh, 'E_ATTACH_IN_TABLE', `#${c.itemid}：附件容器不能放在動態表格（每一列共用同一個 itemid）`, c.itemid);
+      if (c.tocalc !== false) report(aFresh, 'E_ATTACH_TOCALC', `#${c.itemid}：附件容器不參與計算（tocalc 必須 false）`, c.itemid);
+      if (c.required) report(aFresh, 'E_ATTACH_REQUIRED', `#${c.itemid}：附件容器不能設必填（內容不存檔）`, c.itemid);
+      if (c.dicid || c.dictionary || (c.dicrole && c.dicrole !== 'nohis')) report(aFresh, 'E_ATTACH_DICT', `#${c.itemid}：附件容器的內容不存檔，不能綁字典`, c.itemid);
+      const kinds = String(c.attachkinds || 'image').split(/[\s,]+/).filter(Boolean);
+      const badKinds = kinds.filter(k => !ATTACH_KINDS.includes(k));
+      if (badKinds.length) report(aFresh, 'E_ATTACH_KINDS', `#${c.itemid}：attachkinds 有不認得的類型「${badKinds.join('、')}」（可用：${ATTACH_KINDS.join('、')}）`, c.itemid);
+      const inRange = (v, lo, hi) => v === undefined || v === '' || (Number.isInteger(Number(v)) && Number(v) >= lo && Number(v) <= hi);
+      if (!inRange(c.attachmax, 1, 30)) report(aFresh, 'E_ATTACH_LIMIT', `#${c.itemid}：attachmax 必須是 1–30（目前 ${c.attachmax}）`, c.itemid);
+      if (!inRange(c.attachpages, 1, 100)) report(aFresh, 'E_ATTACH_LIMIT', `#${c.itemid}：attachpages 必須是 1–100（目前 ${c.attachpages}）`, c.itemid);
+    }
     // v1：表格與頁籤格子的規則（實測 load→save 與 runtime 行為）
     const kind = cellKind(areaNode(area).itemtype);
     if (kind === 'table') {
@@ -263,7 +280,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     const fresh = cyc.some(id => { const x = controls.find(k => String(k.node.itemid) === id); return x && freshFor(x.node, x.area, 'formula'); });
     report(fresh, 'E_FORMULA_CYCLE', `計算式循環參照：${cyc.map(id => 'A' + id).join(' → ')}`, cyc[0]);
   }
-  if (macroIds) warn('W_RENUMBER_MACRO', '表單有巨集或 LLM 按鈕：編輯器「重新編號」不會更新巨集內容中的 A<n> 與目標 id，匯入後請勿按「重新編號」');
+  if (macroIds) warn('W_RENUMBER_MACRO', '表單有巨集或 LLM 按鈕：編輯器「重新編號」不會更新巨集內容中的 A<n>、目標 id 與附件容器 id（計算式裡的 ATTACHCOUNT 也是），匯入後請勿按「重新編號」');
   if (ai.length) {
     warn('W_AI_DATAFLOW', `有 ${ai.length} 個 AI 步驟會把表單內容送到院內 LLM／語音服務（清單見 manifest「AI 資料流」；交付時必須告知使用者）`);
     if (!Array.isArray(policy.gateway_models) && policy.site_external) warnings.push({ code: 'W_LLM_WHITELIST_STALE', expected: true, message: '院外預期：院外站台沒有 LlmGateway，模型名稱只以內建靜態表檢查；回院內後以 llmgateway_models 更新並實測 AI 巨集' });

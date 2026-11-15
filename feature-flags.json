@@ -11,5 +11,6 @@
   "unattended": false,
   "formScript": false,
   "formScriptAdvanced": false,
-  "embedArea": true
+  "embedArea": true,
+  "attachBox": false
 }

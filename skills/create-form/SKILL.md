@@ -55,6 +55,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
 | 樣式與即時提示 | 工具清單有 `form_set_script`（flag `formScript`）時才問一句 | 要不要強調欄位、區塊底色或表格格線（樣式）、值不合理時立即提示（guard）、輸入後自動帶出判讀或分類（derive／lookup）、必填離開即提醒（required）；開文件自動跑巨集、表格預設列數是進階（另需 `formScriptAdvanced`）。規則與替代做法見 `references/ScriptAddonRules.md` §1。flag 關閉時不問，需求提到就告知需開 flag |
 | 嵌入院內頁面 | 工具清單的 `form_add_area` type 有 `embed`（flag `embedArea`）且需求提到時才問 | 頁面網址（使用者提供，https 院內主機；不要猜）、表單一載入就顯示（embed 區塊）還是按鈕才開（`OPENPANEL`）、要帶哪些參數（只有病歷號、科別、使用者、門診序號與常數）、要送出與寫回哪些欄位、寫回欄位要不要進倉儲。選項說明寫明「嵌入頁面會收到病歷號、科別、使用者、門診序號，交付時列在嵌入頁面資料流」。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。flag 關閉時不問，需求提到就告知需開 `embedArea`（站台編輯器實測後） |
+| 附件交給 LLM | 工具清單的 `form_add_control` datatype 有 `attachbox`（flag `attachBox`）且需求提到影像、PDF、Excel、錄音檔時才問 | 要放入哪些類型、結果寫到哪個欄位與是否回 HIS、模型（留空用預設，或 `llmgateway_models` 查到的 id）；附件不存檔要先講明。flag 沒開時說明要開 flag、站台也要啟用附件容器 |
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
 
@@ -74,7 +75,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 **小表單捷徑**：以下條件**全部**符合時，不啟動 `form-planner`、`form-builder` 與第一輪 `form-reviewer`，由本 skill 自己做（省下三次子代理各自重讀 references 的時間）；任一項不符就照下方第 1–5 步。
 - 存檔欄位 ≤ 12、區塊 ≤ 3；
-- 沒有計算式、巨集、LLM 按鈕、固定或動態表格、頁籤、表單 JS、嵌入頁面；
+- 沒有計算式、巨集、LLM 按鈕、固定或動態表格、頁籤、表單 JS、嵌入頁面、附件容器；
 - 不需要找他科字典（已登入時本科字典索引已載入，或使用者選擇不提供索引）。
 
 做法：

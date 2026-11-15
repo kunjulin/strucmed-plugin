@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.14.0）
+# strucmed-mcp（v2.15.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.14.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.15.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -149,7 +149,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `form_add_area` | `form` 區塊；權限預設所有人（`doctor`）顯示／編輯／回傳文字；`after_itemid` 插在指定區塊之後（0＝最前面）；`embed`（嵌入頁面，flag `embedArea`，3.11.0 起預設開）帶 `url`、`params`、`height`、`inputs`、`outputs`，規則與站台 `embed-block.js` 相同（`E_EMBED_*`；欄位還沒建的 `E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 延後到 `form_validate`） |
 | `form_update_area` | 改區塊 `title`（有可見標題行時一起改，依標記找，不限第一行）、`visible_title`、`hidden`；`titles` 改頁籤（tab1／tab2）的頁籤名稱與動態表格的欄列標題：完整清單，同名保留、其餘依序改名、多的新增、少的刪除（有控制項時拒絕並列出 itemid），回 `mapping`；`his_text_keys` 的鍵是這次改名或刪掉的頁籤時，`W_HIS_TEXT_KEYS` 寫明「頁籤 comment 已改名 note」並給 `form_update_meta(his_text_keys: […])` 的完整清單；原表單區塊的權限不改；embed 區塊的 `url`、`params`、`height`、`inputs`、`outputs` 整項取代（flag `embedArea`） |
 | `form_remove_area` | 刪空區塊，不需要 confirm；還有控制項、說明文字或被連動引用時拒絕 |
-| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述 |
+| `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述；`attachbox`（附件容器，flag `attachBox` 預設關）：`datavalue` 是提示文字，`attach_kinds`（image／pdf／sheet／text／audio）、`attach_max`（1–30）、`attach_pages`（1–100）；內容不存檔，不能綁字典、必填或放動態表格 |
 | `form_move_control` | 搬控制項（連同說明文字與同一行的後綴文字）到別的區塊、格子或位置，itemid 不變、參照不受影響；`after_itemid` 0＝最前面；搬進動態表格的限制同 `form_add_control` |
 | `form_validate` | 遞迴檢查巢狀結構：itemid 重複、參照（further、reference、公式與巨集中的 A<n>）、dicid 存在性、區塊權限、疑似個資；**依修改類別分級**：本次改到的面向為 error，原表單既有問題為 warning；`W_DICT_DUP_WRITE`：同一字典被兩個以上 tohis／puthis 欄位寫入（存檔只留第一個有值的欄位，不阻擋） |
 | `form_preview` | tree / markdown；html 是本機離線預覽兼審閱模式（下節），另接受 `applied_seq`、`formulas`、`formulas_from_review`，回 `url`、`open`、`runtime_web`、`meta_file`、`review_dir` |
@@ -196,6 +196,8 @@ cd mcp/strucmed-mcp && npm test
 - `test/v392.test.mjs`：3.9.1 實跑的發現：`form_update_area(titles)` 改名、增減、調換頁籤與拒絕刪除有欄位的頁籤、可見標題行被搬動後仍找得到（`W_BEFORE_TITLE`）、改名或刪頁籤後 `W_HIS_TEXT_KEYS` 指出頁籤並給改好的清單（3.9.3）、`dictionary_suggest` 預設 5 筆與 `full_memo`、型別不一致的降級理由。
 - `test/script.test.mjs`：表單 JS 白名單片段（flag `formScript`）：flag 關不列出、S1 style 的主題與規則渲染成一個 `<style>`（控制項層級加 `!important`）、CSS 屬性與值白名單、S4 guard 的事件綁定與條件 lint、訊息字元限制、禁用 token 掃描（字串與註解不算）、`form_remove_control`／`form_remove_area` 擋片段參照、flag 事後關閉時驗證與匯出拒絕、匯出計畫與 manifest 列出渲染後的 JS、改版 draft 原 JS 在前片段在後；D2：S2 derive（目標不能是 label／自己／動態表格）、S3 lookup（`sm_<name>`、`CUSTOMFUNC` 只放行片段定義的名稱、未定義可延後 `E_CUSTOMFUNC_UNDEFINED`、名稱重複）、S5 required（目標須 required）、`W_CUSTOM_JS_FINDINGS`、`verifyScriptBlock` 雜湊比對、`hide_prev_icon`；D4：flag `formScriptAdvanced` 關閉時 autorun／table-rows 拒絕、開啟後渲染（`performActionByID`、`TableRowAdd`＋預填）、事後關閉驗證與匯出拒絕。
 - `test/embed.test.mjs`：嵌入頁面（flag `embedArea`）：平台 `tests/web-js/embed-block.test.mjs` 的案例逐條搬來（主機範圍、https、params 個資、height、buildUrl、outputs 目標、fill 與重疊、結果值），12 個 `E_EMBED_*` 訊息與平台相同（`STRUCMED_RUNTIME_WEB` 有 `js/embed-block.js` 時直接載入平台檔比對）；平台與 1.10.9 DLL 共用的主機案例（`tests/fixtures/internal-hosts.json`，平台倉儲在旁邊時直接讀那份比對）；工具清單的 `type` 依 flag 才有 `embed`；flag 關時 `form_add_area` 拒絕、`OPENPANEL` 禁用；`form_add_area`／`form_update_area` 當下拒絕與延後的錯誤、GetData key 順序、預覽摘要、`W_EMBED_DATAFLOW` 與 manifest「嵌入頁面資料流」、寫回欄位不能刪、flag 事後關閉；匯入含 embed 的表單原樣保留（原表單錯誤為 warning）；`OPENPANEL` 的字串字面值、主機、巨集專用與 `formula_check`。院內 IP 在執行時組字串。
+- `test/make-harness-fixture-attachbox.mjs`：產生 `generated-attachbox.json` 給編輯器往返 harness。
+- `test/attachbox.test.mjs`：附件容器（flag `attachBox`）：控制項欄位與編輯器存下的相同、`attach_*` 的範圍、動態表格拒絕、`LLMATTACH`／`ATTACHTRANSCRIBE` 的語法與容器來源、模型（內建代號、原樣送出、Gateway 白名單、視覺能力）、`ATTACHTEXT`／`ATTACHCOUNT`、AI 資料流與 flag 事後關閉。
 - `test/style-fields.test.mjs`：S0 控制項樣式欄位（`font_color`／`font_size`／`back_color` → `efontcolor`／`efontsize`／`ebackcolor`）：新增與更新、清回預設、無效值拒絕、`form_fields` 的 `style` 與 `form_preview(tree)` 顯示、`form_import` 既有值保留不算修改。
 - `test/rebuild.test.mjs`：`form_move_control`、`form_update_area`、`form_remove_area`、`form_add_area(after_itemid)`、`from_draft_id`、`W_APPLIED_SEQ_RESET`、補述自動檢查、`W_NON_BIG5`、`formulas_from_review`。
 - `test/package.test.mjs`：套件 v2 與 schema 一致、完整性雜湊、竄改偵測、`.htm` 內嵌 JSON 的跳脫安全。

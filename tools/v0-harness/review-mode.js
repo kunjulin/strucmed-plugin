@@ -14,7 +14,7 @@
     asr: '語音別名（以／分隔）', calx: '計算式說明', llm: 'LLM 提示', scope: '適用範圍' };
   var LEVEL_LABEL = { sys: '體系', own: '本科', sub: '次專', dpt: '科部', system: '全院', other: '其他' };
   var TYPE_LABEL = { textbox: '文字', numberbox: '數字', textarea: '段落', calendar: '日期時間', selection: '下拉', combobox: '組合框', radiobutton: '單選', checkbox: '核取',
-    submenu: '階層選單', label: '計算式／顯示', imgbox: '圖片', form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕' };
+    submenu: '階層選單', label: '計算式／顯示', imgbox: '圖片', form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕', attachbox: '附件容器' };
 
   var fields = {}, areas = {}, nodes = {}, base = {};
   var edits = {}, areaComments = {};        // 尚未送出的修改
@@ -176,7 +176,7 @@
         if (!j) return;
         Object.keys(j.values || {}).forEach(function (id) {
           var f = fields[id];
-          if (!f || ['label', 'action', 'action2', 'imgbox'].indexOf(f.datatype) >= 0) return;
+          if (!f || ['label', 'action', 'action2', 'imgbox', 'attachbox'].indexOf(f.datatype) >= 0) return;
           try { SetValueByID(id, j.values[id]); } catch (e) { console.warn('[review] 回填失敗', id, e); }
         });
         $(targetid).calx('refresh');
@@ -296,7 +296,7 @@
       });
     }
     if (editableDefault(f)) kids.push(row('預設值', textInput('default' in e ? e['default'] : b['default'], function (v) { setEdit(id, 'default', v, b['default']); })));
-    if (['label', 'action', 'action2'].indexOf(f.datatype) < 0) {
+    if (['label', 'action', 'action2', 'attachbox'].indexOf(f.datatype) < 0) {
       kids.push(row('必填', el('input', { type: 'checkbox', checked: 'required' in e ? e.required : b.required, on: { change: function () { setEdit(id, 'required', this.checked, b.required); } } })));
     }
     kids = kids.concat(dictionarySection(id, f), formulaSection(f));

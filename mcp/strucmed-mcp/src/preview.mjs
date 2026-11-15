@@ -5,7 +5,7 @@ import { summarize } from './embed.mjs';
 const LABEL = {
   textbox: '文字', numberbox: '數字', textarea: '段落', calendar: '日期時間', selection: '下拉', combobox: '組合框',
   radiobutton: '單選', checkbox: '核取', submenu: '階層選單', label: '計算式/顯示', imgbox: '圖片',
-  form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕'
+  form: '彈出片語', subgroup: '群組', action: '巨集按鈕', action2: 'LLM 按鈕', attachbox: '附件容器'
 };
 const AREA = {
   form: '文字', form2: '雙欄', formtable: '固定表格', table1: '動態表格(欄向，按＋加列)', table2: '動態表格(列向，按＋加欄)',
@@ -26,12 +26,14 @@ function describe(c, touched) {
   if (c.formula) bits.push(`公式「${clip(c.formula)}」`);
   if (c.hisquery) bits.push(`HIS「${clip(c.hisquery)}」`);
   if (c.actionScript) bits.push(`${c.actionName ? `「${c.actionName}」` : ''}腳本「${clip(c.actionScript)}」→#${c.actionID}`);
-  if (typeof c.datavalue === 'string' && c.datavalue) bits.push(`預設「${clip(c.datavalue, 20)}」`);
+  if (c.datatype === 'attachbox') bits.push(`可放入 ${String(c.attachkinds || 'image')}／最多 ${c.attachmax || 8} 項／不存檔`);
+  if (typeof c.datavalue === 'string' && c.datavalue) bits.push(`${c.datatype === 'attachbox' ? '提示' : '預設'}「${clip(c.datavalue, 20)}」`);
   if (Array.isArray(c.datavalue)) bits.push(`子項 ${c.datavalue.filter(x => x && x.itemid !== undefined).length}`);
   if (c.reference) bits.push(`引用 #${c.reference}`);
   if (c.required) bits.push('必填');
   const st = styleOf(c);
   if (st) bits.push(`樣式 ${[st.font_color && `字${st.font_color}`, st.font_size && `${st.font_size}px`, st.back_color && `底${st.back_color}`].filter(Boolean).join('/')}`);
+  if (c.datatype === 'attachbox') return bits.join(' ');
   bits.push(c.dictionary ? `字典 ${c.dictionary}${c.dicid ? '' : '（新建）'}／${ROLE[c.dicrole] || c.dicrole}` : '無字典');
   return bits.join(' ');
 }

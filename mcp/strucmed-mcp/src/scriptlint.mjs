@@ -3,7 +3,7 @@
 // finding：{ code, level:'error'|'warn', message }。level=error 的項目由 validate 依「是否本次新增／修改」
 // 決定要當 error 還是 warning（原表單既有）；level=warn 一律是 warning。
 import { check } from './calx.mjs';
-import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS } from './calx-catalog.mjs';
+import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
 import { checkAlias } from './policy.mjs';
 import { checkUrl } from './embed.mjs';
 import { enabled } from './flags.mjs';
@@ -136,12 +136,56 @@ function functionFindings(info, context, out, what, ctx = {}, src) {
       if (r.ok) out.push({ ...warn('W_EMBED_DATAFLOW', `${f.raw}() 按下時開啟院內頁面 ${r.host}（右側子面板或浮動面板；不帶參數、不送 strucmed.context、不寫回欄位）`), host: r.host, url: r.url });
       continue;
     }
+    if (cls === 'attach') {
+      // ATTACHCOUNT／ATTACHTEXT（平台 web/js/attachbox.js）：flag attachBox 關閉時本工具不產生；第一個參數必須是附件容器的 itemid
+      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${f.raw}() 需要 feature flag attachBox（附件容器，預設關）`)); continue; }
+      if (context === 'formula' && f.name === 'ATTACHTEXT') { out.push(err('E_FORMULA_MACRO_ONLY', `${f.raw}() 只能用在巨集步驟或 LLM 按鈕的 prompt：放在計算式每次重算都會取一次容器全文`)); continue; }
+      const arg = src !== undefined ? argText(src, f, 0) : null;
+      if (arg === null || !isIntLiteral(arg)) out.push(err('E_ATTACH_SOURCE', `${f.raw}() 的第一個參數必須是附件容器的 itemid（直接寫數字）`));
+      else attachSource(arg.trim(), ctx, out, f.raw + '()');
+      continue;
+    }
     if (cls === 'forbidden') out.push(err('E_FORBIDDEN_FUNCTION', `${f.raw}() 不在本工具允許範圍（任意程式、開網址、存檔、改寫身分或文件 header、連外）；確有需要請匯入後由人工在編輯器加入並審查`));
     else if (context === 'formula' && ['lookup', 'write', 'ai'].includes(cls)) out.push(err('E_FORMULA_MACRO_ONLY', `${f.raw}() 是巨集專用函數，不能放在計算式`));
     else if (cls === 'setting') out.push(warn('W_SETTING_FUNCTION', `${f.raw}() 會改變整張表單的行為（${what}）`));
     else if (cls === 'lookup') out.push(warn('W_PATIENT_DATA_READ', `${f.raw}() 會在 HIS 端讀取病人資料`));
   }
 }
+
+// ── 附件容器（flag attachBox）──────────────────────────────────────────────
+const attachOn = ctx => (ctx.attachBox !== undefined ? !!ctx.attachBox : enabled('attachBox'));
+// 容器可放入的類型：沒有 attachkinds 的舊容器只收影像（平台 attachbox.js kindsOf）
+export function attachKindsOf(n) {
+  const list = String((n && n.attachkinds) || 'image').split(/[\s,]+/).filter(k => ATTACH_KINDS.includes(k));
+  return list.length ? list : ['image'];
+}
+// 檢查一個容器 id；回 { itemid, kinds } 或 null（不存在、不是容器）
+function attachSource(id, ctx, out, fn) {
+  if (!ctx.controls) return { itemid: Number(id), kinds: null };
+  const n = ctx.controls.get(String(id));
+  if (!n) { out.push(err('E_REF_BROKEN', `${fn} 的附件容器 #${id} 不存在`)); return null; }
+  if (n.datatype !== 'attachbox') { out.push(err('E_ATTACH_SOURCE', `${fn} 的來源 #${id} 是 ${n.datatype}，必須是附件容器（attachbox）`)); return null; }
+  return { itemid: Number(id), kinds: attachKindsOf(n) };
+}
+// 巨集步驟的容器清單（LLMATTACH 第四個以後、ATTACHTRANSCRIBE 全部）：平台不經計算，只把參數接回去、去掉引號，再以空白／逗號／分號切開
+function attachSources(params, ctx, out, fn) {
+  const text = params.join(',').replace(/["']/g, '').trim();
+  if (!text) {
+    // 省略＝頁面上所有容器
+    if (!ctx.controls) return [];
+    const all = [...ctx.controls.values()].filter(n => n.datatype === 'attachbox').map(n => ({ itemid: Number(n.itemid), kinds: attachKindsOf(n) }));
+    if (!all.length) out.push(err('E_ATTACH_SOURCE', `${fn} 沒有指定容器，表單裡也沒有附件容器（attachbox）`));
+    return all;
+  }
+  const found = [];
+  for (const id of text.split(/[\s,;]+/).filter(Boolean)) {
+    if (!/^\d+$/.test(id)) { out.push(err('E_ATTACH_SOURCE', `${fn} 的容器 id「${id.slice(0, 20)}」必須直接寫 itemid 數字：這個位置不經計算，A12 或運算式都無效`)); continue; }
+    const s = attachSource(id, ctx, out, fn);
+    if (s) found.push(s);
+  }
+  return found;
+}
+const kindsText = list => [...new Set(list.flatMap(s => s.kinds || []))].map(k => ATTACH_KIND_LABELS[k]).join('、');
 
 // ── 計算式 ────────────────────────────────────────────────────────────────
 export function lintFormula(text, ctx = {}, { context = 'formula', what = '計算式' } = {}) {
@@ -205,6 +249,7 @@ function checkModel(modelText, ctx, out, fn) {
     return null;
   }
   const m = lit.toLowerCase();
+  if (fn === 'LLMATTACH') return checkAttachModel(lit, ctx, out);
   const table = fn === 'LLMvision' ? VISION_MODELS : LLM_MODELS;
   if (fn === 'LLMQUERY' && LLM_ALIASES[m]) out.push(warn('W_LLM_MODEL_ALIAS', `模型「${lit}」是舊別名，實際使用 ${LLM_ALIASES[m]}`));
   else if (!(m in table)) {
@@ -224,6 +269,30 @@ function checkModel(modelText, ctx, out, fn) {
     else if (fn === 'LLMvision' && !gw.vision) out.push(err('E_LLM_MODEL_NO_VISION', `LLMvision 的模型「${shown}」（${gw.gateway_model}）在 LlmGateway 沒有視覺能力，會被拒絕`));
   }
   return canon;
+}
+
+// LLMATTACH 的模型：代號表與 LLMvision 相同；不在表內的名稱經 LlmGateway 時原樣當模型 id 送出（平台 attachbox.js buildRequest），所以不是錯誤
+function checkAttachModel(lit, ctx, out) {
+  const m = lit.toLowerCase();
+  const known = m in ATTACH_MODELS;
+  if (!known) out.push(warn('W_LLM_MODEL_PASSTHROUGH', `LLMATTACH 的模型「${lit}」不是內建代號（${Object.keys(ATTACH_MODELS).filter(Boolean).join('、')}）：經 LlmGateway 時原樣當模型 id 送出（必須與 llmgateway_models 的 id 完全相同），直連時改用預設 gemma3:12b；院外站台用使用者在設定畫面選的模型`));
+  const allowed = ctx.policy && Array.isArray(ctx.policy.llm_models) ? ctx.policy.llm_models : null;
+  if (allowed && !allowed.includes(known ? m : lit)) out.push(err('E_LLM_MODEL_POLICY', `模型「${lit || '（預設）'}」不在本院允許清單（.strucmed/policy.json）：${allowed.join('、') || '（空）'}`));
+  const models = ctx.policy && Array.isArray(ctx.policy.gateway_models) ? ctx.policy.gateway_models : null;
+  if (models) {
+    const shown = lit || '（預設）';
+    const gw = known ? checkAlias(m, 'LLMvision', models) : (() => {
+      const hit = models.find(x => String(x.id || '') === lit);
+      return hit ? { gateway_model: lit, found: true, status: String(hit.status || ''), vision: !!hit.vision } : { gateway_model: lit, found: false };
+    })();
+    if (gw && gw.gateway_model) {
+      if (!gw.found) out.push(err('E_LLM_MODEL_NOT_ON_GATEWAY', `LLMATTACH 的模型「${shown}」對應的閘道模型 ${gw.gateway_model} 不在 LlmGateway 白名單（金鑰可用的模型；名稱大小寫要完全相同）`));
+      else if (/^deprecated$/i.test(gw.status)) out.push(err('E_LLM_MODEL_DEPRECATED', `LLMATTACH 的模型「${shown}」（${gw.gateway_model}）在 LlmGateway 標示為 deprecated，請換模型`));
+      else if (/^maintenance$/i.test(gw.status)) out.push(warn('W_LLM_MODEL_MAINTENANCE', `LLMATTACH 的模型「${shown}」（${gw.gateway_model}）目前 maintenance，上線前請確認`));
+      else if (!gw.vision) out.push({ ...warn('W_LLM_MODEL_NO_VISION', `LLMATTACH 的模型「${shown}」（${gw.gateway_model}）在 LlmGateway 沒有視覺能力`), novision: true });
+    }
+  }
+  return known ? m : lit;
 }
 
 // HISQUERY("id,查詢;id2,查詢2")：runtime 以 ; 再以 , 切開，逗號數不對的組合會被靜默略過（TempHtml.js:878-893）
@@ -299,6 +368,46 @@ export function lintMacro(script, ctx = {}) {
         identifierWarning(pr.functions, out, `${no} ${kind}`);
         promptDesignWarnings(params[1], pr, out, `${no} ${kind}`);
       }
+      steps.push({ step: i + 1, kind });
+      return;
+    }
+    if (kind === 'LLMATTACH' || kind === 'ATTACHTRANSCRIBE') {
+      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${no} ${kind} 需要 feature flag attachBox（附件容器，預設關）`)); steps.push({ step: i + 1, kind }); return; }
+      const open = step.indexOf('('), close = step.lastIndexOf(')');
+      if (open < 0 || close < open) { out.push(err('E_MACRO_SYNTAX', `${no} ${kind} 缺少括號`)); return; }
+      if (step.slice(close + 1).trim()) out.push(err('E_MACRO_TRAILING', `${no} ${kind}(...) 之後的「${step.slice(close + 1).trim().slice(0, 20)}」會被忽略`));
+      const params = platformSplit(step.substring(open + 1, close)).steps;
+      if (kind === 'ATTACHTRANSCRIBE') {
+        const boxes = attachSources(params, ctx, out, `${no} ${kind}`);
+        if (boxes.length && boxes.every(b => b.kinds && !b.kinds.includes('audio'))) out.push(warn('W_ATTACH_NO_AUDIO', `${no} ATTACHTRANSCRIBE 指到的容器都不收音檔（請在容器的 attach_kinds 加 audio）：這一步不會做任何事`));
+        ai.push({ step: i + 1, kind, target: null, provider: '語音服務（院內 ASUS；院外為使用者選的語音服務商）', inputs: [], attachments: boxes, sources: boxes.length ? [`附件容器 ${boxes.map(b => '#' + b.itemid).join('、')} 的音檔`] : [] });
+        steps.push({ step: i + 1, kind });
+        return;
+      }
+      if (params.length < 2) { out.push(err('E_MACRO_SYNTAX', `${no} LLMATTACH 至少需要 2 個參數（回覆寫入的 id、提示詞）`)); return; }
+      params.slice(0, 3).forEach((p, j) => {
+        const r = lintFormula(p, ctx, { context: 'macro', what: `${no} LLMATTACH 第 ${j + 1} 個參數` });
+        sub(r.findings, no);
+        refs.push(...r.refs);
+      });
+      const target = checkTarget(params[0], ctx, out, kind, { want: ['textarea', 'textbox', 'label'] });
+      if (target && target !== '0') targets.push(target);
+      const boxes = attachSources(params.slice(3), ctx, out, `${no} LLMATTACH`);
+      const before = out.length;
+      const model = checkModel(params[2] !== undefined ? params[2] : null, ctx, out, kind);
+      // 沒有視覺能力的模型：容器會收影像（或 PDF 可一併送頁面影像）才是問題；只收試算表、文字、音檔時文字模型也能用
+      const sendsImages = boxes.some(b => !b.kinds || b.kinds.includes('image') || b.kinds.includes('pdf'));
+      for (let k = before; k < out.length; k++) {
+        if (!out[k].novision) continue;
+        const { novision, ...f } = out[k];
+        out[k] = sendsImages ? { ...f, code: 'E_LLM_MODEL_NO_VISION', level: 'error', message: `${f.message}，容器會送出影像，請換能讀影像的模型` } : { ...f, message: `${f.message}（容器只收文字類附件，可以使用）` };
+      }
+      const pr = lintFormula(params[1], {}, { context: 'macro' });
+      const audio = boxes.some(b => b.kinds && b.kinds.includes('audio'));
+      ai.push({ step: i + 1, kind, target, model: model === null ? '（無法判斷）' : model, inputs: [...new Set(pr.refs)], attachments: boxes,
+        sources: [...promptSources(pr.functions), ...(boxes.length ? [`附件容器 ${boxes.map(b => '#' + b.itemid).join('、')} 的內容${kindsText(boxes) ? `（${kindsText(boxes)}）` : ''}：影像以影像送出，文件與逐字稿以文字附在提示詞後面`] : []),
+          ...(audio ? ['還沒轉寫的音檔會先送語音服務轉成逐字稿'] : [])] });
+      identifierWarning(pr.functions, out, `${no} ${kind}`);
       steps.push({ step: i + 1, kind });
       return;
     }
@@ -414,6 +523,7 @@ export function lintPrompt(text, ctx = {}) {
 
 // prompt 中一次取出大量表單或病歷資料的函數（AI 資料流要明列，不能只列 A<n>）
 const BULK_SOURCES = {
+  ATTACHTEXT: 'ATTACHTEXT()：附件容器內 PDF、試算表、文字與音檔逐字稿的內容',
   GETTEXT: 'GETTEXT()：所有「回傳文字」區塊的報告全文（TempHtml.js GetTextblock）',
   GETVALUE: 'GETVALUE()：表單所有欄位的值',
   G_USERNM: 'G_USERNM()：使用者姓名', G_CHTNO: 'G_CHTNO()：病歷號', GETCHTNO: 'GETCHTNO()：病歷號',

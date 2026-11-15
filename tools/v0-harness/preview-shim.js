@@ -30,6 +30,42 @@
     write(id, text);
     return Promise.resolve(text);
   };
+  // ── 附件容器（平台 js/attachbox.js；站台旗標 V2:Attachments）──
+  // 預覽頁把容器打開：貼上、拖放、選檔與 PDF／Excel 的文字抽取都在瀏覽器內完成，可以實際操作；
+  // 送出（LLMATTACH）與音檔轉寫（ATTACHTRANSCRIBE）不呼叫任何服務，只顯示將送出的內容。平台副本還沒有 attachbox.js 時這段不作用。
+  window.STRUC_ATTACH = true;
+  function attachIds(sources) {
+    var text = sources === undefined || sources === null ? '' : String(sources).trim();
+    if (text) return text.split(/[\s,;]+/).filter(Boolean);
+    return Array.prototype.map.call(document.querySelectorAll('.attachbox'), function (b) { return b.getAttribute('itemid'); });
+  }
+  function attachSummary(ids) {
+    var images = 0, docs = 0, chars = 0, audio = 0;
+    ids.forEach(function (id) {
+      var items = [];
+      try { items = (window.AttachBox && window.AttachBox.items(id)) || []; } catch (e) { items = []; }
+      items.forEach(function (it) {
+        if (it.kind === 'image') images++;
+        else if (it.kind === 'audio' && !(it.chars > 0)) audio++;
+        else if (it.chars > 0) { docs++; chars += it.chars; }
+        if (it.kind === 'pdf' && it.asImages) images += (it.pageImages || []).length;
+      });
+    });
+    return '容器 ' + (ids.length ? ids.map(function (i) { return '#' + i; }).join('、') : '（無）') + '：影像 ' + images + ' 張、文件文字 ' + docs + ' 份共 ' + chars + ' 字' + (audio ? '、未轉寫的音檔 ' + audio + ' 個' : '');
+  }
+  window.LLMattach = function (id, prompt, model, sources) {
+    var p = prompt === undefined || prompt === null ? '' : String(prompt);
+    var sum = attachSummary(attachIds(sources));
+    var text = '〔離線預覽：未呼叫 LLM｜LLMATTACH｜模型 ' + (model || '（預設）') + '｜' + sum + '〕\n' + p;
+    note('LLMATTACH', '#' + id + ' ← 模型 ' + (model || '（預設）') + '，' + sum);
+    write(id, text);
+    return Promise.resolve(text);
+  };
+  window.AttachTranscribe = function (sources) {
+    var ids = attachIds(sources);
+    note('音檔轉逐字稿', '容器 ' + ids.map(function (i) { return '#' + i; }).join('、') + '（離線預覽：未呼叫語音服務）');
+    return Promise.resolve('〔離線預覽：未呼叫語音服務，音檔沒有轉成逐字稿〕');
+  };
   // ── VOICETOTEXT（語音轉文字）：calcSetval 會把回傳值寫入目標 ──
   window.voiceToText = function (id, provider) {
     note('語音', '#' + id + ' ← ' + (provider || 'ASUS'));
