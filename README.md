@@ -555,13 +555,13 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 - 怎麼開：本機資料夾安裝（開發者）改 plugin 根目錄的 `feature-flags.json`；市集安裝時改快取目錄的同一個檔（Claude Code 在 `~/.claude/plugins/cache/strucmed-marketplace/strucmed/<版本>/feature-flags.json`，更新版本後要再改一次），或在啟動工具的 shell 設 `STRUCMED_FLAGS` 指向自己的 JSON 檔（內容例如 `{ "formScript": true }`）。改完開新工作階段。
 - 渲染後的程式碼會原樣列在定稿 G2 與匯入說明給你審閱；片段只在 2.0 runtime 執行，不影響 HIS 文字輸出與倉儲；樣式會影響列印版面。規則見 [references/ScriptAddonRules.md](references/ScriptAddonRules.md)。
 
-**附件容器（3.12.0，flag `attachBox` 預設關）**：
+**附件容器（flag `attachBox`，3.12.1 起預設開）**：
 - 表單上放一個附件容器（`form_add_control` datatype `attachbox`），使用者貼上、拖放或選檔放入影像（PNG、JPEG、TIFF）、PDF、Excel／CSV、文字、音檔，再由巨集 `LLMATTACH(回覆id, 提示詞, "模型", "容器id")` 送給 LLM：影像當影像，文件當文字，音檔先轉逐字稿。另有 `ATTACHTRANSCRIBE`（音檔轉逐字稿）、`ATTACHTEXT`（取容器內的文字）、`ATTACHCOUNT`（項目數）。
 - **附件不存檔**：附件、抽出的文字與逐字稿只留在當次畫面，不進倉儲與 HIS 文字；要留下的結果由巨集寫進一般欄位。用到容器的巨集都列在「AI 資料流」。
-- **怎麼開**：`feature-flags.json` 的 `attachBox` 改成 `true`（位置同上面的 `formScript`），開新工作階段。**站台也要啟用附件容器**（平台設定 `V2:Attachments`；院外站台已開，院內站台尚未部署）；沒啟用的站台上容器只顯示「尚未啟用」。flag 關閉時，改版表單裡既有的容器與巨集原樣保留。
+- **不必另外設定**：3.12.1 起預設開啟（院內、院外站台都已啟用附件容器）。站台沒啟用時（平台設定 `V2:Attachments`）容器只顯示「尚未啟用」。要停用：`feature-flags.json` 的 `attachBox` 改成 `false`（位置同上面的 `formScript`），開新工作階段；關閉時，改版表單裡既有的容器與巨集原樣保留。
 - 模型：`LLMATTACH` 的模型留空用預設；還沒有內建代號的新模型直接寫 `llmgateway_models` 查到的 id（原樣送給 LlmGateway，大小寫要完全相同）。院外站台用你在「LLM 服務設定」選的模型。
 - 預覽頁可以實際放入檔案（解碼與文字抽取都在瀏覽器內完成），按鈕只顯示將送出的內容，不呼叫 LLM 或語音服務。
-- 已實測（2026-11-15）：plugin 產生的容器經編輯器載入、存檔後完整保留（文字區塊、固定表格、頁籤內都是）。**匯入後仍建議不要按「重新編號」**：站台編輯器含 2026-11-15 的修正時（院外站台已部署，院內尚未），巨集與計算式裡的容器 id 會跟著改；但其他巨集步驟的目標 id 與巨集裡的 `A<n>` 不會，舊版站台則連容器 id 都不會改。尚未驗證：HIS 端（CEF 104）內的操作。
+- 已實測（2026-11-15）：plugin 產生的容器經編輯器載入、存檔後完整保留（文字區塊、固定表格、頁籤內都是）。**匯入後仍建議不要按「重新編號」**：站台編輯器含 2026-11-15 的修正時，巨集與計算式裡的容器 id 會跟著改；但其他巨集步驟的目標 id 與巨集裡的 `A<n>` 不會，舊版站台則連容器 id 都不會改。院內站台已實測可用（2026-11-16）。
 
 **嵌入頁面（3.11.0，flag `embedArea` 預設開）**：
 - 表單內嵌入院內網頁（`form_add_area` type `embed`：`url`、`params`、`height`、`inputs`、`outputs`）與按鈕開頁面的巨集 `OPENPANEL(url, title)`。網址只接受 https＋院內主機（`*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost），參數只能是病歷號、科別、使用者、門診序號的占位符或常數，不寫自訂 JS。規則與站台編輯器相同（`E_EMBED_*`），交付時列 `W_EMBED_DATAFLOW`（主機、參數、寫回欄位）。

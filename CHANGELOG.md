@@ -14,7 +14,14 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.1（MCP 2.15.1）— 2026-11-16：附件容器預設開啟
+
+- **flag `attachBox` 改為預設開**：院內、院外站台都已啟用附件容器，院內已實測可用（2026-11-16，使用者回報）。更新後不必再改 `feature-flags.json`，`form_add_control` 的 datatype 直接有 `attachbox`。要停用時把 `attachBox` 改成 `false`。
+- 功能本身沒有變動；錯誤訊息與說明文件裡的「預設關」「院內尚未部署」改為現況。
+
 ## 3.12.0（MCP 2.15.0）— 2026-11-15：附件容器（attachbox 控制項、巨集 LLMATTACH），flag `attachBox` 預設關
+
+發佈（2026-11-15）：strucmed-plugin `f416325`、tag `v3.12.0`、GitHub Release「strucmed 3.12.0（MCP 2.15.0）」；本 repo tag `v3.12.0-src`（`8dc3b78`）。發佈時：`release-plugin.mjs` ok、234 檔、掃描無發現；發佈樹測試 278 個（277 通過、1 略過）；`claude plugin validate . --strict` 通過。同日在本機從市集更新驗證：3.11.2 → 3.12.0，快取內容與發佈樹相同，MCP 啟動回 2.15.0；flag 關時 `form_add_control` 的 datatype 沒有 `attachbox`，開啟後有。
 
 平台已有附件容器（kunjulin/strucmed #242～#254：影像、PDF、Excel／CSV、文字、音檔轉逐字稿；院外站台已部署並實測，院內尚未部署）。這一版讓 plugin 能產生、檢查、預覽用到它的表單。
 

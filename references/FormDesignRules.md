@@ -76,7 +76,7 @@
 
 ## 附件容器（attachbox 控制項，flag `attachBox`）
 
-> flag `attachBox` 預設關。站台也要開啟附件容器（`V2:Attachments`；院外站台已開，院內站台尚未部署）才會顯示；沒開的站台上容器只顯示「尚未啟用」。工具清單的 `form_add_control` datatype 有 `attachbox` 才可用；flag 關閉時改版表單裡既有的容器原樣保留。
+> flag `attachBox` 3.12.1 起預設開。站台也要開啟附件容器（`V2:Attachments`；院內、院外站台都已開）才會顯示；沒開的站台上容器只顯示「尚未啟用」。工具清單的 `form_add_control` datatype 有 `attachbox` 才可用；flag 關閉時改版表單裡既有的容器原樣保留。
 
 使用者在表單頁把檔案貼上、拖放或選檔放進容器，再由巨集 `LLMATTACH` 送給 LLM（`MacroRecipes.md` R11）。容器是一個控制項，放在文字區塊、固定表格或頁籤裡：
 

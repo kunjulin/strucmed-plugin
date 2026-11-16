@@ -988,7 +988,7 @@ export const TOOLS = [
       if (kind === 'table') checkTableCell(target.where, { dict: control.dictionary && (control.dictionary.id || control.dictionary.name), dicrole: control.dicrole, tocalc: control.tocalc, datatype: control.datatype,
         script: control.datatype === 'label' && (control.formula || control.hisquery || ['formula', 'hisquery'].includes(control.format)) });
       if (control.datatype === 'attachbox') {
-        if (!enabled('attachBox')) fail(E.FEATURE_DISABLED, 'feature flag attachBox 未開啟（feature-flags.json，預設關）：本工具不產生附件容器；站台也要開啟 V2:Attachments 才會顯示');
+        if (!enabled('attachBox')) fail(E.FEATURE_DISABLED, 'feature flag attachBox 未開啟（feature-flags.json）：本工具不產生附件容器；站台也要開啟 V2:Attachments 才會顯示');
         if (control.dictionary && (control.dictionary.id || control.dictionary.name) || (control.dicrole && control.dicrole !== 'nohis')) fail(E.INVALID_INPUT, '附件容器的內容不存檔，不能綁字典');
       }
       const itemid = d.nextItemId;

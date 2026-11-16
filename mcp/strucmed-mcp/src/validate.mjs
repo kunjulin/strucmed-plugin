@@ -191,7 +191,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     // 附件容器（平台 web/js/attachbox.js）：內容不存檔、不參與計算、不綁字典、不能放動態表格。本工具新增或修改的 → error；原表單既有的 → warning
     if (c.datatype === 'attachbox') {
       const aFresh = freshFor(c, area, 'shape', 'flags', 'dict', 'moved');
-      if ((!area.imported || cats(c).includes('added')) && !enabled('attachBox')) report(true, 'E_FEATURE_DISABLED', `#${c.itemid}：本工具新增的附件容器需要 feature flag attachBox（預設關）：開啟 flag，或以 form_remove_control 移除`, c.itemid);
+      if ((!area.imported || cats(c).includes('added')) && !enabled('attachBox')) report(true, 'E_FEATURE_DISABLED', `#${c.itemid}：本工具新增的附件容器需要 feature flag attachBox（目前關閉）：開啟 flag，或以 form_remove_control 移除`, c.itemid);
       if (cellKind(areaNode(area).itemtype) === 'table') report(aFresh, 'E_ATTACH_IN_TABLE', `#${c.itemid}：附件容器不能放在動態表格（每一列共用同一個 itemid）`, c.itemid);
       if (c.tocalc !== false) report(aFresh, 'E_ATTACH_TOCALC', `#${c.itemid}：附件容器不參與計算（tocalc 必須 false）`, c.itemid);
       if (c.required) report(aFresh, 'E_ATTACH_REQUIRED', `#${c.itemid}：附件容器不能設必填（內容不存檔）`, c.itemid);

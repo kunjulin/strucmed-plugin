@@ -12,5 +12,5 @@
   "formScript": false,
   "formScriptAdvanced": false,
   "embedArea": true,
-  "attachBox": false
+  "attachBox": true
 }

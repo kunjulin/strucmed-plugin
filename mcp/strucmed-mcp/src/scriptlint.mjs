@@ -138,7 +138,7 @@ function functionFindings(info, context, out, what, ctx = {}, src) {
     }
     if (cls === 'attach') {
       // ATTACHCOUNT／ATTACHTEXT（平台 web/js/attachbox.js）：flag attachBox 關閉時本工具不產生；第一個參數必須是附件容器的 itemid
-      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${f.raw}() 需要 feature flag attachBox（附件容器，預設關）`)); continue; }
+      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${f.raw}() 需要 feature flag attachBox（附件容器，目前關閉）`)); continue; }
       if (context === 'formula' && f.name === 'ATTACHTEXT') { out.push(err('E_FORMULA_MACRO_ONLY', `${f.raw}() 只能用在巨集步驟或 LLM 按鈕的 prompt：放在計算式每次重算都會取一次容器全文`)); continue; }
       const arg = src !== undefined ? argText(src, f, 0) : null;
       if (arg === null || !isIntLiteral(arg)) out.push(err('E_ATTACH_SOURCE', `${f.raw}() 的第一個參數必須是附件容器的 itemid（直接寫數字）`));
@@ -372,7 +372,7 @@ export function lintMacro(script, ctx = {}) {
       return;
     }
     if (kind === 'LLMATTACH' || kind === 'ATTACHTRANSCRIBE') {
-      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${no} ${kind} 需要 feature flag attachBox（附件容器，預設關）`)); steps.push({ step: i + 1, kind }); return; }
+      if (!attachOn(ctx)) { out.push(err('E_FEATURE_DISABLED', `${no} ${kind} 需要 feature flag attachBox（附件容器，目前關閉）`)); steps.push({ step: i + 1, kind }); return; }
       const open = step.indexOf('('), close = step.lastIndexOf(')');
       if (open < 0 || close < open) { out.push(err('E_MACRO_SYNTAX', `${no} ${kind} 缺少括號`)); return; }
       if (step.slice(close + 1).trim()) out.push(err('E_MACRO_TRAILING', `${no} ${kind}(...) 之後的「${step.slice(close + 1).trim().slice(0, 20)}」會被忽略`));
