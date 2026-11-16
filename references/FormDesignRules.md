@@ -58,19 +58,21 @@
 | `title` | iframe 上方的標題（選用） |
 | `url` | **https**（`E_EMBED_SCHEME`）、主機在院內範圍 `*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost（`E_EMBED_HOST`；只看網址的主機字串、不做 DNS）；完整網址、不含帳密（`E_EMBED_URL`）；網址本身不可含 `{…}` 或身分證號樣式（`E_EMBED_PII`） |
 | `params` | 附加到 query 的 `{ 名稱: 值 }`：值只能是 `{chtno}`（病歷號）、`{deptNo}`（科別）、`{user}`（使用者）、`{opdno}`（門診序號）或常數；名稱只能英數字、`_`、`-`、`.`，不可像身分證號或姓名（`idno`、`pid`、`name`、`ptname`、`patientName`、`username`…）→ `E_EMBED_PII`。沒有身分證號、姓名的占位符 |
-| `height` | `"fill"` 或像素 100～4000，預設 600（`E_EMBED_HEIGHT`）；一張表單最多一個 `"fill"`（`E_EMBED_FILL`） |
+| `height` | `"fill"` 或像素 100～4000，預設 600（`E_EMBED_HEIGHT`）；一張表單最多一個 `"fill"`（`E_EMBED_FILL`）。**iframe 不會隨嵌入頁內容長高**：整頁型 APP（多欄、內容超過一個畫面）用 `"fill"`，小工具才給像素（`EmbedPageContract.md` §3）；需求沒講就問，不要自己挑一個像素值 |
 | `inputs` | 表單 → 嵌入頁 `{ key: itemid }`，載入時以 `strucmed.context.values` 送出；欄位必須存在且參與計算（`E_EMBED_INPUT`） |
 | `outputs` | 嵌入頁 → 表單 `{ key: itemid }`：欄位必須存在（`E_EMBED_OUTPUT_MISSING`）、不是 embed（`E_EMBED_OUTPUT_EMBED`）、不在彈出片語或群組控制項內（`E_EMBED_OUTPUT_GROUP`）；多個 embed 不可寫同一欄（`E_EMBED_OUTPUT_DUP`） |
 | key 格式 | `inputs`／`outputs` 的 key 只能是英數字、`_`、`-`，值是欄位 ID（`E_EMBED_MAP`；呼叫端可寫 `12`、`"12"` 或 `"A12"`，存成數字） |
 
 - 建置順序：`outputs` 的欄位常在區塊之後才建，`E_EMBED_OUTPUT_MISSING`／`E_EMBED_INPUT` 先延後（回傳 `pending`），建好欄位後 `form_update_area(itemid, outputs: {...})` 補上；其他 `E_EMBED_*` 當下拒絕、draft 不變。`form_update_area` 的 `url`、`params`、`height`、`inputs`、`outputs` 整項取代。
 - 寫回欄位用 `textbox`／`textarea`／`numberbox`（數字欄位收到非數字會被 runtime 拒絕）；要進倉儲就綁字典。被 `inputs`／`outputs` 參照的欄位不能 `form_remove_control`（先改 embed）。
-- runtime：表單載入後送 `strucmed.context`（**病歷號、科別、使用者、門診序號**，加 `inputs` 欄位值），只接受來源等於 `url` 的 `strucmed.result`；嵌入頁本身不進 HIS 文字輸出與紀錄 XML。`authread` 不允許顯示時不載入 iframe。
+- runtime：表單載入後送 `strucmed.context`（**病歷號、科別、使用者、門診序號**，加 `inputs` 欄位值），只接受來源等於 `url` 的 `strucmed.result`（欄位值放在 `data`：`{ type: 'strucmed.result', data: { key: 值 } }`；嵌入頁送 `strucmed.ready` 時表單重送 context；完整形狀見 `EmbedPageContract.md` §1）；寫回只把值放進控制項、不會存檔；嵌入頁本身不進 HIS 文字輸出與紀錄 XML。`authread` 不允許顯示時不載入 iframe。
 - **「加載表單」**：站台編輯器需含平台 PR 188（2026-11-08 起部署的院內站台已含），附加含嵌入頁面的表單時 `inputs`／`outputs` 與計算式會跟著欄位位移，實測正確；manifest 不再附避開加載表單的提醒。更早的站台編輯器只位移嵌入頁面的對應、不位移文字區塊的欄位編號，存檔不報錯，那種站台上要合併表單請用 edit-form 在 plugin 內做。
 - 揭露：`form_validate` 每個 embed 列 `W_EMBED_DATAFLOW`（目標主機、網址參數、送出與寫回欄位），manifest「嵌入頁面資料流」、form-reviewer 的 review.md 都要列；與 AI 資料流同等級，交付時不可省略。
 - HIS 端要 StrucForm 導向白名單放行該主機：1.10.9 DLL 起預設放行院內範圍（程式碼已完成、抽換時程依 HIS 端）；院內範圍以外的主機由平台在站台的集中白名單登錄，plugin 不產生範圍以外的網址（`E_EMBED_HOST`）。被擋下時 iframe 空白、runtime 提示並送 errorlog `NAV-DENIED`，管理者可依主機彙總查詢。1.10.7／1.10.8 的白名單只認設定主機，會擋掉院內頁面。verify-runtime 的 harness 不載入外部 iframe，只驗表單邏輯。
-- 嵌入頁的開發條件（`frame-ancestors`、Chromium 104、postMessage 格式、身分分級、時序、測試方法、常見症狀）在平台的 B1 嵌入頁 APP 開發說明 `docs/EMBED-APP-GUIDE.md`（§3～§10，最小 L1 範例 `docs/examples/embed-app-l1.html`），不在 plugin 範圍。
+- 嵌入頁的開發條件（`frame-ancestors`、Chromium 104、postMessage 格式、身分分級、時序、測試方法、常見症狀）在平台的 B1 嵌入頁 APP 開發說明 `docs/EMBED-APP-GUIDE.md`（§3～§10，最小 L1 範例 `docs/examples/embed-app-l1.html`），不在 plugin 範圍。plugin 內另有摘要 `EmbedPageContract.md`（訊息形狀、iframe 限制、高度與版面、本機開發、上架後實測步驟）：對話中要幫使用者寫、改或檢查嵌入頁時先讀它，不要憑記憶猜訊息格式；不一致時以平台說明為準。
 - 嵌入頁因 `X-Frame-Options`、`frame-ancestors` 被擋，或主機連線被拒時，iframe 顯示灰底哭臉，runtime 不會提示也不送 `NAV-DENIED`（只有 8 秒沒載入與停在空白頁才會）；交付時請使用者確認嵌入頁主機的標頭，並告訴開發者看開發說明的 §10.5。
+- `url` 是 `localhost`（含 `127.0.0.1`、`::1`）時 `form_validate` 列 `W_EMBED_LOCALHOST`：只有執行該服務的電腦開得到，其他工作站嵌入頁空白；只用於示範與測試，定稿與交付要寫明，部署到院內主機後改 `url` 再更新範本（`EmbedPageContract.md` §4）。
+- **上架後實測**：verify-runtime 的 harness 不載入外部 iframe，嵌入頁的載入、收到 context、寫回與高度要在站台編輯器的表單預覽或 HIS 實測（`EmbedPageContract.md` §5）；沒做就在定稿與交付寫「未驗證」。
 - 嵌入頁拿到的 `user`、`deptNo` 是 L1（工作站自稱、無簽章），只做顯示與稽核；表單設計不要把開立、簽核等不可逆動作放在嵌入頁內完成（等 L2 token）。
 - 只在按下按鈕時才開的頁面改用巨集 `OPENPANEL`（`MacroRecipes.md` R10；1.10.9 起開在右側子面板，收不到 `strucmed.context`、不能寫回欄位），不用 embed。
 

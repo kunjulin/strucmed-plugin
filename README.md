@@ -568,7 +568,7 @@ Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`f
 - 已在站台編輯器實測（2026-11-08）：plugin 產生的嵌入頁面匯入、存檔、重開、「重新編號」都完整保留，送出與寫回欄位跟著欄位走。不需要時把 `feature-flags.json` 的 `embedArea` 改成 `false`。改版既有表單時原表單的嵌入頁面一律原樣保留並檢查。
 - **「加載表單」**：站台編輯器需含平台 PR 188（2026-11-08 起部署的院內站台已含）。含嵌入頁面的表單附加到另一張表單時，`inputs`／`outputs` 與計算式會跟著欄位位移，實測對應正確（試點範本附加到有 4 個欄位的原表單：`inputs` 位移 +4、計算式 `A4 * 2` 變 `A8 * 2`）。manifest 不再附避開加載表單的提醒；更早的站台編輯器只位移嵌入頁面的對應、不位移文字區塊的欄位編號，對應會指到錯的欄位而且存檔不報錯，仍在那種站台上的使用者要避開，或改用 edit-form 在 plugin 內合併。規則見 [references/FormDesignRules.md](references/FormDesignRules.md)〈嵌入頁面〉、[references/MacroRecipes.md](references/MacroRecipes.md) R10。
 - **站台與 HIS 需求**：站台的編輯器與 runtime 都要含嵌入頁面功能（院內站台 2026-11-08 起已部署）；plugin 不檢查站台版本，上架前請確認。舊版站台的編輯器遇到嵌入頁面區塊會弄壞範本，存檔後區塊消失。HIS 端的 iframe 與 OPENPANEL 浮動面板在現有 StrucForm 可用；導向白名單（1.10.7 起）會擋嵌入頁主機，1.10.9 起預設放行院內範圍並提供子面板與 `NAV-DENIED`，1.10.7、1.10.8 的白名單只認設定主機、會擋掉院內頁面。
-- **嵌入頁本身不在 plugin 範圍**：embed 區塊只宣告網址與欄位對應，嵌入頁由第三方開發。開發條件（`frame-ancestors`、postMessage 契約、L1 身分、測試方法、常見症狀）見平台的 B1 嵌入頁 APP 開發說明 `docs/EMBED-APP-GUIDE.md` §3～§10，最小範例 `docs/examples/embed-app-l1.html`。嵌入頁拿到的使用者與科別是 L1（工作站自稱、沒有簽章），只能用在顯示與稽核；開立、簽核這類不可逆動作要等 L2 token（尚未提供），表單設計時不要把這類動作設計成在嵌入頁內完成。
+- **嵌入頁本身不在 plugin 範圍**：embed 區塊只宣告網址與欄位對應，嵌入頁由第三方開發。開發條件（`frame-ancestors`、postMessage 契約、L1 身分、測試方法、常見症狀）見平台的 B1 嵌入頁 APP 開發說明 `docs/EMBED-APP-GUIDE.md` §3～§10，最小範例 `docs/examples/embed-app-l1.html`。plugin 內附一份摘要 [references/EmbedPageContract.md](references/EmbedPageContract.md)（訊息格式、高度與版面、本機開發、上架後實測），請 AI 幫忙寫嵌入頁時它會先讀這一份。嵌入頁拿到的使用者與科別是 L1（工作站自稱、沒有簽章），只能用在顯示與稽核；開立、簽核這類不可逆動作要等 L2 token（尚未提供），表單設計時不要把這類動作設計成在嵌入頁內完成。
 - **常見錯誤碼**（`form_add_area`、`form_update_area`、`form_validate`；與站台編輯器同一套，以 303 個案例逐項比對相同）：
 
   | 碼 | 原因 | 怎麼改 |

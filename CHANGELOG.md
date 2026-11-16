@@ -14,7 +14,20 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.2（MCP 2.15.2）— 2026-11-16：嵌入頁 APP 試做回饋（契約摘要、高度規則、`W_EMBED_LOCALHOST`）
+
+來源：2026-11-16 以 3.12.0 試做「語音護理交班」嵌入頁 APP（create-form → publish-form → 站台編輯器表單預覽實測）遇到的問題。功能沒有破壞性變動：多一份 reference、一個警告碼，其餘是規則與流程文字。
+
+- **新增 `references/EmbedPageContract.md`**（嵌入頁契約摘要）：訊息形狀（`strucmed.context`、`strucmed.ready`、`strucmed.result` 的欄位值放在 `data`）、iframe 限制、高度與版面、本機開發、上架後實測步驟。原本文件只寫訊息名稱、把形狀留給平台的開發說明，對話中寫嵌入頁時只能猜（試做時把 `data` 寫成 `values`，寫回沒有反應）。平台說明仍是準則，這一份是 plugin 內看得到的摘要。
+- **高度怎麼選寫進規則**：iframe 不會隨嵌入頁內容長高；整頁型 APP 用 `"fill"`，小工具才給像素。`FormDesignRules.md` 的 `height` 列、`form_add_area` 的 `height` 參數說明、create-form 需求階段的嵌入頁面題都加上（試做時代選了固定像素，嵌入頁出現雙層捲軸）。
+- **`form_validate` 新增 `W_EMBED_LOCALHOST`**：embed 的網址是 `localhost`／`127.0.0.1`／`::1` 時警告「只有執行該服務的電腦開得到」。publish-form 的 G2 列在警告並粗體，資料夾是科部或次專時先問；build-form-app B1 清單直接標 ✗。
+- **上架後實測嵌入頁**：harness 不載入外部 iframe，create-form 交付與 publish-form 收尾加一行請使用者在站台編輯器的表單預覽實測（載入、病人情境、寫回、高度），沒實測寫「嵌入頁未驗證」。
+- edit-form、build-form-app 的嵌入頁段落加上新 reference 的指引。
+- 測試：`test/embed.test.mjs` 加一項（`W_EMBED_LOCALHOST`）。
+
 ## 3.12.1（MCP 2.15.1）— 2026-11-16：附件容器預設開啟
+
+發佈（2026-11-16）：strucmed-plugin `e15c7c7`、tag `v3.12.1`、GitHub Release「strucmed 3.12.1（MCP 2.15.1）：附件容器預設開啟」；本 repo tag `v3.12.1-src`（`31838f4`）。發佈時：`release-plugin.mjs` ok、234 檔；發佈樹 `node --test` 283 項（282 過、1 略過）；`claude plugin validate . --strict` 通過。
 
 - **flag `attachBox` 改為預設開**：院內、院外站台都已啟用附件容器，院內已實測可用（2026-11-16，使用者回報）。更新後不必再改 `feature-flags.json`，`form_add_control` 的 datatype 直接有 `attachbox`。要停用時把 `attachBox` 改成 `false`。
 - 功能本身沒有變動；錯誤訊息與說明文件裡的「預設關」「院內尚未部署」改為現況。

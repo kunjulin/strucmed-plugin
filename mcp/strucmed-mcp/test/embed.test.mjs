@@ -416,3 +416,21 @@ test('embedArea 3.11.0 起預設開：plugin 根目錄 feature-flags.json 與程
   const src = fs.readFileSync(path.join(root, 'mcp/strucmed-mcp/src/flags.mjs'), 'utf8');
   assert.match(src, /embedArea: true\b/);
 });
+
+test('embed：localhost 網址列 W_EMBED_LOCALHOST（只有本機開得到），院內主機不列', () => {
+  setFlags({ embedArea: true });
+  const { draft_id } = baseDraft();
+  t.form_add_area({ draft_id, ...embedArgs({}) });
+  const v1 = t.form_validate({ draft_id });
+  assert.ok(!v1.warnings.some(w => w.code === 'W_EMBED_LOCALHOST'));
+  const r = t.form_add_area({ draft_id, type: 'embed', title: '本機示範', url: 'https://localhost:8443/', height: 780 });
+  const v2 = t.form_validate({ draft_id });
+  assert.equal(v2.valid, true, JSON.stringify(v2.errors));
+  const w = v2.warnings.filter(x => x.code === 'W_EMBED_LOCALHOST');
+  assert.equal(w.length, 1);
+  assert.equal(w[0].itemid, r.area_itemid);
+  assert.match(w[0].message, /localhost/);
+  assert.equal(eb.isLocalHost('127.0.0.1'), true);
+  assert.equal(eb.isLocalHost('[::1]'), true);
+  assert.equal(eb.isLocalHost('assistantai.cgmh.org.tw'), false);
+});

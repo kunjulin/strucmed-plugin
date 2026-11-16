@@ -54,7 +54,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
 | AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
 | 樣式與即時提示 | 工具清單有 `form_set_script`（flag `formScript`）時才問一句 | 要不要強調欄位、區塊底色或表格格線（樣式）、值不合理時立即提示（guard）、輸入後自動帶出判讀或分類（derive／lookup）、必填離開即提醒（required）；開文件自動跑巨集、表格預設列數是進階（另需 `formScriptAdvanced`）。規則與替代做法見 `references/ScriptAddonRules.md` §1。flag 關閉時不問，需求提到就告知需開 flag |
-| 嵌入院內頁面 | 工具清單的 `form_add_area` type 有 `embed`（flag `embedArea`）且需求提到時才問 | 頁面網址（使用者提供，https 院內主機；不要猜）、表單一載入就顯示（embed 區塊）還是按鈕才開（`OPENPANEL`）、要帶哪些參數（只有病歷號、科別、使用者、門診序號與常數）、要送出與寫回哪些欄位、寫回欄位要不要進倉儲。選項說明寫明「嵌入頁面會收到病歷號、科別、使用者、門診序號，交付時列在嵌入頁面資料流」。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。flag 關閉時不問，需求提到就告知需開 `embedArea`（站台編輯器實測後） |
+| 嵌入院內頁面 | 工具清單的 `form_add_area` type 有 `embed`（flag `embedArea`）且需求提到時才問 | 頁面網址（使用者提供，https 院內主機；不要猜）、表單一載入就顯示（embed 區塊）還是按鈕才開（`OPENPANEL`）、要帶哪些參數（只有病歷號、科別、使用者、門診序號與常數）、要送出與寫回哪些欄位、寫回欄位要不要進倉儲、頁面是整頁型 APP 還是小工具（決定 `height`：整頁型用 `"fill"`，小工具給像素；iframe 不會隨內容長高，沒問到就在草案「### 待決」標預設）。選項說明寫明「嵌入頁面會收到病歷號、科別、使用者、門診序號，交付時列在嵌入頁面資料流」。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。flag 關閉時不問，需求提到就告知需開 `embedArea`（站台編輯器實測後） |
 | 附件交給 LLM | 工具清單的 `form_add_control` datatype 有 `attachbox`（flag `attachBox`）且需求提到影像、PDF、Excel、錄音檔時才問 | 要放入哪些類型、結果寫到哪個欄位與是否回 HIS、模型（留空用預設，或 `llmgateway_models` 查到的 id）；附件不存檔要先講明。flag 沒開時說明要開 flag、站台也要啟用附件容器 |
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
@@ -156,7 +156,7 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 
 1. 結果：templateID、資料夾（格式同 G2：個人（usr／OL5）、次專（sub／代碼）、科部（dpt／代碼））、rev、是否已上架；離線時是輸出檔（`.htm` 內含範本套件 v2、`.package.json`）與 `*.manifest.md`（含匯入步驟與保存前確認清單）的路徑。支援 v2 的編輯器匯入時會預填名稱、捷徑、作業別、Info，**有捷徑＋作業別＝保存後上架**，務必提醒使用者確認。
 2. 字典：新建與補述幾本（CSV 路徑）；未登入時告知既有字典的補述可之後補（`dictionary-assist` 模式 3，不用上架，非建立者也能補），體系升級建議請轉給體系字典管理者。
-3. `W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列；有嵌入頁面時 `W_EMBED_DATAFLOW`（目標主機、帶出的參數、寫回欄位）同樣必列；有片段時加一行「表單 JS：N 個片段（樣式會影響列印版面；編輯器「表單選項」的 JS 區塊看得到）」；其他警告只列處理建議。
+3. `W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列；有嵌入頁面時 `W_EMBED_DATAFLOW`（目標主機、帶出的參數、寫回欄位）同樣必列，並加一行實測狀態：已上架就請使用者在站台編輯器的表單預覽照 `references/EmbedPageContract.md` §5 實測（載入、收到病人情境、寫回、高度），沒實測寫「嵌入頁未驗證」；`W_EMBED_LOCALHOST` 時寫明只有那台電腦開得到；有片段時加一行「表單 JS：N 個片段（樣式會影響列印版面；編輯器「表單選項」的 JS 區塊看得到）」；其他警告只列處理建議。
 4. 提醒：先按「新增表單」並確認 sheetID 空白再匯入；有新字典時**必須**「匯入表單及字典」；匯入後不要按「重新編號」；保存前逐一檢查區塊人形圖示。
 
 ## 7. 新產生的表單不支援

@@ -25,7 +25,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
    - `llm_gateway.enabled: false` → 表單內的 LLM／語音仍走舊的院內端點，不經閘道（由平台管理者啟用）。
    - `runtime.save`／`query` → 登入者是否在 HIS 端存檔／查詢白名單（影響 HIS 端體驗，不影響表單設計）。
 4. 範本：捷徑＋作業別都有才會出現在 HIS 清單；`online_template_versions` 確認 `current` rev。
-4b. 嵌入頁面（範本有 embed 區塊或 `OPENPANEL` 時）：以 `form_validate` 的 `embeds` 列出每個目標主機。HIS 端 StrucForm 要放行它們：1.10.9 DLL 起預設放行院內範圍，iframe 與 OPENPANEL 的子面板走同一份白名單；1.10.7／1.10.8 只認設定主機，會擋掉院內頁面。DLL 版本請 HIS 端確認。被擋下時畫面空白並送 errorlog `NAV-DENIED`，平台管理者可在管理頁「導向白名單擋下的主機」依主機彙總查看（plugin 沒有管理權限，只寫進清單提醒）。嵌入頁本身的條件（`frame-ancestors` 允許 `http://localhost` 與站台、https 憑證、Chromium 104）由嵌入頁開發者負責，列在平台的 B1 嵌入頁 APP 開發說明。
+4b. 嵌入頁面（範本有 embed 區塊或 `OPENPANEL` 時）：以 `form_validate` 的 `embeds` 列出每個目標主機；有 `W_EMBED_LOCALHOST` 時清單直接標 ✗（本機網址不能上線，要先部署到院內主機並改 `url`）。嵌入頁的訊息格式、高度與版面、上架後實測步驟見 `references/EmbedPageContract.md`，清單加一列「嵌入頁在站台實測（載入、病人情境、寫回、高度）」。HIS 端 StrucForm 要放行它們：1.10.9 DLL 起預設放行院內範圍，iframe 與 OPENPANEL 的子面板走同一份白名單；1.10.7／1.10.8 只認設定主機，會擋掉院內頁面。DLL 版本請 HIS 端確認。被擋下時畫面空白並送 errorlog `NAV-DENIED`，平台管理者可在管理頁「導向白名單擋下的主機」依主機彙總查看（plugin 沒有管理權限，只寫進清單提醒）。嵌入頁本身的條件（`frame-ancestors` 允許 `http://localhost` 與站台、https 憑證、Chromium 104）由嵌入頁開發者負責，列在平台的 B1 嵌入頁 APP 開發說明。
 5. 交付《B1 執行清單》（寫到 `<workspace>/output/<範本名>.b1-checklist.md` 並在對話摘要）：
 
 ```markdown

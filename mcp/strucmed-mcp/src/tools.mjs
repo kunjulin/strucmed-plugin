@@ -263,7 +263,7 @@ const EMBED_MAP = d => ({ type: 'object', additionalProperties: { type: ['number
 const EMBED_PROPS = {
   url: str('embed：嵌入頁網址（https、院內主機；可含固定 query，不可含 {…} 占位符與帳密）'),
   params: { type: 'object', additionalProperties: { type: 'string' }, description: 'embed：附加到網址的參數 { 名稱: 值 }，值只能是 {chtno}、{deptNo}、{user}、{opdno} 或常數；名稱只能英數字、_、-、.，不可像身分證號或姓名（idno、name、ptname…）' },
-  height: { type: ['string', 'number'], description: 'embed：高度，"fill"（一張表單最多一個）或像素 100–4000，預設 600' },
+  height: { type: ['string', 'number'], description: 'embed：高度，"fill"（一張表單最多一個）或像素 100–4000，預設 600。iframe 不會隨嵌入頁內容長高：整頁型 APP 用 "fill"，小工具才給像素' },
   inputs: EMBED_MAP('embed：表單 → 嵌入頁 { key: itemid }，載入時以 strucmed.context.values 送出；欄位必須存在且參與計算'),
   outputs: EMBED_MAP('embed：嵌入頁 → 表單 { key: itemid }；欄位必須存在、不在彈出片語或群組內，多個 embed 不可寫同一欄')
 };

@@ -43,7 +43,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - **保存後即上架**（有捷徑＋作業別）要用粗體提醒；測試表單不應有捷徑。
    - 更新範本：把 `plan.meta`（名稱／捷徑／作業別／Info 的線上值與寫入值）與 `plan.diff`（`summary`、`changed_itemids`、`changed_areas`、`js_changed`、`iot_changed`、`online_since_source`）並列給使用者。`W_UNPUBLISH`（會從 HIS 清單消失）、`W_META_RENAME`、`W_ONLINE_CHANGED_SINCE_SOURCE`（會蓋掉線上別人的修改）用粗體提醒，使用者明確同意才繼續；`W_NO_CHANGE` 時問使用者是否真的要更新。
    - 有 LLM／語音巨集：W_AI_DATAFLOW 必列（不需另行審查，但不可省略）。
-   - 有嵌入頁面（embed 區塊、OPENPANEL）：W_EMBED_DATAFLOW 必列（目標主機、帶出的參數、寫回欄位），同等級揭露。flag `embedArea` 關閉時不能上架本工具新增的 embed（`form_validate` 回 `E_FEATURE_DISABLED`）；改版的原表單 embed 原樣上架。
+   - 有嵌入頁面（embed 區塊、OPENPANEL）：W_EMBED_DATAFLOW 必列（目標主機、帶出的參數、寫回欄位），同等級揭露。`W_EMBED_LOCALHOST`（網址是 localhost）列在「### 警告」並用粗體：只有那台電腦開得到；資料夾是科部或次專時先問使用者是否真的要上架。embed 的 `height` 也列出（像素或 fill）。flag `embedArea` 關閉時不能上架本工具新增的 embed（`form_validate` 回 `E_FEATURE_DISABLED`）；改版的原表單 embed 原樣上架。
 
    對話中呈現同一份內容（略去 `<!-- gate: … -->` 註解），一次 `AskUserQuestion`：核准（建議）／要求修改／取消，選項描述加「有疑問請先在對話問，不要在這裡選」。使用者在對話提問時回答後再問一次，定稿內容不重貼。
 5. **核准**：使用者核准後執行 `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user_id>`（離線 `--by local`）。prepare 會自己把「## 核准」段填成 Approved、寫入核准時間與核准者，**不要手填** `Approved-At`／`Approved-By`。沒有這一步，hooks 會阻擋第二次呼叫。使用者沒有核准就不要執行 prepare；核准後不再改定稿檔。
@@ -57,7 +57,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - 有建字典時：字典完成後才做範本的第一次呼叫，plan 與「### 上架」比對。這是 G2 核准後的第一次呼叫，一樣只取計畫：先再說一次「這次只產生計畫，不寫入；若被權限擋下請允許」。相同就原樣列給使用者、接著第二次呼叫；不同就停下來，`Revision` +1 重新呈現。
    - 第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起），呼叫內最多等約 2 分鐘。**同一個 draft 已取得計畫的寫入列在同一頁**（MCP 2.14.0，回傳 `bundled` 是頁上的項數），使用者按一次就涵蓋全部，其餘幾項的第二次呼叫直接寫入、不再開頁。回 `pending`（附 `approve_url`）時**先不要問使用者**：直接帶同一個 `confirm_token` 再呼叫一次（再等約 2 分鐘）；仍是 `pending` 才請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，按完回到對話說一聲。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消，頁上全部都不寫）就停止，需要時重新取得計畫。確認頁被關掉時把 `approve_url` 給使用者重開（`PublishWorkflow.md` §4）。
    - 補述回 `E_CONFLICT` 時以 `details.stale` 合併後重取 plan 並重新給使用者確認（不影響已完成的步驟）。token 過期就重新第一次呼叫，plan 相同時定稿檔不用改。錯誤依 `PublishWorkflow.md` §4 處理；範本的 `E_UPSTREAM` 帶 `pending` 時**不要重試**；字典寫入失敗（`pending_left` 非空或 `E_UPSTREAM`）照回傳的 `next` 重做第一次呼叫，plan 與定稿相同時不必重核准。
-7. **收尾**：`online_template_get`（`save: true`，只回摘要）取回確認名稱、捷徑、作業別與控制項數；更新另跑 `online_template_versions`。最後交付（`PublishWorkflow.md` §5，≤ 15 行）：有體系升級建議時註明「請轉給體系字典管理者在字典頁升級；升級不改 id，這次上架的表單不用改」。
+7. **收尾**：`online_template_get`（`save: true`，只回摘要）取回確認名稱、捷徑、作業別與控制項數；更新另跑 `online_template_versions`。最後交付（`PublishWorkflow.md` §5，≤ 15 行）：有 embed 區塊時加一行「嵌入頁要在站台實測」並給步驟（`references/EmbedPageContract.md` §5；本機預覽頁不載入外部 iframe），使用者測完回報的結果才寫成已驗證；有體系升級建議時註明「請轉給體系字典管理者在字典頁升級；升級不改 id，這次上架的表單不用改」。
 
 ## 不做
 

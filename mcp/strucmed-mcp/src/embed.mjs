@@ -235,6 +235,8 @@ export function coerceResultValue(value, isNumber) {
 }
 
 // ── 以下為 plugin 專用（平台沒有）───────────────────────────────────────────
+// plugin 專用：主機是本機（只有執行該服務的電腦開得到）→ W_EMBED_LOCALHOST
+export function isLocalHost(host) { return !!LOCAL_HOSTS[String(host || '').toLowerCase().replace(/^\[|\]$/g, '')]; }
 // 揭露用摘要：目標主機、帶出的參數（占位符標中文）、讀取／寫回欄位。不組實際網址、不帶任何病人值。
 export function summarize(block) {
   const b = block || {};

@@ -305,6 +305,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     for (const a of embedAreas) {
       const s = embed.summarize(areaNode(a));
       embeds.push({ kind: 'embed', ...s, itemid: Number(s.itemid), source: a.imported ? 'imported' : 'new' });
+      if (embed.isLocalHost(s.host)) warn('W_EMBED_LOCALHOST', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}的網址是本機（${s.host}）：只有執行該服務的電腦開得到，其他工作站開這張表單時嵌入頁空白；只用於示範與測試，部署到院內主機後請改網址再更新範本`, s.itemid);
       warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);
     }
   }
