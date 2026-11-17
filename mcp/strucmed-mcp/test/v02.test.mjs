@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from '../src/calx.mjs';
 import { BUILTIN } from '../src/calx-catalog.mjs';
-import { lintFormula, lintMacro, lintHisQuery, lintPrompt, platformSplit } from '../src/scriptlint.mjs';
+import { lintFormula, lintMacro, lintHisQuery, lintPrompt, platformSplit, legacySplit } from '../src/scriptlint.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const codes = r => r.findings.map(f => f.code);
@@ -71,9 +71,9 @@ test('macro lint: step splitting, step commands, models, targets', () => {
     ['1', { datatype: 'textarea', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'qwen332b' }],
     ['3', { datatype: 'numberbox', tocalc: true }], ['4', { datatype: 'textbox', tocalc: true, datavalue: 'gpt4' }]]);
   const ctx = { controls };
-  // 平台只算括號，不理會引號
+  // 平台 20261124b 起看引號（kunjulin/strucmed#264）；舊版 runtime 只算括號 → 只提醒部署
   assert.deepEqual(platformSplit('MACRO(1, "a,b"), SETVALUEBYID(3, 1)').steps, ['MACRO(1, "a,b")', 'SETVALUEBYID(3, 1)']);
-  assert.ok(codes(lintMacro('MACRO(1, "(x"), SETVALUEBYID(3, 1)', ctx)).includes('E_MACRO_SPLIT'));
+  assert.deepEqual(codes(lintMacro('MACRO(1, "(x"), SETVALUEBYID(3, 1)', ctx)), ['W_MACRO_SPLIT_NEEDS_DEPLOY']);
   const ok = lintMacro('LLMQUERY(1, CONCATENATE("摘要：", A3), "qwen332b"), MACRO(3, 1 + 1), SETVALUEBYID(3, 2)', ctx);
   assert.deepEqual(ok.findings.filter(f => f.level === 'error'), []);
   assert.deepEqual(ok.targets.sort(), ['1', '3']);
@@ -285,4 +285,70 @@ test('pending dictionaries: binding an existing id, unbinding, or removing the c
   assert.equal(v.stats.dict_new, 0);
   assert.equal(v.stats.dict_bound, 2);
   store.saveDictIndex(null);
+});
+
+// 巨集步驟與參數切分看引號：與平台 extractPiplineSteps 20261124b 相同（kunjulin/strucmed#264 的 tests/web-js/macro-args.test.mjs 同一組例子）
+test('macro split: quotes protect commas and parentheses, same as the platform runtime', () => {
+  const split = s => platformSplit(s).steps;
+  assert.deepEqual(split('21, "read the numbers, and (if any) summarize", "gemma3_12b"'), ['21', '"read the numbers, and (if any) summarize"', '"gemma3_12b"']);
+  assert.deepEqual(split("6, 'a, b', 'm'"), ['6', "'a, b'", "'m'"]);
+  assert.deepEqual(split('"LLMQUERY(6, "x", "m")", "MACRO(7, 1)"'), ['"LLMQUERY(6, "x", "m")"', '"MACRO(7, 1)"'], '舊式以引號包住的步驟照樣切成兩步');
+  assert.deepEqual(split(`"LLMQUERY(6, 'x, y', A2)", "MACRO(7, 1)"`), [`"LLMQUERY(6, 'x, y', A2)"`, '"MACRO(7, 1)"'], '舊式步驟內的單引號字串可以有逗號');
+  assert.deepEqual(split('LLMQUERY(6, CONCATENATE("a, b", A2), "m"), MACRO(7, 1)'), ['LLMQUERY(6, CONCATENATE("a, b", A2), "m")', 'MACRO(7, 1)']);
+  assert.deepEqual(split(`6, "patient's note, today", "m"`), ['6', `"patient's note, today"`, '"m"'], '雙引號字串內的單引號不算');
+  assert.deepEqual(split('6, "say ""hi"", ok", "m"'), ['6', '"say ""hi"", ok"', '"m"'], '"" 是結束後立刻再開始，自然留在同一段');
+  assert.deepEqual(split('6, "a \\"b, c", "m"'), ['6', '"a \\"b', 'c", "m"'], 'runtime 不認反斜線跳脫');
+  assert.equal(platformSplit('LLMQUERY(6, "x').unterminated, true);
+  // 舊版 runtime 的切法（只算括號）
+  assert.deepEqual(legacySplit('6, "a, b", "m"').steps, ['6', '"a', 'b"', '"m"']);
+});
+
+test('macro lint: prompts may contain commas and parentheses inside quotes', () => {
+  const controls = new Map([['21', { datatype: 'textarea', tocalc: true }], ['6', { datatype: 'textarea', tocalc: true }],
+    ['7', { datatype: 'textbox', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'qwen332b' }],
+    ['12', { datatype: 'attachbox', tocalc: false }], ['13', { datatype: 'attachbox', tocalc: false }]]);
+  const ctx = { controls };
+  const errors = r => r.findings.filter(f => f.level === 'error').map(f => `${f.code} ${f.message}`);
+  const deployed = { ...ctx, policy: { runtime_quote_aware_split: true } };
+  // 只看切分相關的結果（提示詞設計的建議、LLMvision 接力另有測試）
+  const codes = r => r.findings.map(f => f.code).filter(c => !/^W_PROMPT_|^W_VISION_NO_FOLLOWUP$/.test(c));
+
+  // 使用者回報的案例：原本回 E_FORMULA_SYNTAX（第 2 個參數字串沒有結束的引號）
+  const vision = lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, CONCATENATE("整理, 摘要：", A21), "qwen332b")', ctx);
+  assert.deepEqual(errors(vision), []);
+  assert.deepEqual(codes(vision), ['W_MACRO_SPLIT_NEEDS_DEPLOY'], 'HIS 端還是舊版時提醒一次');
+  assert.equal(vision.ai[0].model, 'gemma3_12b', '模型是第 3 個參數，沒有被逗號擠掉');
+  assert.deepEqual(vision.ai[1].inputs, ['21']);
+  assert.deepEqual(codes(lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, "x", "qwen332b")', deployed)), [], '部署後在 policy 關閉提醒');
+
+  // 含括號的提示詞
+  assert.deepEqual(codes(lintMacro('LLMQUERY(6, "1) list, 2) summarize (short)", "qwen3627b")', deployed)), []);
+  assert.deepEqual(codes(lintMacro('LLMvision(21, "read the numbers, and (if any) summarize", "gemma3_12b"), LLMQUERY(6, A21, "qwen332b")', deployed)), []);
+  // LLMATTACH：提示詞的逗號不切開，"12,13" 是一個參數
+  const attach = lintMacro('LLMATTACH(6, "summary, (short)", "gemma3_12b", "12,13")', { ...deployed, attachBox: true });
+  assert.deepEqual(errors(attach), []);
+  assert.deepEqual(attach.ai[0].attachments.map(b => b.itemid), [12, 13]);
+
+  // 舊式以引號包住的步驟
+  const old = lintMacro('"LLMQUERY(6, "x", "qwen332b")", "MACRO(7, 1)"', deployed);
+  assert.deepEqual(codes(old), ['W_MACRO_QUOTED_STEP', 'W_MACRO_QUOTED_STEP']);
+  assert.deepEqual(old.targets.sort(), ['6', '7']);
+  assert.deepEqual(codes(lintMacro(`"LLMQUERY(6, 'x, y', A2)", "MACRO(7, 1)"`, deployed)), ['W_MACRO_QUOTED_STEP', 'W_MACRO_QUOTED_STEP']);
+  assert.ok(codes(lintMacro(`"LLMQUERY(6, 'x, y', A2)", "MACRO(7, 1)"`, ctx)).includes('W_MACRO_SPLIT_NEEDS_DEPLOY'), '舊版 runtime 會切開步驟內的參數');
+  // 舊式步驟裡又用同一種引號的字串，字串內的逗號落在引號外 → runtime 切錯
+  assert.ok(codes(lintMacro('"MACRO(7, "a, b")"', deployed)).includes('E_MACRO_SPLIT'));
+
+  // 雙引號內的單引號
+  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, "patient's note, today", "qwen332b")`, deployed)), []);
+  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, '他說"好", 然後離開', "qwen332b")`, deployed)), []);
+
+  // "" 跳脫：runtime 切分留在同一個參數（不再是「沒有結束的引號」），但 Calx 不支援 → 語法錯誤並說明
+  const esc = lintMacro('LLMQUERY(6, "say ""hi"", ok", "qwen332b")', deployed);
+  assert.deepEqual(codes(esc), ['E_FORMULA_SYNTAX']);
+  assert.match(esc.findings[0].message, /第 2 個參數/);
+  assert.match(esc.findings[0].message, /不支援 "" 跳脫/);
+  // \" 跳脫：Calx 認、runtime 切分不認 → 切法不同
+  assert.ok(codes(lintMacro('LLMQUERY(6, "a \\"b, c\\" d", "qwen332b")', deployed)).includes('E_MACRO_SPLIT'));
+  // 未結束的引號
+  assert.ok(codes(lintMacro('LLMQUERY(6, "x, "qwen332b")', deployed)).includes('E_MACRO_SYNTAX'));
 });

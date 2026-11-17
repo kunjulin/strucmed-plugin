@@ -7,7 +7,7 @@
 
 | 規則 | 內容 |
 |---|---|
-| 步驟 | `action_script` 以**最外層逗號**分隔，依序執行；runtime 只算括號深度不理引號，字串內的括號或逗號會打亂切分（`E_MACRO_SPLIT`） |
+| 步驟 | `action_script` 以**最外層逗號**分隔，依序執行；引號（`"` 或 `'`）內的逗號與括號不算（平台 20261124b 起；HIS 端還是舊版時 `W_MACRO_SPLIT_NEEDS_DEPLOY`）；字串內的 `\"` 不算跳脫（`E_MACRO_SPLIT`） |
 | 等待 | `LLMQUERY`、`LLMvision`、`LLMATTACH`、`ATTACHTRANSCRIBE`、`VOICETOTEXT` 是非同步步驟，**大小寫完全相同且在步驟開頭**時 runtime 才會等它完成再做下一步 |
 | 中止 | 任一步驟出錯就中止整個序列並顯示錯誤；之前已寫入的欄位不會回復 |
 | 結果 | 最後一個一般運算式的結果寫入 `action_id`（0 或空白＝不回傳）；要寫多個欄位用 `MACRO(id, 運算式)` 或 `SETVALUEBYID(id, 值)` |

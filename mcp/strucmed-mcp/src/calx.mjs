@@ -91,6 +91,10 @@ export function parse(src) {
     if (t.type === 'SHEET_GT') hint = '（`>` 兩側緊貼英數字會被 Calx 切成錯誤的 token，請加空白，例如 A5 > 3）';
     else if (t.type === 'QUOTE') hint = '（字串沒有結束的引號）';
     else if (t.type === '.' ) hint = '（小數請寫成 0.5，不能以小數點開頭）';
+    else if (t.type === 'STRING' && k > 0 && toks[k - 1].type === 'STRING' && toks[k - 1].pos + toks[k - 1].text.length === t.pos) {
+      // "say ""hi"""：Calx 沒有 "" 跳脫，兩個引號是一個字串結束、下一個字串開始（runtime 切分會把它當成同一個參數，但 Calx 解析失敗）
+      hint = `（Calx 不支援 ${t.text[0]}${t.text[0]} 跳脫引號：含${t.text[0] === '"' ? '雙' : '單'}引號的文字請改用另一種引號包住，或用 CHAR(${t.text[0] === '"' ? 34 : 39})）`;
+    }
     throw new CalxError('E_FORMULA_SYNTAX', `第 ${t.pos + 1} 個字元：不預期的 ${t.type === 'EOF' ? '結尾' : `「${t.text}」`}${hint}`, t.pos);
   };
 

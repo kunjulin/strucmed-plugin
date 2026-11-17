@@ -23,7 +23,8 @@
 - 不能用 `&`，改用 `CONCATENATE`；小數寫 `0.5`；文字一律加引號。
 - `ROUND`／`ROUNDUP`／`ROUNDDOWN` 一定要寫位數（`ROUND(x, 0)`），少了位數 runtime 會算出 NaN。
 - `ROUND` 剛好落在 5 的邊界時以 runtime（Calx）的浮點結果為準，可能和手算差最後一位：BMI 160 cm／80 kg 數學上是 31.25，runtime 顯示 31.2 不是 31.3。`formula_check` 的試算例與需求裡的範例值都避開 .x5 邊界；臨床切點剛好落在邊界時在白話註明「以 runtime 顯示值為準」。
-- 巨集步驟的字串裡**不要放半形括號**（會打亂步驟切分），需要時用 `CHAR(40)`／`CHAR(41)`。
+- 巨集步驟與參數以**引號外**的最外層逗號切分：平台 `TempHtml.js` 20261124b（kunjulin/strucmed#264）起，引號（`"` 或 `'`，以同一種引號結束）內的半形逗號與括號不算分隔與深度，提示詞可以寫 `"1) 列出, 2) 摘要"`。HIS 端部署新版前，舊版 runtime 仍會切開（`W_MACRO_SPLIT_NEEDS_DEPLOY`），需要在舊版運作時改用全形標點或 `CHAR(44)`／`CHAR(40)`／`CHAR(41)`。
+- 字串裡要放同一種引號時改用另一種引號包住（`"patient's note"`、`'他說"好"'`），或用 `CHAR(34)`／`CHAR(39)`：Calx 不支援 `""` 跳脫（`E_FORMULA_SYNTAX`），runtime 切分也不認 `\"`（`E_MACRO_SPLIT`）。整段以引號包住的舊式步驟（`"LLMQUERY(6, 'x, y', A2)"`）裡，字串要用另一種引號。
 - 步驟指令大小寫固定：`LLMQUERY`、`LLMvision`、`LLMATTACH`、`ATTACHTRANSCRIBE`、`MACRO`、`VOICETOTEXT`，而且要放在步驟開頭；不要把 LLMQUERY 放進 IF。
 - 模型名稱要加引號並在清單內（`tw`、`gemma3`、`qwen332b`、`tqwen332b`、`qwen3627b`、`nemotron35`…）。拼錯時平台會靜默改用預設模型。`nemotron35` 系列只經院內 LlmGateway（`W_LLM_MODEL_GATEWAY_ONLY`）：沒有 Gateway 的站台 `LLMQUERY` 不送出，見 `ModelWhitelist.md` §1。
 - 計算式不能用巨集專用函數（HISQUERY、SETVALUEBYID、LLMQUERY…）。
@@ -36,4 +37,5 @@
 - `W_EMBED_DATAFLOW`：embed 區塊與 OPENPANEL 會開哪個院內主機、帶出哪些參數、送出與寫回哪些欄位（manifest「嵌入頁面資料流」）。
 - `W_RENUMBER_MACRO`：匯入後**不要按「重新編號」**。
 - `W_FORMULA_FN_NEEDS_DEPLOY`：TEXT、VALUE、MEDIAN 等函數要等平台 #25 部署後才可用。
+- `W_MACRO_SPLIT_NEEDS_DEPLOY`：巨集字串內的半形逗號或括號要等平台 #264（`TempHtml.js` 20261124b）部署到 HIS 端後才能正確切分。
 - `W_PATIENT_DATA_READ`：HIS 參照與 lookup 函數會在 HIS 端讀取病人資料。

@@ -14,7 +14,21 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.4（MCP 2.15.4）— 2026-11-18：巨集步驟與參數切分看引號（提示詞可寫半形逗號與括號）
+
+平台對應：strucmed #264（`extractPiplineSteps` 看引號，`TempHtml.js` `?v=20261124b`、IE11 `temp.html` 20261118、編輯器 `AttachSplitTop`）。
+
+**巨集切分與平台一致（#129）**：3.12.3 照舊規則（只算括號、不理引號）切分，`LLMvision(21, "a, b", "gemma3_12b")` 回 `E_FORMULA_SYNTAX`（第 2 個參數字串沒有結束的引號），新版 runtime 上是誤報，擋下合法的腳本。
+- 引號（`"` 或 `'`，以同一種引號結束）內的逗號與括號不算分隔與深度，沒有反斜線跳脫；步驟與 `LLMQUERY`／`LLMvision`／`VOICETOTEXT`／`LLMATTACH`／`ATTACHTRANSCRIBE` 的參數同一套。
+- `E_MACRO_SPLIT` 只留在 runtime 與 Calx 切法真的不同的地方：字串內的 `\"`、整段以引號包住的舊式步驟裡又用同一種引號的字串。
+- 新警告 `W_MACRO_SPLIT_NEEDS_DEPLOY`：HIS 端還是舊版 runtime 時會切錯，每個巨集提醒一次；部署 #264 後在 `.strucmed/policy.json` 設 `"runtime_quote_aware_split": true` 關閉。`LLMATTACH` 的容器清單 runtime 會接回去，不列入。
+- Calx 不支援 `""` 跳脫：語法錯誤訊息加上說明（改用另一種引號，或 `CHAR(34)`／`CHAR(39)`）。
+- `FormulaMacroRules.md`、`MacroRecipes.md`、`PromptPatterns.md`、form-reviewer：拿掉「字串內不要放半形逗號與括號」，改寫新規則。
+- 測試：`test/v02.test.mjs`。
+
 ## 3.12.3（MCP 2.15.3）— 2026-11-17：模型 Nemotron 3.5 Super VL（`nemotron35` 系列）、嵌入頁 APP 啟動橋接頁
+
+發佈（2026-11-17）：strucmed-plugin `05bf2e7`、tag `v3.12.3`、GitHub Release「strucmed 3.12.3（MCP 2.15.3）：Nemotron 3.5 Super VL、嵌入頁 APP 啟動橋接頁」；本 repo tag `v3.12.3-src`（`3dbaeeb`）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）291 項：283 過、6 失敗、2 略過，失敗的 6 項與 3.12.2 相同（Windows 環境問題）。同日在本機從市集更新 3.12.2 → 3.12.3，快取的 MCP 是 2.15.3，`tnemotron35` 回 `W_LLM_MODEL_GATEWAY_ONLY`。尚未：更新後新對話的實測、站台上 nemotron35 按鈕的實際呼叫。
 
 平台對應：strucmed #261（Nemotron 3.5，`TempHtml.js`／`attachbox.js` `?v=20261124`）、#260（APP 啟動橋接頁 `app-launch.html`）。
 

@@ -18,7 +18,7 @@
 | P9 | **不帶識別資料** | prompt 不放 `G_CHTNO()`、`G_USERNM()`、姓名、身分證 | lint `W_AI_IDENTIFIER`；資料流外洩風險 |
 | P10 | **臨床建議必附查核句** | 輸出格式最後一行固定「※ AI 產生，需由醫師查核」 | 建議被當成醫囑 |
 
-Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接只能 `CONCATENATE`，不能 `&`；巨集步驟的字串裡**不要放半形括號與逗號**，需要時用 `CHAR(40)`／`CHAR(41)`；模型名稱加引號。寫完先 `formula_check`（`kind: macro` 或 `prompt`）。
+Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接只能 `CONCATENATE`，不能 `&`；巨集步驟的字串裡可以放半形逗號與括號（平台 20261124b 起引號內不切分；HIS 端部署前 `W_MACRO_SPLIT_NEEDS_DEPLOY`，要在舊版運作時改用全形或 `CHAR(44)`／`CHAR(40)`／`CHAR(41)`）；字串內要放雙引號時改用單引號包住整段（不支援 `""` 跳脫）；模型名稱加引號。寫完先 `formula_check`（`kind: macro` 或 `prompt`）。
 
 ## 2. 模型怎麼選
 

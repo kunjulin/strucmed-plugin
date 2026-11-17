@@ -24,9 +24,25 @@ export const UNAVAILABLE = new Map([
 const err = (code, message) => ({ code, level: 'error', message });
 const warn = (code, message) => ({ code, level: 'warn', message });
 
-// ── 平台的步驟切分（平台 web/js/TempHtml.js:3897-3918 extractPiplineSteps）──────────
-// 只計算括號深度，不理會引號：字串裡的括號或逗號會打亂切分。
+// ── 平台的步驟與參數切分（平台 web/js/TempHtml.js extractPiplineSteps，20261124b 起；kunjulin/strucmed#264）──
+// 引號（" 或 '，以同一種引號結束）內的逗號與括號不算分隔與深度；沒有反斜線跳脫（"" 是結束後立刻再開始，自然成立）。
+// IE11 的 web/temp.html（20261118）與編輯器 scripts.js 的 AttachSplitTop 同一套切法。
 export function platformSplit(s) {
+  const steps = [];
+  let cur = '', depth = 0, q = '';
+  for (const ch of String(s)) {
+    if (q) { if (ch === q) q = ''; cur += ch; continue; }
+    if (ch === ',' && depth === 0) { steps.push(cur.trim()); cur = ''; continue; }
+    if (ch === '"' || ch === "'") q = ch;
+    else if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    cur += ch;
+  }
+  if (cur) steps.push(cur.trim());
+  return { steps, depth, unterminated: !!q };
+}
+// 20261124b 以前的 runtime：只計算括號深度，不理會引號（HIS 端還沒部署新版時，字串裡的逗號或括號會被切開）
+export function legacySplit(s) {
   const steps = [];
   let cur = '', depth = 0;
   for (const ch of String(s)) {
@@ -38,8 +54,9 @@ export function platformSplit(s) {
   if (cur) steps.push(cur.trim());
   return { steps, depth };
 }
-// 考慮引號的正確切分（用來偵測平台切分是否與作者意圖不同）
-export function quoteAwareSplit(s) {
+const sameSplit = (a, b) => JSON.stringify(a.steps) === JSON.stringify(b.steps);
+// Calx 字串的切分（Calx 的字串可用 \" 跳脫；runtime 切分不認反斜線）：用來偵測 runtime 切分與 Calx 解析不一致
+export function calxSplit(s) {
   const steps = [];
   let cur = '', depth = 0, q = null;
   const str = String(s);
@@ -336,13 +353,29 @@ export function lintMacro(script, ctx = {}) {
   if (!s.trim()) return { findings: [err('E_MACRO_EMPTY', '巨集沒有任何步驟')], steps, refs: [], targets: [], ai: [] };
   if (s.startsWith('PIPLINE(') && s.endsWith(')')) { s = s.slice(8, -1); out.push(warn('W_MACRO_PIPLINE', '舊式 PIPLINE(...) 寫法，runtime 會自動拆開')); }
   const plat = platformSplit(s);
-  const qa = quoteAwareSplit(s);
-  if (qa.unterminated) out.push(err('E_MACRO_SYNTAX', '巨集有未結束的字串引號'));
-  if (plat.depth !== 0 || qa.depth !== 0) out.push(err('E_MACRO_PARENS', '巨集的括號不對稱'));
-  if (JSON.stringify(plat.steps) !== JSON.stringify(qa.steps)) {
-    out.push(err('E_MACRO_SPLIT', `字串內的括號或逗號會打亂 runtime 的步驟切分（runtime 切成 ${plat.steps.filter(Boolean).length} 步，依語意應為 ${qa.steps.filter(Boolean).length} 步）；請避免在字串中使用半形括號，或改用 CHAR(40)／CHAR(41)`));
+  const cx = calxSplit(s);
+  if (plat.unterminated) out.push(err('E_MACRO_SYNTAX', '巨集有未結束的字串引號'));
+  if (plat.depth !== 0) out.push(err('E_MACRO_PARENS', '巨集的括號不對稱'));
+  if (!sameSplit(plat, cx)) {
+    out.push(err('E_MACRO_SPLIT', `字串內的 \\" 在 runtime 切分時不算跳脫（runtime 切成 ${plat.steps.filter(Boolean).length} 步，Calx 解析應為 ${cx.steps.filter(Boolean).length} 步）；含雙引號的文字請改用單引號包住，或用 CHAR(34)`));
     return { findings: out, steps, refs: [], targets: [], ai: [] };
   }
+  // 舊版 runtime（20261124b 以前）只算括號：步驟或參數切法不同時提醒一次（HIS 端部署後可在 policy 關閉）
+  let legacyWarned = !!(ctx.policy && ctx.policy.runtime_quote_aware_split);
+  // fixed：只比對前幾個參數，之後的是容器清單（LLMATTACH 第四個以後、ATTACHTRANSCRIBE 全部），runtime 會接回去再切，舊版切開也沒有影響
+  const legacyCheck = (text, split, where, fixed = Infinity) => {
+    const norm = st => fixed === Infinity ? st : [...st.slice(0, fixed), st.slice(fixed).join(',').replace(/["'\s]/g, '')];
+    if (legacyWarned || JSON.stringify(norm(split.steps)) === JSON.stringify(norm(legacySplit(text).steps))) return;
+    legacyWarned = true;
+    out.push(warn('W_MACRO_SPLIT_NEEDS_DEPLOY', `${where}${/[A-Za-z0-9]$/.test(where) ? " " : ""}的字串含半形逗號或括號：平台 TempHtml.js 20261124b（kunjulin/strucmed#264）起 runtime 看引號、切分正確；舊版 runtime 會把字串切開（按鈕沒有反應）。HIS 端部署新版前，可改用全形標點或 CHAR(44)／CHAR(40)／CHAR(41)`));
+  };
+  // 參數切分：與步驟切分同一套（runtime 對步驟內的參數也呼叫 extractPiplineSteps）
+  const splitParams = (inner, where, fixed) => {
+    const p = platformSplit(inner), c = calxSplit(inner);
+    if (!sameSplit(p, c)) { out.push(err('E_MACRO_SPLIT', `${where}${/[A-Za-z0-9]$/.test(where) ? " " : ""}的字串內的 \\" 在 runtime 切分時不算跳脫（runtime 切成 ${p.steps.length} 個參數，Calx 解析應為 ${c.steps.length} 個）；含雙引號的文字請改用單引號包住，或用 CHAR(34)`)); return null; }
+    legacyCheck(inner, p, where, fixed);
+    return p.steps;
+  };
   const refs = [], targets = [], ai = [];
   plat.steps.forEach((raw, i) => {
     let step = raw.trim();
@@ -351,6 +384,10 @@ export function lintMacro(script, ctx = {}) {
     if ((step.startsWith('"') && step.endsWith('"')) || (step.startsWith("'") && step.endsWith("'"))) {
       step = step.slice(1, -1);
       out.push(warn('W_MACRO_QUOTED_STEP', `${no}整段被引號包住，runtime 會先去掉引號再執行（相容舊寫法）`));
+    } else if (/^["']/.test(step)) {
+      // 舊式整段以引號包住的步驟裡又有同一種引號的字串：字串內的逗號落在引號外，runtime 會在這裡切開
+      out.push(err('E_MACRO_SPLIT', `${no}「${step.slice(0, 30)}」以引號開頭但沒有以同一種引號結束：整段以引號包住的舊式步驟裡，同一種引號的字串內的逗號會被 runtime 切開；請去掉步驟外層的引號`));
+      return;
     }
     const sub = (f, o) => f.forEach(x => out.push({ ...x, message: `${o}：${x.message}` }));
     const head = /^([A-Za-z]+)\s*\(/.exec(step);
@@ -359,7 +396,8 @@ export function lintMacro(script, ctx = {}) {
       const open = step.indexOf('('), close = step.lastIndexOf(')');
       if (open < 0 || close < open) { out.push(err('E_MACRO_SYNTAX', `${no} ${kind} 缺少括號`)); return; }
       if (step.slice(close + 1).trim()) out.push(err('E_MACRO_TRAILING', `${no} ${kind}(...) 之後的「${step.slice(close + 1).trim().slice(0, 20)}」會被忽略`));
-      const params = platformSplit(step.substring(open + 1, close)).steps;
+      const params = splitParams(step.substring(open + 1, close), `${no} ${kind}`);
+      if (!params) return;
       const need = kind === 'VOICETOTEXT' ? 1 : 2;
       if (params.length < need) { out.push(err('E_MACRO_SYNTAX', `${no} ${kind} 至少需要 ${need} 個參數`)); return; }
       params.forEach((p, j) => {
@@ -389,7 +427,8 @@ export function lintMacro(script, ctx = {}) {
       const open = step.indexOf('('), close = step.lastIndexOf(')');
       if (open < 0 || close < open) { out.push(err('E_MACRO_SYNTAX', `${no} ${kind} 缺少括號`)); return; }
       if (step.slice(close + 1).trim()) out.push(err('E_MACRO_TRAILING', `${no} ${kind}(...) 之後的「${step.slice(close + 1).trim().slice(0, 20)}」會被忽略`));
-      const params = platformSplit(step.substring(open + 1, close)).steps;
+      const params = splitParams(step.substring(open + 1, close), `${no} ${kind}`, kind === 'LLMATTACH' ? 3 : 0);
+      if (!params) return;
       if (kind === 'ATTACHTRANSCRIBE') {
         const boxes = attachSources(params, ctx, out, `${no} ${kind}`);
         if (boxes.length && boxes.every(b => b.kinds && !b.kinds.includes('audio'))) out.push(warn('W_ATTACH_NO_AUDIO', `${no} ATTACHTRANSCRIBE 指到的容器都不收音檔（請在容器的 attach_kinds 加 audio）：這一步不會做任何事`));
@@ -465,6 +504,7 @@ export function lintMacro(script, ctx = {}) {
     }
     steps.push({ step: i + 1, kind: 'calx' });
   });
+  if (!out.some(f => f.code === 'E_MACRO_SPLIT')) legacyCheck(s, plat, '巨集');
   // LLMvision 只適合「描述所見」；推論要交給之後的 LLMQUERY 接力（PromptPatterns.md §4 D；GitBook 生成式 AI 巨集函數）
   const lastVision = steps.map(s => s.kind).lastIndexOf('LLMvision');
   if (lastVision >= 0 && !steps.slice(lastVision + 1).some(s => s.kind === 'LLMQUERY')) {
