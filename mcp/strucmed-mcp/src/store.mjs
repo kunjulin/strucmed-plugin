@@ -111,6 +111,20 @@ export function serverMemoKeys() {
   return idx && Array.isArray(idx.memoKeys) ? idx.memoKeys : null;
 }
 
+// 站台的嵌入頁 APP 目錄（online_features 取自 GET api/v2/runtime/apps，寫成 .strucmed/embed-apps.json）：
+// form_validate 用它揭露經啟動橋接頁送往哪個 APP（代號、名稱、主機、送出的欄位；沒有金鑰與病人資料）。
+const EMBED_APPS_FILE = 'embed-apps.json';
+export function saveEmbedApps(data) {
+  const ws = workspace();
+  fs.writeFileSync(path.join(ws.base, EMBED_APPS_FILE), JSON.stringify(data, null, 2));
+}
+export function loadEmbedApps() {
+  try {
+    const c = JSON.parse(fs.readFileSync(path.join(workspace().base, EMBED_APPS_FILE), 'utf8'));
+    return c && Array.isArray(c.apps) && typeof c.origin === 'string' ? c : null;
+  } catch { return null; }
+}
+
 // 本院政策（院方決議後由使用者設定）：<root>/.strucmed/policy.json
 //   { "llm_models": ["", "qwen332b", ...] }   // 允許的 LLMQUERY 模型（'' = 預設模型）；未設定＝平台清單內都允許
 // 另合併 LlmGateway 白名單快取（llmgateway_models 寫入的 .strucmed/llm-models.json）：policy.gateway_models／gateway_fetched_at／gateway_stale
@@ -129,6 +143,8 @@ export function loadPolicy() {
   }
   const cache = loadCache(ws);
   if (cache) { p.gateway_models = cache.models; p.gateway_fetched_at = cache.fetched_at; p.gateway_stale = cache.stale; p.gateway_age_days = cache.age_days; }
+  const apps = loadEmbedApps();
+  if (apps) p.embed_apps = apps;
   // 院外站台沒有 LlmGateway：白名單只能用內建靜態表，W_LLM_WHITELIST_STALE 是預期狀況
   try { p.site_external = site.profile() === 'external'; } catch { p.site_external = false; }
   return p;

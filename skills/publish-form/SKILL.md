@@ -43,7 +43,7 @@ create-form、edit-form 內嵌時已跑過 reviewer 與字典補述，跳到「�
    - **保存後即上架**（有捷徑＋作業別）要用粗體提醒；測試表單不應有捷徑。
    - 更新範本：把 `plan.meta`（名稱／捷徑／作業別／Info 的線上值與寫入值）與 `plan.diff`（`summary`、`changed_itemids`、`changed_areas`、`js_changed`、`iot_changed`、`online_since_source`）並列給使用者。`W_UNPUBLISH`（會從 HIS 清單消失）、`W_META_RENAME`、`W_ONLINE_CHANGED_SINCE_SOURCE`（會蓋掉線上別人的修改）用粗體提醒，使用者明確同意才繼續；`W_NO_CHANGE` 時問使用者是否真的要更新。
    - 有 LLM／語音巨集：W_AI_DATAFLOW 必列（不需另行審查，但不可省略）。
-   - 有嵌入頁面（embed 區塊、OPENPANEL）：W_EMBED_DATAFLOW 必列（目標主機、帶出的參數、寫回欄位），同等級揭露。`W_EMBED_LOCALHOST`（網址是 localhost）列在「### 警告」並用粗體：只有那台電腦開得到；資料夾是科部或次專時先問使用者是否真的要上架。embed 的 `height` 也列出（像素或 fill）。flag `embedArea` 關閉時不能上架本工具新增的 embed（`form_validate` 回 `E_FEATURE_DISABLED`）；改版的原表單 embed 原樣上架。
+   - 有嵌入頁面（embed 區塊、OPENPANEL）：W_EMBED_DATAFLOW 必列（目標主機、帶出的參數、寫回欄位），同等級揭露。`W_EMBED_LOCALHOST`（網址是 localhost）列在「### 警告」並用粗體：只有那台電腦開得到；資料夾是科部或次專時先問使用者是否真的要上架。embed 的 `height` 也列出（像素或 fill）。flag `embedArea` 關閉時不能上架本工具新增的 embed（`form_validate` 回 `E_FEATURE_DISABLED`）；改版的原表單 embed 原樣上架。 網址是站台的啟動橋接頁（`embeds[].bridge`）時，定稿前先 `online_features` 再 `form_validate`，把 APP 代號、實際主機與站台送給 APP 的欄位寫進定稿；`W_EMBED_BRIDGE_*` 同樣列在「### 警告」。
 
    對話中呈現同一份內容（略去 `<!-- gate: … -->` 註解），一次 `AskUserQuestion`：核准（建議）／要求修改／取消，選項描述加「有疑問請先在對話問，不要在這裡選」。使用者在對話提問時回答後再問一次，定稿內容不重貼。
 5. **核准**：使用者核准後執行 `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify-plan.mjs" prepare <workspace>/.strucmed/plans/<draft_id>/publish-plan.md --by <user_id>`（離線 `--by local`）。prepare 會自己把「## 核准」段填成 Approved、寫入核准時間與核准者，**不要手填** `Approved-At`／`Approved-By`。沒有這一步，hooks 會阻擋第二次呼叫。使用者沒有核准就不要執行 prepare；核准後不再改定稿檔。

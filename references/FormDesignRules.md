@@ -73,6 +73,7 @@
 - 嵌入頁因 `X-Frame-Options`、`frame-ancestors` 被擋，或主機連線被拒時，iframe 顯示灰底哭臉，runtime 不會提示也不送 `NAV-DENIED`（只有 8 秒沒載入與停在空白頁才會）；交付時請使用者確認嵌入頁主機的標頭，並告訴開發者看開發說明的 §10.5。
 - `url` 是 `localhost`（含 `127.0.0.1`、`::1`）時 `form_validate` 列 `W_EMBED_LOCALHOST`：只有執行該服務的電腦開得到，其他工作站嵌入頁空白；只用於示範與測試，定稿與交付要寫明，部署到院內主機後改 `url` 再更新範本（`EmbedPageContract.md` §4）。
 - **上架後實測**：verify-runtime 的 harness 不載入外部 iframe，嵌入頁的載入、收到 context、寫回與高度要在站台編輯器的表單預覽或 HIS 實測（`EmbedPageContract.md` §5）；沒做就在定稿與交付寫「未驗證」。
+- **需要 API 金鑰才能啟動的 APP**（例如 ERCDSS：伺服器帶金鑰換一個含一次性票券的啟動網址）：金鑰不能放進表單、網址或參數。這類 APP 由站台代持金鑰並登錄代號，`url` 改指向站台的啟動橋接頁 `https://<站台>/strucmed/app-launch.html?app=<代號>`（代號是小寫英數字與減號，由站台管理者提供，不要猜），**不帶 `params`**（病歷號等由 `strucmed.context` 取得），整頁型 APP 用 `height: "fill"`。資料實際送往的是登錄表裡的 APP，不是 `url` 的主機：`form_validate` 的 `W_EMBED_DATAFLOW` 與 `embeds[].bridge` 會標明 APP 代號；登入後先執行 `online_features`（取站台的 APP 目錄，寫成 `.strucmed/embed-apps.json`）再 `form_validate`，才列得出實際主機、站台送給 APP 的欄位與 APP 可寫回的 key；沒有目錄時寫「以站台登錄表為準」，定稿與交付要照寫，不要自己補主機。另有三個警告：`W_EMBED_BRIDGE_APP`（缺代號或格式不合、站台目錄沒有這個 APP、APP 尚未就緒、多帶了 `params`）、`W_EMBED_BRIDGE_OUTPUT`（`outputs` 的 key 不在登錄表允許寫回的清單，橋接頁會丟棄，欄位不會被寫入）、`W_EMBED_BRIDGE_PANEL`（`OPENPANEL` 開橋接頁：不送 context，APP 不會啟動，改用 embed 區塊）。這些是 plugin 的警告，平台的 embed 規則沒有變（`EmbedPageContract.md` §6）。
 - 嵌入頁拿到的 `user`、`deptNo` 是 L1（工作站自稱、無簽章），只做顯示與稽核；表單設計不要把開立、簽核等不可逆動作放在嵌入頁內完成（等 L2 token）。
 - 只在按下按鈕時才開的頁面改用巨集 `OPENPANEL`（`MacroRecipes.md` R10；1.10.9 起開在右側子面板，收不到 `strucmed.context`、不能寫回欄位），不用 embed。
 

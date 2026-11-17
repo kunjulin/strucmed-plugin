@@ -65,3 +65,24 @@ main   { flex: 1 1 auto; min-height: 0; display: grid; }            /* 吃剩下
 5. 用測試病人，不要存檔（除非使用者要驗存檔）。
 
 沒做的步驟在定稿與交付寫「未驗證」，不要寫成已通過。
+
+## 6. 需要金鑰的 APP：站台的啟動橋接頁
+
+來源：平台 `docs/PLAN-APP-LAUNCH-BRIDGE.md`（2026-11-16 合併，站台設定 `EmbedApps`，預設關閉；尚未對真正的 APP 與 HIS 實測）。
+
+- 有些 APP 要先由伺服器帶 API 金鑰換啟動網址。金鑰由站台代持，表單的 `embed` 指向站台的橋接頁 `app-launch.html?app=<代號>`；橋接頁收到 `strucmed.context` 後向站台換啟動網址，再把 APP 顯示在內層 iframe。
+- 表單這一側：`url` 是橋接頁網址、不帶 `params`、整頁型用 `height: "fill"`。橋接頁與表單同源，§1 的來源檢查照常成立。
+- 資料流：站台把登錄表 `Request` 列的欄位（通常是病歷號、使用者）送給 APP；APP 回應的其他內容不會回到瀏覽器。站台每次啟動留稽核（含病歷號）。
+- 寫回：APP 對橋接頁送 `strucmed.result`，橋接頁**只轉送登錄表 `Outputs` 列出的 key**，其餘丟棄；所以表單 `outputs` 的 key 要同時出現在登錄表（`W_EMBED_BRIDGE_OUTPUT`）。
+- APP 端另外要滿足：`frame-ancestors` 列出每一層祖先（站台來源與 `http://localhost`）、換票後不可再跳互動式登入、內層 iframe 同樣不能開新視窗與下載。
+- 症狀對照：
+
+| 橋接頁顯示 | 原因 |
+|---|---|
+| 網址缺少 APP 代號 | `url` 沒有 `?app=` 或代號格式不合（`W_EMBED_BRIDGE_APP`） |
+| 這個頁面要從結構化表單開啟 | 沒有收到 `strucmed.context`：編輯器區塊內的「預覽嵌入頁」、`OPENPANEL` 都不送（`W_EMBED_BRIDGE_PANEL`） |
+| 這個 APP 目前沒有開放／站台沒有登錄這個 APP | 站台未啟用啟動橋接、APP 未登錄、未啟用或沒有金鑰：請站台管理者處理 |
+| 您不在這個 APP 的可用名單 | 登錄表的使用者／科別白名單 |
+| APP 的啟動服務沒有正常回應／APP 沒有回應 | APP 端的問題或 `frame-ancestors` 擋下內層 iframe |
+
+- 上架後實測（§5）多兩項：APP 顯示的是正確的病人；有寫回時確認登錄表允許的 key 都寫得進欄位。

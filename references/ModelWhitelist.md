@@ -6,13 +6,15 @@
 
 | 層 | 例子 | 誰看 |
 |---|---|---|
-| 表單巨集寫的**別名** | `tw`、`gemma3`、`gemma3_12b`、`medgemma`、`ph4`、`qwen332b`、`tqwen332b`、`qwen3627b`、`tqwen3627b(-low/-medium/-high)`、空字串＝預設 | 使用者寫在 `LLMQUERY(id, prompt, "別名")`、`LLMvision(...)` |
-| HIS 端 runtime 送出的模型名 | `gemma2:latest`、`gemma3`、`gemma3:12b`、`medgemma`、`phi4`、`qwen3:32b`、`Qwen3.6:27B`、`llama3.1:8b-instruct-q8_0` | `TempHtml.js` LLMquery 路由 |
+| 表單巨集寫的**別名** | `tw`、`gemma3`、`gemma3_12b`、`medgemma`、`ph4`、`qwen332b`、`tqwen332b`、`qwen3627b`、`tqwen3627b(-low/-medium/-high)`、`nemotron35`、`tnemotron35(-low/-medium/-high)`（只經 Gateway）、空字串＝預設 | 使用者寫在 `LLMQUERY(id, prompt, "別名")`、`LLMvision(...)` |
+| HIS 端 runtime 送出的模型名 | `gemma2:latest`、`gemma3`、`gemma3:12b`、`medgemma`、`phi4`、`qwen3:32b`、`Qwen3.6:27B`、`Nemotron-3.5-Super-VL`（只經 Gateway）、`llama3.1:8b-instruct-q8_0` | `TempHtml.js` LLMquery 路由 |
 | LlmGateway 的模型 id | 同上，但 Ollama 名稱加標籤：`gemma3` → `gemma3:latest`、`medgemma` → `medgemma:latest`、`phi4` → `phi4:latest`（`TempHtml.js` `LLM_GATEWAY_MODEL_NAMES`） | `GET /v1/models` 的 `id` |
 
-對應程式：`mcp/strucmed-mcp/src/policy.mjs`（`gatewayModelFor(alias, fn)`）。LLMvision 只有 `gemma3`、`gemma3_12b`、`medgemma`（→ `medgemma:4b_vision`）與預設 `gemma3:12b`。
+對應程式：`mcp/strucmed-mcp/src/policy.mjs`（`gatewayModelFor(alias, fn)`）。LLMvision 只有 `gemma3`、`gemma3_12b`、`medgemma`（→ `medgemma:4b_vision`）、`nemotron35`（→ `Nemotron-3.5-Super-VL`，不思考，只經 Gateway）與預設 `gemma3:12b`。
 
-`LLMATTACH`（附件容器，flag `attachBox`）的內建代號與 LLMvision 相同；**不在代號表的名稱不會被改成預設**，經 LlmGateway 時原樣當模型 id 送出（`W_LLM_MODEL_PASSTHROUGH`）。所以還沒有代號的新模型，直接寫 `llmgateway_models` 回傳的 id，大小寫要完全相同；有白名單快取時會檢查存在、狀態與視覺能力。直連（沒有 Gateway）時未知名稱改用預設；院外站台用使用者在設定畫面選的模型。
+**只經 Gateway 的模型**（`nemotron35` 系列，平台 20261124）：醫科管控端點要金鑰、不回 CORS，金鑰只放 LlmGateway 伺服器，前端沒有直連端點。站台沒有啟用 Gateway 時 `LLMQUERY` 顯示「這個模型只能經院內 LLM Gateway 使用」、不送出（不會改用別的模型），`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`；舊站 `/go/` 沒有這些代號。`formula_check`／`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY` 提醒。`tnemotron35` 的 temperature：`-low` 0.1、`-medium` 0.3、`tnemotron35`／`-high` 0.5，`max_tokens` 16000；上下文 262,144 token；一次請求上限 8 MiB。
+
+`LLMATTACH`（附件容器，flag `attachBox`）的內建代號是 LLMvision 的代號再加 `tnemotron35`（思考）；用 `nemotron35`／`tnemotron35` 時平台送出前以 8 MiB 檢查（影像與 PDF 頁面影像都算），超過就擋下；**不在代號表的名稱不會被改成預設**，經 LlmGateway 時原樣當模型 id 送出（`W_LLM_MODEL_PASSTHROUGH`）。所以還沒有代號的新模型，直接寫 `llmgateway_models` 回傳的 id，大小寫要完全相同；有白名單快取時會檢查存在、狀態與視覺能力。直連（沒有 Gateway）時未知名稱改用預設；院外站台用使用者在設定畫面選的模型。
 
 ## 2. 白名單快取
 
@@ -39,6 +41,7 @@
 | 結構化擷取、推理 | `qwen332b`（思考 `tqwen332b`） | `qwen3:32b` |
 | 影像（LLMvision） | `gemma3_12b` | `gemma3:12b` |
 | 醫療影像（LLMvision） | `medgemma` | `medgemma:4b_vision` |
+| 讀影像上的文字、長上下文（只經 Gateway，2026-11-17 實測） | `nemotron35`（思考 `tnemotron35`；LLMvision 只有 `nemotron35`） | `Nemotron-3.5-Super-VL` |
 | 低延遲簡短任務 | 空字串（預設） | `llama3.1:8b-instruct-q8_0` |
 | 避免 | `tw`／`math`（gemma2，閘道標 deprecated）、`ph4`（視金鑰）、已移除的 `gemma3_27b`、`medgemma:27b`、`gemma4_31b` | — |
 

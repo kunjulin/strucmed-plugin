@@ -23,6 +23,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 2. 模型：`llmgateway_models`（有金鑰時）→ `form_validate` 的 `E_LLM_MODEL_*`／`W_LLM_*` 就是白名單比對結果；沒有金鑰時只以靜態表檢查並標 `W_LLM_WHITELIST_STALE`。
 3. 站台：`online_features`
    - `llm_gateway.enabled: false` → 表單內的 LLM／語音仍走舊的院內端點，不經閘道（由平台管理者啟用）。
+   - 巨集用了只經 Gateway 的模型（`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY`，目前是 `nemotron35` 系列）→ 站台**必須**啟用 Gateway：沒有時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`。舊站 `/go/` 沒有這些代號，只能用在 `/strucmed`。`online_features` 讀不到 `api/llm-config`（403）時，清單寫「請平台管理者確認」。
    - `runtime.save`／`query` → 登入者是否在 HIS 端存檔／查詢白名單（影響 HIS 端體驗，不影響表單設計）。
 4. 範本：捷徑＋作業別都有才會出現在 HIS 清單；`online_template_versions` 確認 `current` rev。
 4b. 嵌入頁面（範本有 embed 區塊或 `OPENPANEL` 時）：以 `form_validate` 的 `embeds` 列出每個目標主機；有 `W_EMBED_LOCALHOST` 時清單直接標 ✗（本機網址不能上線，要先部署到院內主機並改 `url`）。嵌入頁的訊息格式、高度與版面、上架後實測步驟見 `references/EmbedPageContract.md`，清單加一列「嵌入頁在站台實測（載入、病人情境、寫回、高度）」。HIS 端 StrucForm 要放行它們：1.10.9 DLL 起預設放行院內範圍，iframe 與 OPENPANEL 的子面板走同一份白名單；1.10.7／1.10.8 只認設定主機，會擋掉院內頁面。DLL 版本請 HIS 端確認。被擋下時畫面空白並送 errorlog `NAV-DENIED`，平台管理者可在管理頁「導向白名單擋下的主機」依主機彙總查看（plugin 沒有管理權限，只寫進清單提醒）。嵌入頁本身的條件（`frame-ancestors` 允許 `http://localhost` 與站台、https 憑證、Chromium 104）由嵌入頁開發者負責，列在平台的 B1 嵌入頁 APP 開發說明。
@@ -36,7 +37,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 | 捷徑＋作業別 | ✓／✗ | 缺少則 HIS 清單看不到 |
 | HIS 端元件版本支援新站台 | 請 HIS 端確認 | 版本請洽資訊室 |
 | LlmGateway 啟用（api/llm-config） | ✓／✗ | 由平台管理者啟用 |
-| 巨集模型在白名單 | ✓／✗ | 列出每個 LLMQUERY／LLMvision 的別名 → 閘道模型 → 狀態 |
+| 巨集模型在白名單 | ✓／✗ | 列出每個 LLMQUERY／LLMvision／LLMATTACH 的別名 → 閘道模型 → 狀態；只經 Gateway 的模型（`W_LLM_MODEL_GATEWAY_ONLY`）標「需啟用 Gateway」 |
 | AI 資料流（W_AI_DATAFLOW） | 已告知 | 哪些欄位會送到 LLM／語音 |
 | 嵌入頁主機在 StrucForm 導向白名單（有 embed／OPENPANEL 時） | 請 HIS 端確認 | 列出主機；1.10.9 DLL 起預設放行院內範圍（1.10.7／1.10.8 會擋）；上線一週內請平台管理者看「導向白名單擋下的主機」 |
 | 嵌入頁面資料流（W_EMBED_DATAFLOW） | 已告知 | 每個嵌入頁的主機、帶出的參數（病歷號、科別、使用者、門診序號）、寫回欄位 |

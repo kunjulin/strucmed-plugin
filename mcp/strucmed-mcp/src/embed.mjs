@@ -256,12 +256,54 @@ export function summarize(block) {
     }),
     height: h ? (h.fill ? 'fill' : h.px) : String(b.height),
     inputs: ids(b.inputs),
-    outputs: ids(b.outputs)
+    outputs: ids(b.outputs),
+    ...(launchBridge(b.url) && { bridge: launchBridge(b.url) })
   };
 }
 // 一行文字：主機、參數、讀取、寫回（預覽、W_EMBED_DATAFLOW、review 共用）
 export function summaryText(s) {
   const p = s.params.length ? s.params.map(x => `${x.key}=${x.placeholder ? `${x.value}（${x.placeholder}）` : x.value}`).join('、') : '無';
   const io = (list, none) => (list.length ? list.map(x => `${x.key}→#${x.itemid}`).join('、') : none);
-  return `主機 ${s.host || '（網址無效）'}；網址參數 ${p}；送出欄位 ${io(s.inputs, '無')}；寫回欄位 ${io(s.outputs, '無')}`;
+  return `主機 ${s.host || '（網址無效）'}${s.bridge ? `（站台的啟動橋接頁，${bridgeText(s.bridge)}）` : ''}；網址參數 ${p}；送出欄位 ${io(s.inputs, '無')}；寫回欄位 ${io(s.outputs, '無')}`;
+}
+
+// ── 站台的 APP 啟動橋接頁（平台 docs/PLAN-APP-LAUNCH-BRIDGE.md；web/app-launch.html?app=<代號>）──
+// 需要 API 金鑰才能啟動的 APP 由站台代持金鑰：embed 的 url 指向橋接頁，資料實際送往登錄表裡的 APP。
+// 只看網址認不出真正的目的地，所以揭露時要另外標明 APP 代號，並以站台目錄（GET api/v2/runtime/apps）補上實際主機。
+export const BRIDGE_PAGE = 'app-launch.html';
+const BRIDGE_APP_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;   // 與平台 EmbedAppOptions.IdFormat 相同
+export const BRIDGE_SEND_LABELS = { chtno: '病歷號', deptNo: '科別', user: '使用者', opdno: '門診序號', userName: '使用者姓名' };
+
+// 網址是橋接頁 → { app, valid, origin }；不是 → null
+export function launchBridge(url) {
+  const u = parseUrl(String(url == null ? '' : url).trim());
+  if (!u || !new RegExp('(^|/)' + BRIDGE_PAGE.replace('.', '\\.') + '$', 'i').test(u.pathname)) return null;
+  const app = u.searchParams.get('app') || '';
+  return { app, valid: BRIDGE_APP_ID.test(app), origin: u.origin };
+}
+
+// 以站台目錄補上 APP 的實際主機與送出的欄位。catalog：{ origin, fetched_at, enabled, apps:[{ id, name, host, sends, outputs, forwardContext, ready }] } 或 null。
+// 目錄不是同一個站台（來源不同）時不採用：別的站台的登錄表不能拿來說明這個網址。
+// status：invalid（代號缺少或格式不合）、offline（沒有可用的目錄）、unknown（目錄裡沒有這個 APP）、listed
+export function resolveBridge(bridge, catalog) {
+  const out = { app: bridge.app, valid: bridge.valid, origin: bridge.origin, status: 'offline' };
+  if (!bridge.valid) return { ...out, status: 'invalid' };
+  if (!catalog || !Array.isArray(catalog.apps) || String(catalog.origin || '').toLowerCase() !== String(bridge.origin || '').toLowerCase()) return out;
+  out.fetched_at = catalog.fetched_at || null;
+  const a = catalog.apps.find(x => x && String(x.id) === bridge.app);
+  if (!a) return { ...out, status: 'unknown', site_enabled: catalog.enabled !== false };
+  const list = v => (Array.isArray(v) ? v.map(String) : []);
+  return { ...out, status: 'listed', name: String(a.name || ''), target_host: String(a.host || ''), sends: list(a.sends), app_outputs: list(a.outputs),
+    forward_context: String(a.forwardContext || 'none'), ready: a.ready !== false };
+}
+
+export function bridgeText(b) {
+  if (b.status === 'invalid' || (!b.status && !b.valid)) return '網址缺少 APP 代號或代號格式不合';
+  const sends = (b.sends || []).map(k => BRIDGE_SEND_LABELS[k] || k);
+  if (b.status === 'listed')
+    return `資料實際送往 APP ${b.app}${b.name ? `「${b.name}」` : ''}，主機 ${b.target_host || '（站台未提供）'}；站台送給 APP：${sends.length ? sends.join('、') : '無'}` +
+      (b.forward_context && b.forward_context !== 'none' ? `；另把表單的 ${b.forward_context === 'full' ? '病歷號、科別、使用者、門診序號與送出欄位' : '送出欄位'}轉給 APP` : '') +
+      `；APP 可寫回的 key：${(b.app_outputs || []).length ? b.app_outputs.join('、') : '無'}`;
+  if (b.status === 'unknown') return `資料實際送往 APP ${b.app}，但站台目錄沒有這個 APP（未登錄或未啟用）`;
+  return `資料實際送往 APP ${b.app}；實際主機與送出的欄位以站台登錄表為準（登入後執行 online_features 取得站台 APP 目錄，再 form_validate 一次）`;
 }

@@ -3,9 +3,9 @@
 // finding：{ code, level:'error'|'warn', message }。level=error 的項目由 validate 依「是否本次新增／修改」
 // 決定要當 error 還是 warning（原表單既有）；level=warn 一律是 warning。
 import { check } from './calx.mjs';
-import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
+import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
 import { checkAlias } from './policy.mjs';
-import { checkUrl } from './embed.mjs';
+import { checkUrl, launchBridge, BRIDGE_PAGE } from './embed.mjs';
 import { enabled } from './flags.mjs';
 
 // 需要 numeral.js／jStat 的內建函數（2026-09-28 以 tools/v0-harness/calx-parity.html 在真實 Calx 2.2.8 實測）。
@@ -134,6 +134,8 @@ function functionFindings(info, context, out, what, ctx = {}, src) {
       const r = checkUrl(url);
       for (const e of r.errors) out.push(err(e.code, `${f.raw}()：${e.message}`));
       if (r.ok) out.push({ ...warn('W_EMBED_DATAFLOW', `${f.raw}() 按下時開啟院內頁面 ${r.host}（右側子面板或浮動面板；不帶參數、不送 strucmed.context、不寫回欄位）`), host: r.host, url: r.url });
+      // 啟動橋接頁要收到 strucmed.context 才會向站台換啟動網址；OPENPANEL 不送 context，APP 永遠不會啟動
+      if (r.ok && launchBridge(r.url)) out.push(warn('W_EMBED_BRIDGE_PANEL', `${f.raw}() 開的是站台的啟動橋接頁（${BRIDGE_PAGE}）：橋接頁要收到 strucmed.context 才啟動 APP，${f.raw}() 不送 context，面板只會停在「這個頁面要從結構化表單開啟」；請改用 embed 區塊`));
       continue;
     }
     if (cls === 'attach') {
@@ -256,6 +258,7 @@ function checkModel(modelText, ctx, out, fn) {
     const removed = LLM_REMOVED.includes(m) ? '（已於 20260905 移除）' : '';
     out.push(err('E_LLM_MODEL_UNKNOWN', `${fn} 的模型「${lit}」不在清單${removed}：runtime 會靜默改用預設模型。可用：${Object.keys(table).filter(Boolean).join('、')}`));
   }
+  else if (GATEWAY_ONLY_MODELS.includes(m)) out.push(gatewayOnlyWarn(fn, lit));
   const allowed = ctx.policy && Array.isArray(ctx.policy.llm_models) ? ctx.policy.llm_models : null;
   const canon = LLM_ALIASES[m] || m;
   if (allowed && !allowed.includes(canon)) out.push(err('E_LLM_MODEL_POLICY', `模型「${lit || '（預設）'}」不在本院允許清單（.strucmed/policy.json）：${allowed.join('、') || '（空）'}`));
@@ -271,17 +274,27 @@ function checkModel(modelText, ctx, out, fn) {
   return canon;
 }
 
+// 只經 LlmGateway 的模型代號（nemotron35 系列，平台 20261124）：站台沒啟用 Gateway 時 LLMQUERY 顯示提示、不送出；
+// LLMvision／LLMATTACH 改用預設 gemma3:12b。LLMATTACH 另以模型的請求上限（Nemotron 8 MiB）在送出前擋下
+function gatewayOnlyWarn(fn, lit) {
+  const fallback = fn === 'LLMQUERY' ? '顯示「這個模型只能經院內 LLM Gateway 使用」、不送出' : '改用預設 gemma3:12b';
+  const max = GATEWAY_MODEL_MAX_BYTES['Nemotron-3.5-Super-VL'];
+  const size = fn === 'LLMATTACH' ? `；這個模型一次請求上限 ${max / 1048576} MiB（影像與 PDF 頁面影像都算），超過時平台在送出前擋下，請控制容器的 attachmax／attachpages` : '';
+  return warn('W_LLM_MODEL_GATEWAY_ONLY', `${fn} 的模型「${lit}」只經院內 LlmGateway（Nemotron-3.5-Super-VL）：站台沒有啟用 Gateway 時${fallback}；院外站台用使用者在設定畫面選的模型${size}`);
+}
+
 // LLMATTACH 的模型：代號表與 LLMvision 相同；不在表內的名稱經 LlmGateway 時原樣當模型 id 送出（平台 attachbox.js buildRequest），所以不是錯誤
 function checkAttachModel(lit, ctx, out) {
   const m = lit.toLowerCase();
   const known = m in ATTACH_MODELS;
+  if (known && GATEWAY_ONLY_MODELS.includes(m)) out.push(gatewayOnlyWarn('LLMATTACH', lit));
   if (!known) out.push(warn('W_LLM_MODEL_PASSTHROUGH', `LLMATTACH 的模型「${lit}」不是內建代號（${Object.keys(ATTACH_MODELS).filter(Boolean).join('、')}）：經 LlmGateway 時原樣當模型 id 送出（必須與 llmgateway_models 的 id 完全相同），直連時改用預設 gemma3:12b；院外站台用使用者在設定畫面選的模型`));
   const allowed = ctx.policy && Array.isArray(ctx.policy.llm_models) ? ctx.policy.llm_models : null;
   if (allowed && !allowed.includes(known ? m : lit)) out.push(err('E_LLM_MODEL_POLICY', `模型「${lit || '（預設）'}」不在本院允許清單（.strucmed/policy.json）：${allowed.join('、') || '（空）'}`));
   const models = ctx.policy && Array.isArray(ctx.policy.gateway_models) ? ctx.policy.gateway_models : null;
   if (models) {
     const shown = lit || '（預設）';
-    const gw = known ? checkAlias(m, 'LLMvision', models) : (() => {
+    const gw = known ? checkAlias(m, 'LLMATTACH', models) : (() => {
       const hit = models.find(x => String(x.id || '') === lit);
       return hit ? { gateway_model: lit, found: true, status: String(hit.status || ''), vision: !!hit.vision } : { gateway_model: lit, found: false };
     })();

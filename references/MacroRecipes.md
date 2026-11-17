@@ -130,7 +130,7 @@
 - 參數：`LLMATTACH(回覆寫入的 id, 提示詞, "模型", "容器id")`。
   - 回覆寫入：`textarea`／`textbox`／`label`，回覆串流寫入。
   - 提示詞：Calx 運算式，可以用 `CONCAT` 接欄位（`A<n>`）；容器內文件的文字與逐字稿會自動附在提示詞後面，不必自己接 `ATTACHTEXT`。
-  - 模型：`""`＝預設（gemma3:12b）；內建代號 `gemma3`、`gemma3_12b`、`medgemma` 與 LLMvision 相同。**其他名稱不會被改成預設**：經 LlmGateway 時原樣當模型 id 送出，所以新模型直接寫 `llmgateway_models` 查到的 id（大小寫要完全相同；`W_LLM_MODEL_PASSTHROUGH`，白名單裡沒有時 `E_LLM_MODEL_NOT_ON_GATEWAY`）。院外站台不看這個參數，用使用者在「LLM 服務設定」選的模型。
+  - 模型：`""`＝預設（gemma3:12b）；內建代號 `gemma3`、`gemma3_12b`、`medgemma`、`nemotron35` 與 LLMvision 相同，另有 `tnemotron35`（思考）；`nemotron35`／`tnemotron35` 只經 Gateway（`W_LLM_MODEL_GATEWAY_ONLY`），一次請求上限 8 MiB，影像多或 PDF 頁面影像多時調低 `attachmax`／`attachpages`。**其他名稱不會被改成預設**：經 LlmGateway 時原樣當模型 id 送出，所以新模型直接寫 `llmgateway_models` 查到的 id（大小寫要完全相同；`W_LLM_MODEL_PASSTHROUGH`，白名單裡沒有時 `E_LLM_MODEL_NOT_ON_GATEWAY`）。院外站台不看這個參數，用使用者在「LLM 服務設定」選的模型。
   - 容器 id：直接寫 itemid 數字，多個寫 `"2,5"`；省略＝表單上所有容器。不能寫 `A2`（`E_ATTACH_SOURCE`）。
 - 容器會送影像而模型沒有視覺能力時 `E_LLM_MODEL_NO_VISION`；容器只收 Excel／CSV、文字、音檔時文字模型也能用（只提醒）。
 - 音檔：`LLMATTACH` 送出前會自動把還沒轉寫的音檔轉成逐字稿。要讓使用者先看、先改逐字稿，就另放一顆按鈕 `ATTACHTRANSCRIBE(<C_box>)`（使用者也可以按卡片上的「轉逐字稿」）。

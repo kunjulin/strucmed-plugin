@@ -153,11 +153,12 @@ export const ONLINE_TOOLS = [
   {
     name: 'online_features',
     description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中）、' +
-      'api/llm-config（只回 enabled 與 base_url；不回傳任何 token）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
+      'api/llm-config（只回 enabled 與 base_url；不回傳任何 token）、api/v2/runtime/apps（嵌入頁 APP 目錄：經啟動橋接頁 app-launch.html 啟動的 APP 代號、名稱、實際主機、送出的欄位；' +
+      '寫成本機快取 .strucmed/embed-apps.json，form_validate 據此揭露嵌入頁面資料流）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
     inputSchema: { type: 'object', properties: {} },
     async handler() {
       const user = online.currentUser();
-      const out = { site: site.describe(), health: { available: false }, runtime: { available: false }, llm_gateway: { available: false, enabled: false }, warnings: [] };
+      const out = { site: site.describe(), health: { available: false }, runtime: { available: false }, llm_gateway: { available: false, enabled: false }, embed_apps: { available: false }, warnings: [] };
       if (out.site.profile === 'external') out.warnings.push('W_SITE_EXTERNAL：院外站台不提供 LlmGateway、LLM 與語音轉文字；模型白名單使用內建靜態表，AI 巨集請回院內實測');
       const probe = async (what, fn) => { try { return await fn(); } catch (e) { out.warnings.push(`${what} 無法讀取：${e.message}`); return null; } };
       const h = await probe('api/health', () => online.call('GET', 'api/health', {}, '讀取健康狀態'));
@@ -168,6 +169,17 @@ export const ONLINE_TOOLS = [
       // 刻意只取狀態欄位：g.token 是瀏覽器型金鑰，不得進入回應、log 或檔案
       if (g) out.llm_gateway = { available: true, enabled: !!g.enabled, base_url: g.enabled ? String(g.baseUrl || '') : null, site: g.site ? String(g.site) : null,
         has_endpoints: Array.isArray(g.endpoints) ? g.endpoints.length > 0 : !!g.endpoints };
+      // 嵌入頁 APP 目錄（平台 PLAN-APP-LAUNCH-BRIDGE §5.3）：只有代號、名稱、主機、送出的欄位。舊站台沒有這個端點 → 只列 warning
+      const a = await probe('api/v2/runtime/apps', () => online.call('GET', 'api/v2/runtime/apps', {}, '讀取嵌入頁 APP 目錄'));
+      if (a) {
+        const list = v => (Array.isArray(v) ? v.map(String) : []);
+        const apps = (Array.isArray(a.apps) ? a.apps : []).filter(x => x && x.id).map(x => ({ id: String(x.id), name: String(x.name || ''), host: String(x.host || ''),
+          sends: list(x.sends), outputs: list(x.outputs), forwardContext: String(x.forwardContext || 'none'), ready: !!x.ready }));
+        let origin = '';
+        try { origin = new URL(online.baseUrl()).origin; } catch { origin = ''; }
+        out.embed_apps = { available: true, enabled: !!a.enabled, apps };
+        if (origin) store.saveEmbedApps({ origin, fetched_at: new Date().toISOString(), enabled: !!a.enabled, apps });
+      }
       return out;
     }
   },

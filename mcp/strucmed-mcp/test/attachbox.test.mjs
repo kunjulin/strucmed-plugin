@@ -169,6 +169,15 @@ test('LLMATTACH 的模型：內建代號、原樣送出的名稱、Gateway 白�
   assert.ok(r.findings.every(f => !('novision' in f)));
   // 本院允許清單
   assert.ok(codes(run('"gemma3"', { llm_models: ['gemma3_12b'] })).includes('E_LLM_MODEL_POLICY'));
+  // Nemotron 3.5 Super VL（attachbox.js GATEWAY_VISION_MODELS，20261124）：內建代號、只經 Gateway、8 MiB
+  for (const m of ['nemotron35', 'tnemotron35']) {
+    r = run(`"${m}"`);
+    assert.deepEqual(codes(r), ['W_LLM_MODEL_GATEWAY_ONLY'], m);
+    assert.match(r.findings[0].message, /8 MiB/);
+  }
+  const gwNemo = [{ id: 'Nemotron-3.5-Super-VL', status: 'active', vision: true }];
+  assert.deepEqual(codes(run('"tnemotron35"', { gateway_models: gwNemo })), ['W_LLM_MODEL_GATEWAY_ONLY'], '對應到閘道模型 Nemotron-3.5-Super-VL');
+  assert.ok(codes(run('"nemotron35"', { gateway_models })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'));
 });
 
 test('ATTACHTRANSCRIBE、ATTACHTEXT、ATTACHCOUNT', () => {

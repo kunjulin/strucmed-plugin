@@ -12,6 +12,7 @@ import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
 import * as dc from './dictcomment.mjs';
 import { renderSnippets } from './script-snippets.mjs';
+import { bridgeText } from './embed.mjs';
 
 export const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -87,9 +88,11 @@ export function embedSection(validation) {
   if (!list.length) return '';
   const cell = v => String(v === undefined || v === null || v === '' ? '—' : v).replace(/\|/g, '／');
   const io = l => (l.length ? l.map(x => `${cell(x.key)}→#${x.itemid}`).join('、') : '—');
+  // 經站台啟動橋接頁的：目標主機欄寫明真正的 APP（主機取自站台目錄；沒有目錄時寫「以站台登錄表為準」）
+  const host = x => cell(x.host) + (x.bridge ? `（啟動橋接頁；${cell(bridgeText(x.bridge))}）` : '');
   const rows = list.map(x => x.kind === 'embed'
-    ? `| 區塊 #${x.itemid}${x.title ? ` ${cell(x.title)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 表單載入時 | ${cell(x.host)} | ${x.params.length ? x.params.map(p => `${cell(p.key)}=${cell(p.placeholder ? `${p.value}（${p.placeholder}）` : p.value)}`).join('、') : '—'} | ${io(x.inputs)} | ${io(x.outputs)} |`
-    : `| 巨集 #${x.itemid}${x.name ? ` ${cell(x.name)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 按下 OPENPANEL | ${cell(x.host)} | — | — | — |`);
+    ? `| 區塊 #${x.itemid}${x.title ? ` ${cell(x.title)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 表單載入時 | ${host(x)} | ${x.params.length ? x.params.map(p => `${cell(p.key)}=${cell(p.placeholder ? `${p.value}（${p.placeholder}）` : p.value)}`).join('、') : '—'} | ${io(x.inputs)} | ${io(x.outputs)} |`
+    : `| 巨集 #${x.itemid}${x.name ? ` ${cell(x.name)}` : ''}${x.source === 'imported' ? '（原表單）' : ''} | 按下 OPENPANEL | ${host(x)} | — | — | — |`);
   return `
 ## 嵌入頁面資料流（${list.length} 個）
 下列院內頁面會顯示在表單內。embed 區塊載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號與「送出欄位」的值；

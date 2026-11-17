@@ -257,7 +257,11 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       const key = f.code + f.message;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (f.code === 'W_EMBED_DATAFLOW' && f.host) embeds.push({ kind: 'openpanel', itemid: Number(c.itemid), name: c.actionName || '', host: f.host, url: f.url, params: [], inputs: [], outputs: [], source: area.imported ? 'imported' : 'new' });
+      if (f.code === 'W_EMBED_DATAFLOW' && f.host) {
+        const lb = embed.launchBridge(f.url);
+        embeds.push({ kind: 'openpanel', itemid: Number(c.itemid), name: c.actionName || '', host: f.host, url: f.url, params: [], inputs: [], outputs: [], source: area.imported ? 'imported' : 'new',
+          ...(lb && { bridge: embed.resolveBridge(lb, policy.embed_apps) }) });
+      }
       if (f.level === 'warn') warn(f.code, `#${c.itemid}：${f.message}`, c.itemid);
       else report(sFresh, f.code, `#${c.itemid}：${f.message}`, c.itemid);
     }
@@ -304,6 +308,19 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     for (const f of embedFindings(draft)) report(freshEmbed.get(f.itemid), f.code, `嵌入頁面 #${f.itemid}：${f.message}`, f.itemid);
     for (const a of embedAreas) {
       const s = embed.summarize(areaNode(a));
+      // 網址是站台的啟動橋接頁：真正的目的地是登錄表裡的 APP，以站台目錄快取補上（沒有目錄就明講「以站台登錄表為準」，不猜）
+      if (s.bridge) {
+        const b = s.bridge = embed.resolveBridge(s.bridge, policy.embed_apps);
+        const who = `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}`;
+        if (b.status === 'invalid') warn('W_EMBED_BRIDGE_APP', `${who}的網址是站台的啟動橋接頁，但缺少 APP 代號或格式不合（應為 ${embed.BRIDGE_PAGE}?app=<代號>，代號是小寫英數字與減號）：橋接頁會顯示錯誤、不啟動任何 APP`, s.itemid);
+        else if (b.status === 'unknown') warn('W_EMBED_BRIDGE_APP', `${who}經啟動橋接頁啟動 APP ${b.app}，但站台目錄${b.site_enabled ? '沒有這個 APP（未登錄或未啟用）' : '顯示啟動橋接尚未啟用'}：表單開啟時橋接頁會顯示未開放；請站台管理者登錄後執行 online_features 再檢查（目錄取得時間 ${b.fetched_at || '不明'}）`, s.itemid);
+        else if (b.status === 'listed' && !b.ready) warn('W_EMBED_BRIDGE_APP', `${who}經啟動橋接頁啟動 APP ${b.app}，但站台目錄顯示它尚未就緒（沒有金鑰或設定不合）：表單開啟時橋接頁會顯示未開放`, s.itemid);
+        if (b.status === 'listed') {
+          const dropped = s.outputs.map(o => o.key).filter(k => !b.app_outputs.includes(k));
+          if (dropped.length) warn('W_EMBED_BRIDGE_OUTPUT', `${who}的寫回欄位 ${dropped.join('、')} 不在站台登錄表允許 APP ${b.app} 寫回的 key 內（允許：${b.app_outputs.length ? b.app_outputs.join('、') : '無'}）：橋接頁會丟棄這些值，欄位不會被寫入；請站台管理者在登錄表的 Outputs 加上，或移除這些 outputs`, s.itemid);
+        }
+        if (s.params.length) warn('W_EMBED_BRIDGE_APP', `${who}的網址是啟動橋接頁卻另外帶了網址參數（${s.params.map(p => p.key).join('、')}）：橋接頁只讀 app，病歷號等由 strucmed.context 取得，請移除 params`, s.itemid);
+      }
       embeds.push({ kind: 'embed', ...s, itemid: Number(s.itemid), source: a.imported ? 'imported' : 'new' });
       if (embed.isLocalHost(s.host)) warn('W_EMBED_LOCALHOST', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}的網址是本機（${s.host}）：只有執行該服務的電腦開得到，其他工作站開這張表單時嵌入頁空白；只用於示範與測試，部署到院內主機後請改網址再更新範本`, s.itemid);
       warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);

@@ -91,6 +91,15 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", "tw")', { ...ctx, policy: { llm_models: ['', 'qwen332b'] } })).includes('E_LLM_MODEL_POLICY'));
   assert.ok(codes(lintMacro('LLMvision(2, "看圖", "gemma3")', ctx)).includes('E_MACRO_TARGET_TYPE'), 'LLMvision 只能寫入 textarea');
   assert.ok(codes(lintMacro('LLMvision(1, "看圖", "tw")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), 'tw 不是影像模型');
+  // Nemotron 3.5 Super VL（平台 20261124，只經 LlmGateway）：認得代號、提醒只經 Gateway
+  for (const m of ['nemotron35', 'tnemotron35', 'tnemotron35-low', 'tnemotron35-medium', 'tnemotron35-high']) {
+    assert.deepEqual(codes(lintMacro(`LLMQUERY(1, "x", "${m}")`, ctx)), ['W_LLM_MODEL_GATEWAY_ONLY'], m);
+  }
+  assert.deepEqual(codes(lintMacro('LLMvision(1, "看圖", "nemotron35")', ctx)).filter(c => c !== 'W_VISION_NO_FOLLOWUP'), ['W_LLM_MODEL_GATEWAY_ONLY']);
+  assert.ok(codes(lintMacro('LLMvision(1, "看圖", "tnemotron35")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), 'LLMvision 沒有思考版');
+  const gwNemo = [{ id: 'Nemotron-3.5-Super-VL', status: 'active', vision: true }];
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "tnemotron35")', { ...ctx, policy: { gateway_models: gwNemo } })), ['W_LLM_MODEL_GATEWAY_ONLY']);
+  assert.ok(codes(lintMacro('LLMvision(1, "看圖", "nemotron35")', { ...ctx, policy: { gateway_models: [{ id: 'Qwen3.6:27B' }] } })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'));
   assert.ok(codes(lintMacro('VOICETOTEXT(1, "GOOGLE")', ctx)).includes('E_ASR_PROVIDER'));
   assert.ok(codes(lintMacro('LLMQUERY(9, "x")', ctx)).includes('E_REF_BROKEN'));
   assert.ok(codes(lintMacro('MACRO(IF(A3 > 1, 1, 3), 2)', ctx)).includes('E_MACRO_SYNTAX'), 'MACRO 目標不能含逗號');

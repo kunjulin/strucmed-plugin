@@ -434,3 +434,134 @@ test('embed：localhost 網址列 W_EMBED_LOCALHOST（只有本機開得到）�
   assert.equal(eb.isLocalHost('[::1]'), true);
   assert.equal(eb.isLocalHost('assistantai.cgmh.org.tw'), false);
 });
+
+// ── 站台的 APP 啟動橋接頁（app-launch.html?app=<代號>；平台 docs/PLAN-APP-LAUNCH-BRIDGE.md）──────
+const BRIDGE = 'https://lvaiw.cgmf.org.tw/strucmed/app-launch.html';
+const catalog = extra => ({ origin: 'https://lvaiw.cgmf.org.tw', fetched_at: '2026-11-16T00:00:00.000Z', enabled: true,
+  apps: [{ id: 'ercdss', name: '急診臨床決策支援', host: 'assistantai.cgmh.org.tw', sends: ['chtno', 'user'], outputs: ['risk_score'], forwardContext: 'none', ready: true }], ...extra });
+const appsFile = () => path.join(ws, '.strucmed', 'embed-apps.json');
+const clearCatalog = () => fs.rmSync(appsFile(), { force: true });
+
+test('橋接頁：launchBridge 只認 app-launch.html，代號格式與平台相同', () => {
+  assert.deepEqual(eb.launchBridge(BRIDGE + '?app=ercdss'), { app: 'ercdss', valid: true, origin: 'https://lvaiw.cgmf.org.tw' });
+  assert.equal(eb.launchBridge('https://lvaiw.cgmf.org.tw/strucmed/APP-LAUNCH.HTML?app=x-1').valid, true, 'IIS 路徑不分大小寫');
+  assert.equal(eb.launchBridge(BRIDGE).valid, false, '沒有 app');
+  for (const bad of ['ERCDSS', 'a b', '-x', 'x'.repeat(33), '']) assert.equal(eb.launchBridge(BRIDGE + '?app=' + encodeURIComponent(bad)).valid, false, bad);
+  assert.equal(eb.launchBridge('https://assistantai.cgmh.org.tw/ERCDSS/'), null);
+  assert.equal(eb.launchBridge('https://x.cgmh.org.tw/my-app-launch.html?app=a'), null, '檔名要完全相同');
+  assert.equal(eb.launchBridge('https://x.cgmh.org.tw/a?next=app-launch.html'), null, '只看路徑');
+  assert.equal(eb.launchBridge('不是網址'), null);
+  assert.ok(eb.checkUrl(BRIDGE + '?app=ercdss').ok, '橋接頁網址通過既有的網址規則（平台規則不變）');
+});
+
+test('橋接頁：沒有站台目錄時明講「以站台登錄表為準」，不猜實際主機', () => {
+  setFlags({ embedArea: true });
+  clearCatalog();
+  const { draft_id } = baseDraft();
+  const id = t.form_add_area({ draft_id, type: 'embed', title: '急診決策', url: BRIDGE + '?app=ercdss', height: 'fill' }).area_itemid;
+  const v = t.form_validate({ draft_id });
+  assert.equal(v.valid, true, JSON.stringify(v.errors));
+  const flow = v.warnings.find(w => w.code === 'W_EMBED_DATAFLOW' && w.itemid === id);
+  assert.match(flow.message, /主機 lvaiw\.cgmf\.org\.tw（站台的啟動橋接頁，資料實際送往 APP ercdss；實際主機與送出的欄位以站台登錄表為準/);
+  assert.match(flow.message, /online_features/);
+  assert.ok(!/assistantai/.test(flow.message), '沒有目錄就不能寫出主機');
+  assert.ok(!v.warnings.some(w => w.code.startsWith('W_EMBED_BRIDGE')), '代號合規、沒有目錄：不另外警告');
+  const e = v.embeds.find(x => x.itemid === id);
+  assert.deepEqual({ app: e.bridge.app, status: e.bridge.status }, { app: 'ercdss', status: 'offline' });
+  assert.match(exp.embedSection(v), /\| lvaiw\.cgmf\.org\.tw（啟動橋接頁；資料實際送往 APP ercdss；實際主機與送出的欄位以站台登錄表為準/);
+});
+
+test('橋接頁：有站台目錄時揭露 APP 的實際主機、站台送出的欄位與可寫回的 key', () => {
+  setFlags({ embedArea: true });
+  store.saveEmbedApps(catalog());
+  try {
+    const { draft_id, a1 } = baseDraft();
+    const score = t.form_add_control({ draft_id, area_itemid: a1, label_text: '風險：', control: { datatype: 'numberbox' } }).itemid;
+    const note = t.form_add_control({ draft_id, area_itemid: a1, label_text: '建議：', control: { datatype: 'textbox' } }).itemid;
+    const id = t.form_add_area({ draft_id, type: 'embed', title: '急診決策', url: BRIDGE + '?app=ercdss', height: 'fill', outputs: { risk_score: score } }).area_itemid;
+    let v = t.form_validate({ draft_id });
+    assert.equal(v.valid, true, JSON.stringify(v.errors));
+    const flow = v.warnings.find(w => w.code === 'W_EMBED_DATAFLOW' && w.itemid === id);
+    assert.match(flow.message, /資料實際送往 APP ercdss「急診臨床決策支援」，主機 assistantai\.cgmh\.org\.tw；站台送給 APP：病歷號、使用者；APP 可寫回的 key：risk_score/);
+    assert.ok(!v.warnings.some(w => w.code.startsWith('W_EMBED_BRIDGE')));
+    const e = v.embeds.find(x => x.itemid === id);
+    assert.equal(e.host, 'lvaiw.cgmf.org.tw', 'host 仍是 url 的主機（HIS 導向白名單看的是它）');
+    assert.equal(e.bridge.target_host, 'assistantai.cgmh.org.tw');
+    assert.match(exp.embedSection(v), /主機 assistantai\.cgmh\.org\.tw；站台送給 APP：病歷號、使用者/);
+
+    // 寫回的 key 不在登錄表的 Outputs：橋接頁會丟棄
+    t.form_update_area({ draft_id, itemid: id, outputs: { risk_score: score, suggestion: note } });
+    v = t.form_validate({ draft_id });
+    const out = v.warnings.filter(w => w.code === 'W_EMBED_BRIDGE_OUTPUT');
+    assert.equal(out.length, 1);
+    assert.match(out[0].message, /suggestion 不在站台登錄表允許 APP ercdss 寫回的 key 內（允許：risk_score）/);
+    assert.equal(v.valid, true, '是警告不是錯誤：平台的 embed 規則沒有這一條');
+
+    // 轉送 context 的 APP 要寫進揭露
+    store.saveEmbedApps(catalog({ apps: [{ ...catalog().apps[0], forwardContext: 'full', outputs: ['risk_score', 'suggestion'] }] }));
+    v = t.form_validate({ draft_id });
+    assert.match(v.warnings.find(w => w.code === 'W_EMBED_DATAFLOW' && w.itemid === id).message, /另把表單的 病歷號、科別、使用者、門診序號與送出欄位轉給 APP/);
+    assert.ok(!v.warnings.some(w => w.code === 'W_EMBED_BRIDGE_OUTPUT'));
+  } finally { clearCatalog(); }
+});
+
+test('橋接頁：代號不合、目錄沒有、尚未就緒、多帶 params 都列 W_EMBED_BRIDGE_APP', () => {
+  setFlags({ embedArea: true });
+  store.saveEmbedApps(catalog({ apps: [...catalog().apps, { id: 'xams', name: '感染管控', host: 'xams.cgmh.org.tw', sends: ['chtno'], outputs: [], forwardContext: 'none', ready: false }] }));
+  try {
+    const { draft_id } = baseDraft();
+    const add = (url, extra) => t.form_add_area({ draft_id, type: 'embed', title: 'x', url, height: 300, ...extra }).area_itemid;
+    const noApp = add(BRIDGE);
+    const unknown = add(BRIDGE + '?app=cancer360');
+    const notReady = add(BRIDGE + '?app=xams');
+    const withParams = add(BRIDGE + '?app=ercdss', { params: { chtno: '{chtno}' } });
+    const v = t.form_validate({ draft_id });
+    assert.equal(v.valid, true, JSON.stringify(v.errors));
+    const of = id => v.warnings.filter(w => w.code === 'W_EMBED_BRIDGE_APP' && w.itemid === id).map(w => w.message);
+    assert.match(of(noApp)[0], /缺少 APP 代號或格式不合/);
+    assert.match(of(unknown)[0], /APP cancer360，但站台目錄沒有這個 APP/);
+    assert.match(of(notReady)[0], /APP xams，但站台目錄顯示它尚未就緒/);
+    assert.match(of(withParams)[0], /另外帶了網址參數（chtno）/);
+    assert.equal(v.embeds.find(x => x.itemid === unknown).bridge.status, 'unknown');
+    assert.match(v.warnings.find(w => w.code === 'W_EMBED_DATAFLOW' && w.itemid === unknown).message, /站台目錄沒有這個 APP/);
+    assert.match(v.warnings.find(w => w.code === 'W_EMBED_DATAFLOW' && w.itemid === noApp).message, /網址缺少 APP 代號或代號格式不合/);
+
+    // 站台的啟動橋接整個沒開
+    store.saveEmbedApps(catalog({ enabled: false, apps: [] }));
+    const v2 = t.form_validate({ draft_id });
+    assert.match(v2.warnings.find(w => w.code === 'W_EMBED_BRIDGE_APP' && w.itemid === withParams).message, /啟動橋接尚未啟用|另外帶了網址參數/);
+    assert.ok(v2.warnings.some(w => w.code === 'W_EMBED_BRIDGE_APP' && /啟動橋接尚未啟用/.test(w.message)));
+  } finally { clearCatalog(); }
+});
+
+test('橋接頁：別的站台的目錄不拿來說明這個網址', () => {
+  setFlags({ embedArea: true });
+  store.saveEmbedApps(catalog({ origin: 'https://cgmh.ddns.net' }));
+  try {
+    const { draft_id } = baseDraft();
+    const id = t.form_add_area({ draft_id, type: 'embed', title: 'x', url: BRIDGE + '?app=ercdss', height: 300 }).area_itemid;
+    const v = t.form_validate({ draft_id });
+    assert.equal(v.embeds.find(x => x.itemid === id).bridge.status, 'offline');
+    assert.ok(!/assistantai/.test(JSON.stringify(v.warnings)));
+    assert.equal(store.loadEmbedApps().origin, 'https://cgmh.ddns.net');
+    fs.writeFileSync(appsFile(), '{ 壞掉的 json');
+    assert.equal(store.loadEmbedApps(), null, '快取壞掉當作沒有');
+    assert.equal(t.form_validate({ draft_id }).valid, true);
+  } finally { clearCatalog(); }
+});
+
+test('橋接頁：OPENPANEL 指向橋接頁列 W_EMBED_BRIDGE_PANEL（不送 context，APP 不會啟動）', () => {
+  setFlags({ embedArea: true });
+  clearCatalog();
+  const r = t.formula_check({ kind: 'macro', text: 'OPENPANEL("' + BRIDGE + '?app=ercdss", "決策")' });
+  assert.equal(r.ok, true);
+  assert.ok(r.warnings.some(w => w.code === 'W_EMBED_DATAFLOW'));
+  assert.match(r.warnings.find(w => w.code === 'W_EMBED_BRIDGE_PANEL').message, /不送 context.*請改用 embed 區塊/);
+  assert.ok(!t.formula_check({ kind: 'macro', text: 'OPENPANEL("https://x.cgmh.org.tw/guide", "指引")' }).warnings.some(w => w.code === 'W_EMBED_BRIDGE_PANEL'));
+  const { draft_id, a1 } = baseDraft();
+  const btn = t.form_add_control({ draft_id, area_itemid: a1, control: { datatype: 'action', action_name: '決策', action_script: 'OPENPANEL("' + BRIDGE + '?app=ercdss", "決策")' } }).itemid;
+  const v = t.form_validate({ draft_id });
+  assert.equal(v.embeds.find(x => x.kind === 'openpanel' && x.itemid === btn).bridge.app, 'ercdss');
+  assert.match(exp.embedSection(v), /按下 OPENPANEL \| lvaiw\.cgmf\.org\.tw（啟動橋接頁；資料實際送往 APP ercdss/);
+});
+

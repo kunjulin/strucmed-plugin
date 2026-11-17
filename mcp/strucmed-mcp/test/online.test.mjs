@@ -136,6 +136,9 @@ function handler(req, res) {
     if (req.method === 'GET' && p === 'api/health') return json(res, 200, { ok: true, ts: '2026-10-19T00:00:00Z' });
     if (req.method === 'GET' && p === 'api/v2/runtime/features')
       return json(res, 200, { ok: true, presets: true, recordDelete: true, save: url.searchParams.get('user') === USER_ID, query: false, queryRoot: 'x' });
+    if (req.method === 'GET' && p === 'api/v2/runtime/apps')
+      return json(res, 200, { ok: true, enabled: true, apps: [
+        { id: 'ercdss', name: '急診臨床決策支援', host: 'assistantai.cgmh.org.tw', sends: ['chtno', 'user'], forwardContext: 'none', outputs: ['risk_score'], ready: true, apiKey: 'MUST-NOT-BE-KEPT' }] });
     if (req.method === 'GET' && p === 'api/llm-config') {
       issued.push(GW_TOKEN);
       return json(res, 200, { enabled: true, baseUrl: '/llmgw', token: GW_TOKEN, site: req.headers['x-asr-site'] || 'unknown', endpoints: [] });
@@ -388,7 +391,7 @@ test('folder list and template get send the bearer token', async () => {
 // 3.10.2 F-07：javascript 區塊只有產生器標記註解時，js_chars 回 0、另給 js_marker
 test('online_template_get summary：只有標記註解的 javascript 區塊 js_chars 0＋js_marker；有程式碼照算', async () => {
   await browserLogin(mcp, {});
-  const marker = '// generated-by: strucmed-skill 3.12.2 (mcp 2.15.2)';
+  const marker = '// generated-by: strucmed-skill 3.12.3 (mcp 2.15.3)';
   const withJs = js => ONLINE_FORM.map(x => x.itemtype === 'javascript' ? { ...x, content: js } : structuredClone(x));
   const get = async (id, js) => {
     templates.set(id, { sha256: 'x'.repeat(8), template: { name: id }, form: withJs(js) });
@@ -528,6 +531,32 @@ test('online_features aggregates health, runtime features and llm-config without
   assert.ok(feat.search.includes('user=' + USER_ID) && feat.search.includes('deptNo=APP'));
 });
 
+test('online_features 取站台的嵌入頁 APP 目錄並寫成本機快取（只留揭露用的欄位）', async () => {
+  await browserLogin(mcp, {});
+  const r = await mcp.call('online_features', {});
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data.embed_apps, { available: true, enabled: true,
+    apps: [{ id: 'ercdss', name: '急診臨床決策支援', host: 'assistantai.cgmh.org.tw', sends: ['chtno', 'user'], outputs: ['risk_score'], forwardContext: 'none', ready: true }] });
+  const raw = fs.readFileSync(path.join(mcp.ws, '.strucmed', 'embed-apps.json'), 'utf8');
+  const cache = JSON.parse(raw);
+  assert.equal(cache.origin, new URL(BASE()).origin, '記下是哪一個站台的目錄');
+  assert.equal(cache.apps[0].host, 'assistantai.cgmh.org.tw');
+  assert.ok(Date.parse(cache.fetched_at) > 0);
+  assert.ok(!raw.includes('MUST-NOT-BE-KEPT') && !JSON.stringify(r).includes('MUST-NOT-BE-KEPT'), '站台多回的欄位不保留');
+
+  // 同一個 MCP 的 form_validate 用這份目錄揭露橋接頁背後的 APP（橋接頁在同一個站台才採用）
+  const d = await mcp.call('form_create', { name: '橋接揭露', dept_no: 'APP' });
+  const draft_id = d.data.draft_id;
+  await mcp.call('form_add_area', { draft_id, type: 'embed', title: '急診決策', url: 'https://lvaiw.cgmf.org.tw/strucmed/app-launch.html?app=ercdss', height: 'fill' });
+  const other = await mcp.call('form_validate', { draft_id });
+  assert.ok(!JSON.stringify(other).includes('assistantai'), '橋接頁在別的站台：不拿這份目錄說明');
+  cache.origin = 'https://lvaiw.cgmf.org.tw';
+  fs.writeFileSync(path.join(mcp.ws, '.strucmed', 'embed-apps.json'), JSON.stringify(cache));
+  const v = await mcp.call('form_validate', { draft_id });
+  const flow = [...(v.data.warnings || []), ...(v.warnings || [])].find(w => w && w.code === 'W_EMBED_DATAFLOW');
+  assert.match(flow.message, /資料實際送往 APP ercdss「急診臨床決策支援」，主機 assistantai\.cgmh\.org\.tw；站台送給 APP：病歷號、使用者/);
+});
+
 test('online_features reports unavailable endpoints as warnings instead of failing', async () => {
   await browserLogin(mcp, {});
   behavior.upstream500 = true;
@@ -536,7 +565,8 @@ test('online_features reports unavailable endpoints as warnings instead of faili
   assert.equal(r.data.health.available, false);
   assert.equal(r.data.runtime.available, false);
   assert.equal(r.data.llm_gateway.available, false);
-  assert.equal(r.warnings.length, 3);
+  assert.equal(r.data.embed_apps.available, false);
+  assert.equal(r.warnings.length, 4);
 });
 
 test('online_dictionary_search filters by q and can replace the local dictionary index', async () => {

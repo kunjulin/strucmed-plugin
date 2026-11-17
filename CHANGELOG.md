@@ -14,7 +14,23 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.3（MCP 2.15.3）— 2026-11-17：模型 Nemotron 3.5 Super VL（`nemotron35` 系列）、嵌入頁 APP 啟動橋接頁
+
+平台對應：strucmed #261（Nemotron 3.5，`TempHtml.js`／`attachbox.js` `?v=20261124`）、#260（APP 啟動橋接頁 `app-launch.html`）。
+
+**Nemotron 3.5 Super VL（#126）**：3.12.2 把這些代號當成未知模型，`form_update_control` 拒絕寫入巨集，G2 過不了。
+- 認得的代號：`LLMQUERY` 的 `nemotron35`（不思考）、`tnemotron35`／`-low`／`-medium`／`-high`（思考）；`LLMvision` 的 `nemotron35`；`LLMATTACH` 的 `nemotron35`、`tnemotron35`。都對應到閘道模型 `Nemotron-3.5-Super-VL`，有 `llmgateway_models` 快取時一併檢查存在與狀態。
+- 新警告 `W_LLM_MODEL_GATEWAY_ONLY`：這個模型只經院內 LlmGateway。站台沒有啟用 Gateway 時 `LLMQUERY` 顯示提示、不送出（不會改用別的模型），`LLMvision`／`LLMATTACH` 改用 `gemma3:12b`；`LLMATTACH` 另提醒一次請求上限 8 MiB。舊站 `/go/` 沒有這些代號。
+- `ModelWhitelist.md`、`PromptPatterns.md`、`FormulaMacroRules.md`、`MacroRecipes.md` R11、build-form-app B1 清單（只經 Gateway 的模型要求站台啟用 Gateway）。
+- 測試：`test/v02.test.mjs`、`test/attachbox.test.mjs`。
+
+**嵌入頁 APP 啟動橋接頁（#125）**：需要 API 金鑰的 APP 由站台代持金鑰，表單的 embed 指向 `app-launch.html?app=<代號>`。
+- `W_EMBED_DATAFLOW` 不再只列站台：`online_features` 另讀 `api/v2/runtime/apps` 寫成 `.strucmed/embed-apps.json`，揭露 APP 名稱、實際主機、站台送給 APP 的欄位與可寫回的 key；沒有目錄時寫「以站台登錄表為準」。
+- 新警告 `W_EMBED_BRIDGE_APP`、`W_EMBED_BRIDGE_OUTPUT`、`W_EMBED_BRIDGE_PANEL`；manifest「嵌入頁面資料流」標明實際的 APP。
+
 ## 3.12.2（MCP 2.15.2）— 2026-11-16：嵌入頁 APP 試做回饋（契約摘要、高度規則、`W_EMBED_LOCALHOST`）
+
+發佈（2026-11-16）：strucmed-plugin `2c0a1e9`、tag `v3.12.2`、GitHub Release「strucmed 3.12.2（MCP 2.15.2）：嵌入頁契約摘要、高度規則、本機網址警告」；本 repo tag `v3.12.2-src`（`f524484`）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）279 項：271 過、6 失敗、2 略過，失敗的 6 項（匯出路徑的分隔符、symlink 權限、本機預覽頁 harness 與 runtime 尋找）在升版前的 `main` 同樣失敗，是 Windows 環境的問題，與這一版內容無關，待另外處理；`npm ci` 因沒有 lockfile 相依而報錯（零相依，不影響測試）。尚未：從市集更新後的對話實測、HIS 用戶端內的嵌入頁實測。
 
 來源：2026-11-16 以 3.12.0 試做「語音護理交班」嵌入頁 APP（create-form → publish-form → 站台編輯器表單預覽實測）遇到的問題。功能沒有破壞性變動：多一份 reference、一個警告碼，其餘是規則與流程文字。
 

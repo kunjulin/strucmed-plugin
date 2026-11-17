@@ -29,7 +29,8 @@ Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接
 | （空）預設 | Llama 3.1 8B | 32K（院內設定） | 簡短英文任務、LLM 控制項（`action2` 固定用它，不能改） |
 | `qwen3627b`／`tqwen3627b(-low/-medium/-high)` | Qwen3.6 27B | 256K | 長病歷摘要、中文輸出；思考模式用於推理、鑑別診斷 |
 | `qwen332b`／`tqwen332b` | qwen3:32b | 40K | 結構化擷取、指定格式輸出 |
-| `gemma3_12b`（建議）／`gemma3`／`medgemma` | gemma3:12b／gemma3/ medgemma:4b | 16K（含影像） | **只有這三個能讀影像**（LLMvision） |
+| `nemotron35`／`tnemotron35(-low/-medium/-high)` | Nemotron 3.5 Super VL | 262K | **只經院內 LlmGateway**；長文件、讀影像上的文字（LLMvision 只有 `nemotron35`，LLMATTACH 有 `nemotron35`／`tnemotron35`）；一次請求 8 MiB |
+| `gemma3_12b`（建議）／`gemma3`／`medgemma` | gemma3:12b／gemma3/ medgemma:4b | 16K（含影像） | 能讀影像（LLMvision）；另有只經 Gateway 的 `nemotron35` |
 | `tw`、`math` | gemma2 | 8K | 閘道標 deprecated，不要新用 |
 | `phi4` | Phi-4 14b | 16K | 視金鑰權限 |
 

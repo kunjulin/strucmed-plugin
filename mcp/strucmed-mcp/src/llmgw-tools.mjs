@@ -82,7 +82,7 @@ export const LLMGW_TOOLS = [
 function summary(cache, fetched) {
   return { fetched: fetched, fetched_at: cache.fetched_at, stale: !!cache.stale, age_days: cache.age_days, count: cache.models.length,
     models: cache.models.map(x => ({ id: x.id, status: x.status || 'ok', vision: x.vision, thinking: x.thinking, context_length: x.context_length })),
-    aliases: Object.fromEntries(['', 'tw', 'gemma3', 'gemma3_12b', 'medgemma', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b'].map(a => {
+    aliases: Object.fromEntries(['', 'tw', 'gemma3', 'gemma3_12b', 'medgemma', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b', 'nemotron35', 'tnemotron35'].map(a => {
       const c = policy.checkAlias(a, 'LLMQUERY', cache.models);
       return [a || '(預設)', c && c.found ? `${c.gateway_model}${c.status ? `（${c.status}）` : ''}` : `${c && c.gateway_model || '?'}（不在清單）`];
     })),
