@@ -14,7 +14,20 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.5（MCP 2.15.5）— 2026-11-19：改版時表單預設（片語）不再默默匯出
+
+**片語的個資防護（#132）**：同仁以另一院區的線上範本改版，來源套件的表單預設（片語，F6）含真實病人識別資料；`form_validate` 不掃描 `source.presets`，`form_export` 卻原樣寫進套件，是人工抽查才發現。上架本文本來就不含片語，外洩路徑只有匯出。
+- `form_import`：預設**不帶入**來源片語（回 `presets_dropped`，notes 說明）；`keep_presets: true` 才保留。**行為改變**：以前匯入套件會自動帶入。
+- `form_validate`：掃描片語的名稱與內容。身分證字號、「姓名／病歷號／身分證：」→ `E_PHI_SUSPECT`（error，擋下匯出）；只有 7–10 位數字 → `W_PHI_SUSPECT`；沒命中 → `W_PRESETS_EXPORTED`。訊息只寫第幾筆與命中類型，不帶片語內容。
+- `form_update_meta`：新增 `drop_presets: true`，不必手改 draft JSON。
+- `edit-form`、`RevisionWorkflow.md`、`SecurityInvariants.md`、form-reviewer 同步。
+- 測試：`test/v1.test.mjs`。
+
+---
+
 ## 3.12.4（MCP 2.15.4）— 2026-11-18：巨集步驟與參數切分看引號（提示詞可寫半形逗號與括號）
+
+發佈（2026-11-18）：strucmed-plugin `2eeaf22`、tag `v3.12.4`、GitHub Release「strucmed 3.12.4（MCP 2.15.4）：提示詞可寫半形逗號與括號」；本 repo tag `v3.12.4-src`（`16ba1d6`）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）288 項：280 過、6 失敗、2 略過，失敗的 6 項與 3.12.3 相同（Windows 環境問題）。尚未：從市集更新後的對話實測、HIS 端部署 strucmed #264 後的按鈕實測。
 
 平台對應：strucmed #264（`extractPiplineSteps` 看引號，`TempHtml.js` `?v=20261124b`、IE11 `temp.html` 20261118、編輯器 `AttachSplitTop`）。
 

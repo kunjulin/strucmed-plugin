@@ -30,4 +30,4 @@
 
 **v1 限制**（告訴使用者，請其匯入後在編輯器調整）：
 - 圖形、雙欄區塊內**不能新增**控制項（可以修改既有控制項的屬性）。表格與頁籤見 §3c。
-- 表單預設在 P0 匯入時只顯示筆數，不寫入。
+- 表單預設（片語）`form_import` 預設不帶入（`presets_dropped` 為來源筆數），上架本文也不含；`keep_presets: true` 才保留並由 `form_export` 寫進套件。保留的片語由 `form_validate` 掃描疑似個資（身分證、「姓名／病歷號／身分證：」→ `E_PHI_SUSPECT`；7–10 位數字 → `W_PHI_SUSPECT`；沒命中也有 `W_PRESETS_EXPORTED` 提醒），`form_update_meta(drop_presets: true)` 移除。

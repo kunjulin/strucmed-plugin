@@ -602,7 +602,8 @@ export const TOOLS = [
       groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別（選填；預設不勾；for_update:true 時預設沿用來源）' },
       description: str('Info（選填；預設沿用原表單）'),
       folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys'] }),
-      for_update: bool('要以 online_template_update 更新來源範本（來源必須帶 templateID：online_template_get(save:true) 的套件，或 iot 有 templateID／sheetid 的 .htm）') } },
+      for_update: bool('要以 online_template_update 更新來源範本（來源必須帶 templateID：online_template_get(save:true) 的套件，或 iot 有 templateID／sheetid 的 .htm）'),
+      keep_presets: bool('保留來源的表單預設（片語，F6）並在 form_export 時寫進套件（預設 false＝不帶入：片語是使用者存下的填寫值，可能含病人資料；上架本來就不寫入片語）') } },
     handler(a) {
       const ws = store.workspace();
       let text, fileName;
@@ -633,6 +634,8 @@ export const TOOLS = [
       const st = (forUpdate && src.template) || {};
       // metaSet：使用者明確指定的欄位；online_template_update 只寫入這些欄位的 draft 值，其餘沿用線上值
       const metaSet = ['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined);
+      const srcPresets = Array.isArray(src.presets) ? src.presets : [];
+      const keepPresets = a.keep_presets === true;
       const d = {
         draft_id: store.newDraftId(), created: new Date().toISOString(),
         meta: { name, dept_no: String(a.dept_no),
@@ -645,7 +648,7 @@ export const TOOLS = [
           .map(x => ({ imported: true, area: structuredClone(x) })),
         source: {
           kind: src.kind, javascript: js, iot: structuredClone(iot),
-          presets: src.presets || [], dictionaries: src.dictionaries || [],
+          presets: keepPresets ? srcPresets : [], dictionaries: src.dictionaries || [],
           derivedFrom: { templateID: srcID, name: srcName, sha256: sha256(JSON.stringify(src.form)) },
           // 套件（online_template_get 存檔或匯出的套件）是當時的線上內容：上架更新時用它比對「線上自來源後被改的地方」。
           // 外部產生的 .htm／JSON 本身已含修改，無法分辨，不記錄
@@ -661,23 +664,32 @@ export const TOOLS = [
       return {
         draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom, ...shortcutNote(a.shortcut),
         area_types: types, controls: v.stats.controls, next_itemid: d.nextItemId,
-        js_chars: js.length, presets: d.source.presets.length,
-        notes: forUpdate
+        js_chars: js.length, presets: d.source.presets.length, presets_dropped: keepPresets ? 0 : srcPresets.length,
+        notes: [...(forUpdate
           ? [`用於更新範本 ${srcID}（online_template_update）`, '上架時名稱、捷徑、作業別、Info 沿用線上值；要改請用 form_update_meta 明確設定']
-          : ['輸出為新表單，不沿用原 templateID', '捷徑與作業別預設不沿用（避免在 HIS 清單重複）'],
+          : ['輸出為新表單，不沿用原 templateID', '捷徑與作業別預設不沿用（避免在 HIS 清單重複）']),
+          ...(srcPresets.length ? [keepPresets
+            ? `保留來源的 ${srcPresets.length} 筆表單預設（片語）：form_export 會寫進套件；片語是使用者存下的填寫值，可能含病人資料，請看 validation 的 E_PHI_SUSPECT／W_PHI_SUSPECT`
+            : `來源有 ${srcPresets.length} 筆表單預設（片語），未帶入 draft（可能含病人資料；上架本來就不寫入）；確定要帶進匯出套件請重新 form_import 並帶 keep_presets: true`] : [])],
         validation: { valid: v.valid, errors: v.errors, warnings: v.warnings.slice(0, 20), warnings_total: v.warnings.length }
       };
     }
   },
   {
     name: 'form_update_meta',
-    description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部、HIS 接收端要的文字鍵（離線）。',
+    description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部、HIS 接收端要的文字鍵（離線）；drop_presets:true 移除改版來源帶來的表單預設（片語）。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), name: str('表單名稱（≤36 字）'), shortcut: str('捷徑（一律存成小寫；空字串＝不上架）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS } }, description: str('Info'),
-      folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys', ''] }), dept_no: str('科部代碼'), his_text_keys: HIS_TEXT_KEYS } },
+      folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys', ''] }), dept_no: str('科部代碼'), his_text_keys: HIS_TEXT_KEYS,
+      drop_presets: bool('移除 draft 裡的表單預設（片語），form_export 不再寫進套件；疑似含病人資料（E_PHI_SUSPECT）時用') } },
     handler(a) {
       const d = store.loadDraft(a.draft_id);
+      let presetsDropped;
+      if (a.drop_presets === true) {
+        presetsDropped = (d.source && Array.isArray(d.source.presets)) ? d.source.presets.length : 0;
+        if (d.source) d.source.presets = [];
+      }
       if (a.name !== undefined) {
         const n = String(a.name).trim();
         if (!n || n.length > 36) fail(E.INVALID_INPUT, '表單名稱必填且 ≤36 字');
@@ -692,7 +704,7 @@ export const TOOLS = [
       if (a.his_text_keys !== undefined) d.meta.hisTextKeys = checkHisTextKeys(a.his_text_keys);
       d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
-      return { meta: d.meta, ...shortcutNote(a.shortcut) };
+      return { meta: d.meta, ...shortcutNote(a.shortcut), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }) };
     }
   },
   {

@@ -96,6 +96,21 @@ const TW_ID = /[A-Z][12]\d{8}/;               // 身分證字號樣式
 const LONG_DIGITS = /\b\d{7,10}\b/;            // 可能是病歷號（僅警告）
 const PHI_WORDS = /(病歷號|身分證|姓名)\s*[:：]\s*\S/;
 
+// 表單預設（片語）的疑似個資：每筆最多回一則，訊息只寫第幾筆與命中類型，不帶任何內容（名稱本身也可能是病人姓名）。
+// 身分證字號或「姓名／病歷號／身分證：」樣式 → error；只有 7–10 位數字 → warning（日期、itemid 也可能命中）
+export function presetPhiFindings(presets) {
+  const out = [];
+  (presets || []).forEach((p, i) => {
+    const raw = p && typeof p.xmlContent === 'string' ? p.xmlContent : JSON.stringify((p && p.xmlContent) ?? '');
+    const text = `${(p && p.name) || ''}\n${raw}`;
+    const hits = [TW_ID.test(text) && '身分證字號', PHI_WORDS.test(text) && '「姓名／病歷號／身分證：」樣式'].filter(Boolean);
+    const where = `表單預設第 ${i + 1} 筆${p && p.user === 'all' ? '（公開）' : '（個人）'}`;
+    if (hits.length) out.push({ level: 'error', code: 'E_PHI_SUSPECT', message: `${where}疑似含病人資料（${hits.join('、')}），會被 form_export 寫進套件；請 form_update_meta(drop_presets: true) 移除` });
+    else if (LONG_DIGITS.test(text)) out.push({ level: 'warning', code: 'W_PHI_SUSPECT', message: `${where}含 7–10 位數字，請確認不是病歷號；不需要這些預設請 form_update_meta(drop_presets: true)` });
+  });
+  return out;
+}
+
 export function validateDraft(draft, dictIndex, policy = {}) {
   const errors = [], warnings = [];
   const touched = new Set((draft.touched || []).map(String));
@@ -381,6 +396,13 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   const boundEntries = nodes.filter(c => c.dicid).map(c => dictOf(c.dicid)).filter(Boolean);
   const dictMissingMemo = boundEntries.filter(e => !e.memo).length + pending.filter(p => !p.memo).length;
   const dictDeptLevel = boundEntries.filter(e => ['own', 'sub', 'dpt'].includes(dc.level(e.dicType, m.dept_no))).length;
+  // 表單預設（片語，F6）：使用者存下的填寫值，form_export 會原樣寫進套件（上架本文不含）
+  const presets = (draft.source && draft.source.presets) || [];
+  if (presets.length) {
+    const found = presetPhiFindings(presets);
+    found.forEach(f => (f.level === 'error' ? errors : warnings).push({ code: f.code, message: f.message }));
+    if (!found.some(f => f.level === 'error')) warn('W_PRESETS_EXPORTED', `draft 帶有 ${presets.length} 筆表單預設（片語），form_export 會原樣寫進套件（上架不會）；不需要請 form_update_meta(drop_presets: true)`);
+  }
   return {
     valid: errors.length === 0,
     errors, warnings, ai, embeds,

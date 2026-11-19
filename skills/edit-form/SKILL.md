@@ -68,5 +68,5 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 ## 6. 限制（告訴使用者，請其匯入後在編輯器調整）
 
 - 圖形、雙欄區塊內**不能新增**控制項（可以修改既有控制項的屬性）。
-- 表單預設在匯入時只顯示筆數，不寫入。
+- 表單預設（片語，F6）是使用者存下的填寫值，可能含病人資料：`form_import` 預設**不帶入**（回 `presets_dropped`），上架也不寫入。使用者明確要把片語帶進匯出套件時才帶 `keep_presets: true`；`form_validate` 回片語的 `E_PHI_SUSPECT` 時以 `form_update_meta(drop_presets: true)` 移除，不要手改 draft JSON，也不要把片語內容貼進對話或計畫。
 - 要「更新線上原範本」：draft 的來源必須就是該範本：`online_template_get(save:true)` 的套件，或 iot 的 `templateID`／`sheetid` 等於線上 ID 的 `.htm`（例如外部工具產生的舊版 `.htm`），以 `form_import(for_update:true)` 載入，`publish-form` 以 `online_template_update`（If-Match，flag `templateUpdate`）更新。否則輸出新表單由使用者匯入。

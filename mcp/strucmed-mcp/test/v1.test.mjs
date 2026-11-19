@@ -25,6 +25,12 @@ before(async () => {
     presets: [{ name: '預設一', user: 'all', xmlContent: '<x/>' }], generator: 'test', templateID: 'syn-template-0001' });
   fs.writeFileSync(path.join(ws, 'src.package.json'), JSON.stringify(pkg));
   fs.writeFileSync(path.join(ws, 'src.htm'), pkgMod.renderHtm(pkg, '合成原表單'));
+  // 合成假資料：身分證樣式與「姓名：」樣式（不是真實個資）
+  const phiPkg = pkgMod.buildPackage({ form: FORM, meta: { name: '合成原表單P', shortcut: '', groups: [], description: '', dept_no: 'TEST0', folder_type: 'usr' },
+    presets: [{ name: '乾淨', user: 'all', xmlContent: '<x>無</x>' }, { name: '個人一', user: 'u0001', xmlContent: '<v>姓名：測試甲</v>' },
+      { name: '個人二', user: 'u0002', xmlContent: { a: 'Z199999999' } }, { name: '日期', user: 'all', xmlContent: '<d>20261118</d>' }],
+    generator: 'test', templateID: 'syn-template-0002' });
+  fs.writeFileSync(path.join(ws, 'phi.package.json'), JSON.stringify(phiPkg));
   const tampered = structuredClone(pkg); tampered.form[0].item[0].datavalue = '竄改：';
   fs.writeFileSync(path.join(ws, 'tampered.package.json'), JSON.stringify(tampered));
 });
@@ -59,14 +65,41 @@ test('import: rejects tampered package, same name as source, and paths outside t
   assert.throws(() => t.form_import({ source_path: '../outside.json', name: 'x', dept_no: 'TEST0' }), /工作目錄內/);
 });
 
-test('import from package: shortcut/groups are NOT carried over by default; Info and presets are', () => {
+test('import from package: shortcut/groups/presets are NOT carried over by default; Info is', () => {
   const r = t.form_import({ source_path: 'src.package.json', name: '合成改版B', dept_no: 'TEST0' });
   const d = store.loadDraft(r.draft_id);
   assert.equal(d.meta.shortcut, ''); assert.deepEqual(d.meta.groups, []);
   assert.equal(d.meta.description, '原 Info');
-  assert.equal(r.presets, 1);
+  assert.equal(r.presets, 0); assert.equal(r.presets_dropped, 1);
+  assert.deepEqual(d.source.presets, []);
+  assert.ok(r.notes.some(n => /1 筆表單預設.*未帶入/.test(n)), JSON.stringify(r.notes));
+  const k = t.form_import({ source_path: 'src.package.json', name: '合成改版B2', dept_no: 'TEST0', keep_presets: true });
+  assert.equal(k.presets, 1); assert.equal(k.presets_dropped, 0);
+  assert.ok(k.validation.warnings.some(w => w.code === 'W_PRESETS_EXPORTED'), 'clean presets still flagged as exported');
   assert.equal(r.derived_from.templateID, 'syn-template-0001');
   assert.equal(r.derived_from.name, '合成原表單');
+});
+
+test('presets: PHI-like presets fail validation and block export without echoing content; drop_presets clears them', () => {
+  const r = t.form_import({ source_path: 'phi.package.json', name: '合成改版P', dept_no: 'TEST0', keep_presets: true });
+  assert.equal(r.presets, 4);
+  let v = t.form_validate({ draft_id: r.draft_id });
+  assert.equal(v.valid, false);
+  const phi = v.errors.filter(e => e.code === 'E_PHI_SUSPECT');
+  assert.deepEqual(phi.map(e => e.message.match(/第 (\d+) 筆/)[1]), ['2', '3']);
+  assert.ok(v.warnings.some(w => w.code === 'W_PHI_SUSPECT' && /第 4 筆/.test(w.message)), 'long digits → warning only');
+  assert.ok(!v.warnings.some(w => w.code === 'W_PRESETS_EXPORTED'), 'no duplicate notice when there is an error');
+  const all = JSON.stringify([v.errors, v.warnings]);
+  for (const s of ['測試甲', 'Z199999999', '20261118', '個人一', '個人二']) assert.ok(!all.includes(s), `message must not echo ${s}`);
+  assert.throws(() => t.form_export({ draft_id: r.draft_id }), /驗證未通過/);
+  const u = t.form_update_meta({ draft_id: r.draft_id, drop_presets: true });
+  assert.equal(u.presets_dropped, 4);
+  v = t.form_validate({ draft_id: r.draft_id });
+  assert.equal(v.valid, true, JSON.stringify(v.errors));
+  assert.ok(!v.warnings.some(w => /表單預設/.test(w.message)));
+  const plan = t.form_export({ draft_id: r.draft_id });
+  const done = t.form_export({ draft_id: r.draft_id, confirm_token: plan.confirm_token });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(ws, done.files.json), 'utf8')).presets, []);
 });
 
 test('validate: preserved problems are warnings; problems in new/modified parts are errors', () => {
@@ -146,7 +179,7 @@ test('remove control: blocked while referenced (further / formula / macro), two-
 });
 
 test('export: package carries derivedFrom, new templateID, presets; manifest explains the derivation', async () => {
-  const r = t.form_import({ source_path: 'src.package.json', name: '合成改版G', dept_no: 'TEST0', folder_type: 'dpt' });
+  const r = t.form_import({ source_path: 'src.package.json', name: '合成改版G', dept_no: 'TEST0', folder_type: 'dpt', keep_presets: true });
   t.form_add_control({ draft_id: r.draft_id, area_itemid: 1, label_text: '備註：', control: { datatype: 'textarea' } });
   const plan = t.form_export({ draft_id: r.draft_id });
   const done = t.form_export({ draft_id: r.draft_id, confirm_token: plan.confirm_token });
