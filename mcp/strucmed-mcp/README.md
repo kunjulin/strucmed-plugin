@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.15.5）
+# strucmed-mcp（v2.15.6）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.15.5 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.15.6 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -99,7 +99,7 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 | `online_login` | `GET api/v2/auth/authorize`（瀏覽器）、`POST api/v2/auth/token` | 參數只有 `dept_no`、`hospital`（預設 CGMH），沒有帳密；見上方「瀏覽器登入」。`client_id` 固定 `strucmed-mcp`，平台只放行範本、字典與登入者自己的 struNote 清單（`me/notes`）的 API，病人紀錄回 403。完成時回 `site`、`user_id`、`name`、`dept_no`、`expires_at`，不回傳 token；2.12.0 起另回 `login_flow`（`browser`＝這次經瀏覽器登入頁；`reused`＝沿用本行程既有登入、沒開登入頁，另附 `note`，要換科部或帳號先 `online_logout`；上一次 `browser` 登入的回傳弄丟（呼叫被中斷、使用者已在登入頁完成登入）時，下一次也會回 `reused`，以 `online_me` 確認身分與科部）、`dept_source`（`login_page`／`session`／`none`）、`logged_in_at`；未完成回 `pending`、`authorize_url` |
 | `online_logout` | `POST api/v2/auth/revoke` | 作廢登入並清除記憶體中的 token |
 | `online_folder_list` | `GET api/v2/folders/{type}/templates` | 唯讀；`type`（選填，預設 `usr`）：usr／sub／dpt／sys／trash／ALL，`q`、`page`、`page_size`（2.12.0 起預設 10）。每筆只回 `template_id`、`name`、`shortcut`、`groups`、`modify_date`、`creator`（不回 `description`），另回 `folder`、`exists`、`total`、`page`、`page_size`、`duplicates`／`corrupt`（有才回）；`total` 超過 `page×page_size` 時附 `more` 說明還剩幾筆與下一頁，要找特定範本請帶 `q` |
-| `online_template_get` | `GET api/v2/templates/{id}` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`）。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft；摘要的 `js_chars` 只算程式碼，javascript 區塊只有產生器標記註解時回 `0` 並帶 `js_marker: true` |
+| `online_template_get` | `GET api/v2/templates/{id}?presets=false` | 唯讀；回傳範本套件 v2（`strucmed.template/v2`），**不含表單預設（片語）**：站台回 `X-Strucmed-Presets: omitted` 時 `site_presets: "omitted"`；舊版站台忽略參數時在本機把 `presets` 清成 `[]` 並重算 `integrity`（原本就不符時不重算），回 `site_presets: "unsupported"` 與 `W_SITE_PRESETS_UNSUPPORTED`。`save:true` 另存 `.strucmed/online/<id>.package.json`，可再用 `form_import` 載入為新 draft；摘要的 `js_chars` 只算程式碼，javascript 區塊只有產生器標記註解時回 `0` 並帶 `js_marker: true` |
 | `online_me` | `GET api/v2/me` | 唯讀；登入者、科部、可用資料夾代碼、是否管理者、token 到期 |
 | `online_features` | `GET api/health`、`api/v2/runtime/features`、`api/llm-config` | 唯讀；站台健康、登入者的 HIS 端存檔／查詢開關、LLM 閘道是否啟用（**不回傳任何 token**）；任一端點失敗只回 warnings |
 | `online_dictionary_search` | `GET api/v2/dictionaries?scope=match\|exact\|all&q=&page=&pageSize=` | 唯讀；`update_index:true` 且不帶 `q` 時只回摘要（`index_count`、`level_counts`、`duplicates` 數、warnings），不回 `items`。每筆回 `level`（sys／own／sub／dpt／system）、`desc`、`sys`（體系標記）、`memo`、`fhir`、`alias_of`、`etag`，體系優先排序；同體系他科帶標記的字典也在比對範圍內；`update_index:true` 把結果寫成本機字典索引（取代 CSV），之後 `dictionary_search` 與字典綁定都依此。站台尚未升級時回 `W_SERVER_OLD`，desc／memo 由本機解析 |

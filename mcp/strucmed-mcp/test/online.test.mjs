@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { buildPackage } from '../src/package.mjs';
+import { buildPackage, validatePackage, packageHash } from '../src/package.mjs';
 import * as dc from '../src/dictcomment.mjs';
 import { fakeAuthorize, browserLogin, browserApprove } from './fake-login.mjs';
 
@@ -20,7 +20,9 @@ const ONLINE_SHA = 'sha-online-1';
 const ONLINE_FORM = [{ itemtype: 'form', itemid: 1, authread: ['doctor'], authwrite: ['doctor'], gettext: true, item: [{ datatype: 'text', datavalue: '姓名' }, { datatype: 'textbox', itemid: 2, datavalue: '', dictionary: '', dicid: '', dicrole: 'nohis' }] }, { itemtype: 'javascript', content: '' }, { itemtype: 'iot', sheetid: 'T-1', templateID: 'T-1', editorver: '1.6' }];
 const templates = new Map();             // 假伺服器保存的範本
 // 完整的範本套件 v2（form_import 會驗證 schema 與 integrity）；ETag 另外給（head sha 與 integrity 不同，與真實伺服器相同）
-const fakePackage = (id, template, form) => buildPackage({ form, meta: { name: template.name, dept_no: 'APP', groups: template.groups || [], shortcut: template.shortcut || '', description: template.description || '', folder_type: 'usr' }, generator: 'fake-v2', templateID: id });
+// 片語（表單預設）：舊版站台忽略 presets=false 照樣回傳；新版（平台 #271）回 [] 並加標頭 X-Strucmed-Presets: omitted
+const FAKE_PRESETS = [{ name: '常用', user: USER_ID, data: { 2: 'PRESET-SENTINEL' } }];
+const fakePackage = (id, template, form, presets = []) => buildPackage({ form, presets, meta: { name: template.name, dept_no: 'APP', groups: template.groups || [], shortcut: template.shortcut || '', description: template.description || '', folder_type: 'usr' }, generator: 'fake-v2', templateID: id });
 let tplSeq = 100, dictSeq = 0;
 // 假字典表（docs/14：dicComment 是 JSON 容器）。D5 是體系（PP＝APP 的第 2–3 碼）字典、D6 是其他體系的 5 碼字典、
 // D7 是同體系他科（XPPB0）由管理者升級的字典：dicType 不變，說明帶體系標記 sys.code＝PP
@@ -88,10 +90,17 @@ function handler(req, res) {
       return json(res, 200, { folder: m[1], exists: true, total: 1, items: [{ templateID: 'T-1', name: '跌倒評估' }] });
     }
     if (req.method === 'GET' && (m = p.match(/^api\/v2\/templates\/([A-Za-z0-9-]+)$/))) {
+      const qp = url.searchParams.get('presets');
+      const omit = !behavior.oldPresets && (qp === 'false' || qp === '0');
+      if (!behavior.oldPresets && qp !== null && !['true', 'false', '1', '0'].includes(qp)) return err(res, 400, 'E_INVALID_INPUT', 'presets 只接受 true／false');
+      if (omit) res.setHeader('X-Strucmed-Presets', 'omitted');
+      const presets = omit ? [] : (behavior.presets || FAKE_PRESETS);
       const saved = templates.get(m[1]);
-      if (saved) { res.setHeader('ETag', '"' + saved.sha256 + '"'); return json(res, 200, fakePackage(m[1], saved.template, saved.form)); }
-      res.setHeader('ETag', '"' + ONLINE_SHA + '"');
-      return json(res, 200, fakePackage(m[1], { name: '跌倒評估', groups: ['門'] }, ONLINE_FORM));
+      let pkg;
+      if (saved) { res.setHeader('ETag', '"' + saved.sha256 + '"'); pkg = fakePackage(m[1], saved.template, saved.form, presets); }
+      else { res.setHeader('ETag', '"' + ONLINE_SHA + '"'); pkg = fakePackage(m[1], { name: '跌倒評估', groups: ['門'] }, ONLINE_FORM, presets); }
+      if (behavior.badIntegrity) pkg.integrity.sha256 = 'f'.repeat(64);
+      return json(res, 200, pkg);
     }
     if (req.method === 'GET' && (m = p.match(/^api\/v2\/templates\/([A-Za-z0-9-]+)\/versions$/)))
       return json(res, 200, { currentRev: 2, diverged: false, versions: [{ rev: 2, fillID: 'F2', createUser: USER_ID, createDate: '20261022', sha256: 'h2', current: true, restorable: true, verified: true }, { rev: 1, fillID: 'F1', createUser: USER_ID, createDate: '20261021', sha256: 'h1', current: false, restorable: true, verified: true }] });
@@ -388,10 +397,69 @@ test('folder list and template get send the bearer token', async () => {
   assert.equal((await mcp.call('online_folder_list', { type: 'other' })).error.code, 'E_INVALID_INPUT');
 });
 
+// 平台 #271：GET templates/{id}?presets=false 不回表單預設（片語，可能含病人資料）；舊版站台忽略參數時由本工具清除
+test('online_template_get 一律帶 presets=false；站台支援時沿用伺服器的套件', async () => {
+  await browserLogin(mcp, {});
+  reqs = [];
+  const t = await mcp.call('online_template_get', { template_id: 'T-1', save: true });
+  assert.equal(t.ok, true, JSON.stringify(t));
+  assert.equal(new URLSearchParams(reqs[0].search).get('presets'), 'false');
+  assert.equal(t.data.site_presets, 'omitted');
+  assert.equal(t.data.warnings, undefined);
+  assert.equal(t.data.summary.presets, 0);
+  const saved = fs.readFileSync(path.join(mcp.ws, t.data.saved), 'utf8');
+  assert.deepEqual(JSON.parse(saved).presets, []);
+  assert.deepEqual(validatePackage(JSON.parse(saved)), []);
+  const plain = await mcp.call('online_template_get', { template_id: 'T-1' });
+  assert.equal(plain.data.site_presets, 'omitted');
+  assert.deepEqual(plain.data.package.presets, []);
+});
+
+test('online_template_get：舊版站台忽略 presets=false → 本機清成 [] 並重算 integrity、註明未支援', async () => {
+  await browserLogin(mcp, {});
+  behavior.oldPresets = true;
+  const t = await mcp.call('online_template_get', { template_id: 'T-1', save: true });
+  assert.equal(t.ok, true, JSON.stringify(t));
+  assert.equal(t.data.site_presets, 'unsupported');
+  assert.equal(t.data.summary.presets, 0);
+  assert.match(t.data.warnings.join('\n'), /W_SITE_PRESETS_UNSUPPORTED.*清除 1 筆/);
+  const saved = fs.readFileSync(path.join(mcp.ws, t.data.saved), 'utf8');
+  assert.doesNotMatch(saved, /PRESET-SENTINEL/, '片語不可寫到本機');
+  const pkg = JSON.parse(saved);
+  assert.deepEqual(pkg.presets, []);
+  assert.equal(pkg.integrity.sha256, packageHash(pkg.form, []));
+  assert.deepEqual(validatePackage(pkg), [], 'integrity 重算後編輯器不會判定竄改');
+  const imp = await mcp.call('form_import', { source_path: t.data.saved, name: '舊站台改版', dept_no: 'APP' });
+  assert.equal(imp.ok, true, JSON.stringify(imp));
+  // 不存檔、帶 include_package 時回傳的內容也不含片語
+  const plain = await mcp.call('online_template_get', { template_id: 'T-1' });
+  assert.deepEqual(plain.data.package.presets, []);
+  assert.doesNotMatch(JSON.stringify(plain), /PRESET-SENTINEL/);
+  const full = await mcp.call('online_template_get', { template_id: 'T-1', save: true, include_package: true });
+  assert.doesNotMatch(JSON.stringify(full), /PRESET-SENTINEL/);
+  // 舊站台本來就沒有片語：照樣註明未支援，integrity 不變
+  behavior.presets = [];
+  const none = await mcp.call('online_template_get', { template_id: 'T-1' });
+  assert.equal(none.data.site_presets, 'unsupported');
+  assert.match(none.data.warnings.join('\n'), /W_SITE_PRESETS_UNSUPPORTED/);
+  assert.deepEqual(validatePackage(none.data.package), []);
+});
+
+test('online_template_get：舊版站台的 integrity 原本就不符時不重算（仍判定竄改）', async () => {
+  await browserLogin(mcp, {});
+  behavior.oldPresets = true; behavior.badIntegrity = true;
+  const t = await mcp.call('online_template_get', { template_id: 'T-1', save: true });
+  assert.equal(t.ok, true, JSON.stringify(t));
+  const pkg = JSON.parse(fs.readFileSync(path.join(mcp.ws, t.data.saved), 'utf8'));
+  assert.deepEqual(pkg.presets, []);
+  assert.equal(pkg.integrity.sha256, 'f'.repeat(64));
+  assert.match(validatePackage(pkg).join('\n'), /integrity\.sha256 與內容不符/);
+});
+
 // 3.10.2 F-07：javascript 區塊只有產生器標記註解時，js_chars 回 0、另給 js_marker
 test('online_template_get summary：只有標記註解的 javascript 區塊 js_chars 0＋js_marker；有程式碼照算', async () => {
   await browserLogin(mcp, {});
-  const marker = '// generated-by: strucmed-skill 3.12.5 (mcp 2.15.5)';
+  const marker = '// generated-by: strucmed-skill 3.12.6 (mcp 2.15.6)';
   const withJs = js => ONLINE_FORM.map(x => x.itemtype === 'javascript' ? { ...x, content: js } : structuredClone(x));
   const get = async (id, js) => {
     templates.set(id, { sha256: 'x'.repeat(8), template: { name: id }, form: withJs(js) });
@@ -746,6 +814,8 @@ test('online_template_update: only derived drafts, If-Match from ETag, 409 → E
   assert.equal(done.data.rev, 2);
   const put = reqs.find(x => x.method === 'PUT');
   assert.ok(put, 'PUT sent');
+  const reads = reqs.filter(x => x.method === 'GET' && x.path === '/strucmed/api/v2/templates/T-1');
+  assert.ok(reads.length >= 2 && reads.every(x => new URLSearchParams(x.search).get('presets') === 'false'), '更新前讀線上範本也帶 presets=false');
   const plan2 = await mcp.call('online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1' });
   behavior.conflict = true;
   const conflict = await browserApprove(mcp, 'online_template_update', { draft_id: imp.data.draft_id, template_id: 'T-1', if_match: plan2.data.plan.if_match, confirm_token: plan2.data.confirm_token });

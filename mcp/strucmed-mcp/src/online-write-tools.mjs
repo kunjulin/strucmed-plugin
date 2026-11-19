@@ -189,7 +189,8 @@ export const ONLINE_WRITE_TOOLS = [
         fail(E.INVALID_INPUT, `這個 draft 不是以範本 ${id} 改版而來（derivedFrom=${from ? from.templateID || '（無）' : '（無）'}）；更新只允許來源就是該範本的 draft（online_template_get(save:true) 或 iot templateID＝${id} 的 .htm → form_import），否則請用 online_template_create 新建`);
       if (confirm_token && !stripEtag(if_match)) fail(E.INVALID_INPUT, '第二次呼叫必須帶 plan 的 if_match');
       // 兩段都讀線上目前版本：ETag、名稱等 meta 與內容差異都以當下為準；第二段與計畫不同時不開確認頁
-      const cur = await online.callRaw('GET', `api/v2/templates/${id}`, {}, '讀取線上範本');
+      // presets=false：這裡只用 ETag、template 與 form，片語不必向倉儲查（ETag 是範本內容的 sha256，與參數無關）
+      const cur = await online.callRaw('GET', `api/v2/templates/${id}`, { query: { presets: 'false' } }, '讀取線上範本');
       if (cur.status !== 200) mapWriteError(cur, '讀取線上範本');
       const etag = stripEtag(cur.etag) || String((cur.json && cur.json.integrity && cur.json.integrity.sha256) || '');
       if (!etag) fail(E.UPSTREAM, '線上範本沒有 ETag，無法安全更新');

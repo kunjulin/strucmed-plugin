@@ -60,7 +60,8 @@ async function send(base, method, path, { body, token, query, headers: extra } =
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* 非 JSON（例如 IIS 錯誤頁） */ }
-  return { status: res.status, json, path, etag: res.headers.get('etag') || '' };
+  // presets：GET templates/{id}?presets=false 的回應標頭 X-Strucmed-Presets（平台 #271；值 omitted＝站台已不回傳片語，沒有＝舊版站台忽略參數）
+  return { status: res.status, json, path, etag: res.headers.get('etag') || '', presets: res.headers.get('x-strucmed-presets') || '' };
 }
 
 function upstreamError(r, what) {
@@ -225,9 +226,12 @@ export async function callRaw(method, path, opts, what) {
   return r;
 }
 
-// 帶 token 的呼叫；非 2xx 一律拋 E_UPSTREAM／E_AUTH
-export async function call(method, path, opts, what) {
+// 帶 token 的呼叫；非 2xx 一律拋 E_UPSTREAM／E_AUTH。callChecked 回整個結果（含 etag 與回應標頭），call 只回 JSON
+export async function callChecked(method, path, opts, what) {
   const r = await callRaw(method, path, opts, what);
   if (r.status < 200 || r.status >= 300) upstreamError(r, what);
-  return r.json;
+  return r;
+}
+export async function call(method, path, opts, what) {
+  return (await callChecked(method, path, opts, what)).json;
 }

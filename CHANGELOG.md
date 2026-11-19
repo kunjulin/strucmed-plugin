@@ -14,7 +14,23 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.12.6（MCP 2.15.6）— 2026-11-19：線上範本取回時不含表單預設（片語）
+
+平台對應：strucmed #271（`GET api/v2/templates/{id}?presets=false`，回應標頭 `X-Strucmed-Presets: omitted`；2026-11-19 已部署 LVAIW `/strucmed`）。
+
+**取回範本不再把片語存到本機（#136）**：表單預設（片語）是使用者在 HIS 填好後存下的內容，可能含病人資料；3.12.5 以前 `online_template_get(save:true)` 會把片語整包存進 `.strucmed/online/<id>.package.json`（3.12.5 只擋住匯入與匯出，存檔仍有片語）。
+- `online_template_get`：一律帶 `presets=false`。站台回 `X-Strucmed-Presets: omitted` → `site_presets: "omitted"`；沒有標頭（院外或其他站台仍是舊版、忽略參數）→ 本機把 `presets` 清成 `[]`、`integrity.sha256` 以 `[]` 重算（原本就不符時不重算，`form_import` 照樣判定竄改），回 `site_presets: "unsupported"` 與 `W_SITE_PRESETS_UNSUPPORTED`。存檔、`include_package`、不存檔三種回應都不含片語。
+- `online_template_update`：更新前讀線上版本的 GET 也帶 `presets=false`；`ETag`／`If-Match` 不變。
+- 文件：MCP README、`SecurityInvariants.md`、`RevisionWorkflow.md`、`edit-form`。
+- 測試：`test/online.test.mjs`（假伺服器模擬新舊站台）。
+
+另含 #135：`release-plugin.mjs` 的 dirty 檢查只看有追蹤的檔案（開發工具，不進發佈版）。
+
+---
+
 ## 3.12.5（MCP 2.15.5）— 2026-11-19：改版時表單預設（片語）不再默默匯出
+
+發佈（2026-11-19）：strucmed-plugin `4e9bb69`、tag `v3.12.5`、GitHub Release「strucmed 3.12.5（MCP 2.15.5）：改版時表單預設（片語）不再默默匯出」；本 repo tag `v3.12.5-src`（`13e7f8f`）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）289 項：281 過、6 失敗、2 略過，失敗的 6 項與 3.12.4 相同（Windows 環境問題）。尚未：從市集更新後的對話實測。
 
 **片語的個資防護（#132）**：同仁以另一院區的線上範本改版，來源套件的表單預設（片語，F6）含真實病人識別資料；`form_validate` 不掃描 `source.presets`，`form_export` 卻原樣寫進套件，是人工抽查才發現。上架本文本來就不含片語，外洩路徑只有匯出。
 - `form_import`：預設**不帶入**來源片語（回 `presets_dropped`，notes 說明）；`keep_presets: true` 才保留。**行為改變**：以前匯入套件會自動帶入。

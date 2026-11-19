@@ -8,6 +8,7 @@ import * as online from './online.mjs';
 import * as site from './site.mjs';
 import * as dc from './dictcomment.mjs';
 import { verifyScriptBlock } from './script-snippets.mjs';
+import { INTEGRITY_ALG, packageHash } from './package.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;                       // 與伺服器 TemplatePackage.IsValidId 相同
@@ -34,6 +35,23 @@ function jsInfo(content) {
   return { js_chars: empty ? 0 : text.length, js_marker: marker };
 }
 const FOLDER_PAGE_DEFAULT = 10;
+
+// 表單預設（片語）是使用者在 HIS 填好後存下的內容，可能含病人資料：online_template_get 一律帶 presets=false（平台 #271），
+// 站台回 X-Strucmed-Presets: omitted 時套件的 presets 已是 []、integrity 已以 [] 計算。沒有這個標頭＝舊版站台忽略了參數，
+// 在本機把 presets 清成 [] 並重算 integrity（原本的 integrity 就不符時不重算，留給 form_import 判定為竄改），再存檔或回傳。
+export const PRESETS_QUERY = { presets: 'false' };
+export function stripPresets(pkg, header) {
+  if (String(header || '').trim().toLowerCase() === 'omitted') return { site_presets: 'omitted', cleared: 0 };
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return { site_presets: 'unsupported', cleared: 0 };
+  const had = Array.isArray(pkg.presets) ? pkg.presets : [];
+  const i = pkg.integrity;
+  const valid = Array.isArray(pkg.form) && i && i.alg === INTEGRITY_ALG && i.sha256 === packageHash(pkg.form, had);
+  pkg.presets = [];
+  if (valid) pkg.integrity = { ...i, sha256: packageHash(pkg.form, []) };
+  return { site_presets: 'unsupported', cleared: had.length };
+}
+const presetsWarning = s => `W_SITE_PRESETS_UNSUPPORTED：站台未支援 presets=false（回應沒有 X-Strucmed-Presets: omitted，可能是舊版站台），` +
+  `已在本機把表單預設（片語）清成 []${s.cleared ? `（清除 ${s.cleared} 筆）` : ''}並重算 integrity，存檔與回傳都不含片語`;
 // 範本套件的摘要：online_template_get(save:true) 只回這些，整包留在存檔
 function summarize(pkg, chars) {
   const t = (pkg && pkg.template) || {};
@@ -110,7 +128,9 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_template_get',
-    description: '（online，唯讀）讀取範本套件 v2（GET api/v2/templates/{id}，strucmed.template/v2：form、presets、dictionaries、template、integrity）。' +
+    description: '（online，唯讀）讀取範本套件 v2（GET api/v2/templates/{id}?presets=false，strucmed.template/v2：form、presets、dictionaries、template、integrity）。' +
+      '**不含表單預設（片語）**：片語可能含病人資料，presets 一律是 []；站台回標頭 X-Strucmed-Presets: omitted 時 site_presets:"omitted"，' +
+      '舊版站台忽略參數時在本機清成 [] 並重算 integrity，回 site_presets:"unsupported" 與 W_SITE_PRESETS_UNSUPPORTED。' +
       'save:true 時另存到 <workspace>/.strucmed/online/<id>.package.json，只回摘要（名稱、捷徑、作業別、rev、區塊與控制項數、JS 字數、存檔路徑；js_chars 只算程式碼：javascript 區塊只有產生器標記註解時回 0 並帶 js_marker:true），' +
       '可接著用 form_import 載入（要更新同一張範本帶 for_update:true）；細節請從存檔讀，不要把整包讀進對話。include_package:true 才連同整包回傳。',
     inputSchema: { type: 'object', required: ['template_id'], properties: {
@@ -118,23 +138,27 @@ export const ONLINE_TOOLS = [
       include_package: { type: 'boolean', description: 'save:true 時仍回傳整包（範本很大時會占用大量對話內容，通常不需要）' } } },
     async handler({ template_id, save, include_package }) {
       const id = checkId(template_id, 'template_id');
-      const pkg = await online.call('GET', `api/v2/templates/${id}`, {}, '讀取範本');
+      const r = await online.callChecked('GET', `api/v2/templates/${id}`, { query: PRESETS_QUERY }, '讀取範本');
+      const pkg = r.json;
+      const p = stripPresets(pkg, r.presets);
       const chars = JSON.stringify(pkg).length;
       // 本工具上架的片段 JS 有標記行與雜湊：不符＝上架後被人工改過（docs/13 §七 W_SCRIPT_MODIFIED）
       const script = verifyScriptBlock(((Array.isArray(pkg && pkg.form) ? pkg.form : []).find(x => x && x.itemtype === 'javascript') || {}).content);
       const warnings = [];
+      if (p.site_presets !== 'omitted') warnings.push(presetsWarning(p));
       if (chars > LARGE_CHARS && !save) warnings.push(`W_LARGE_RESPONSE：範本約 ${chars} 字元；請改用 save:true（只回摘要，內容存檔）`);
       if (script && !script.matches) warnings.push(`W_SCRIPT_MODIFIED：表單 JS 的片段區塊與標記的雜湊不符（標記 ${script.sha256}、實際 ${script.actual}）：上架後被人工改過，本工具不為改過的內容負責；要以本工具重建請 form_import 後 form_set_script 整份重設`);
-      if (!save) return { package: pkg, ...(script && { script }), ...(warnings.length && { warnings }) };
+      if (!save) return { package: pkg, site_presets: p.site_presets, ...(script && { script }), ...(warnings.length && { warnings }) };
       const ws = store.workspace();
       const dir = path.join(ws.base, 'online');
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${id}.package.json`);
       fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
       const saved = path.relative(ws.root, file).split(path.sep).join('/');
-      return { saved, summary: summarize(pkg, chars), ...(script && { script }), ...(warnings.length && { warnings }),
+      return { saved, summary: summarize(pkg, chars), site_presets: p.site_presets, ...(script && { script }), ...(warnings.length && { warnings }),
         notes: ['summary.rev 是套件裡 template.rev 的值，不是版本號：新建回 rev 1、取回常是 0；版本號以 online_template_versions 的 current_rev 為準',
-          'summary.chars 是整個套件（含 presets、dictionaries、integrity）的字元數，比上架計畫的 body_chars（只算 template＋form）大是正常的'],
+          'summary.chars 是整個套件（含 dictionaries、integrity）的字元數，比上架計畫的 body_chars（只算 template＋form）大是正常的',
+          '套件不含表單預設（片語）：presets 一律是 []（可能含病人資料，不存到本機）；要看或管理片語請在編輯器操作'],
         ...(include_package && { package: pkg }) };
     }
   },
