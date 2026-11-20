@@ -14,9 +14,21 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.13.1（MCP 2.16.1）— 2026-11-20：移除已下架的 QWEN 語音服務
+
+發佈（2026-11-20）：strucmed-plugin tag `v3.13.1`。
+
+院內 QWEN 語音服務已於 2026-10 底下架（3.13.0 把它列為「待院方確認」，此版處理）。
+- `VOICETOTEXT(id, 'QWEN')` 不再接受：回 `E_ASR_PROVIDER`，訊息寫明「已於 2026-10 底下架，請改用 'ASUS'」。語音服務只剩 `'ASUS'`。
+- 依既有慣例：本次新增或改到的巨集是 error（寫入當下拒絕）；改版時原表單既有、沒動到的列 warning（原表單既有），不擋上架，但那顆按鈕在 HIS 端已無法轉寫，請改成 `'ASUS'`。
+- 文件：`MacroRecipes.md` R4、`docs/01`。
+- 測試：`test/v02.test.mjs` 補 `'QWEN'` 與 `'ASUS'` 的案例。
+
+---
+
 ## 3.13.0（MCP 2.16.0）— 2026-11-20：qwen 系列列為落日模型，建議與範例改用 `nemotron35`／`tnemotron35`；院外站台的 LLM／語音敘述更正
 
-發佈（2026-11-20）：strucmed-plugin tag `v3.13.0`。
+發佈（2026-11-20）：strucmed-plugin `96644ca`（已推送 main）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Linux）294 項：293 過、0 失敗、1 略過（需要平台 repo 副本）。尚未：strucmed-plugin 的 tag `v3.13.0` 與 GitHub Release、本 repo tag `v3.13.0-src`（雲端工作階段的 git 代理不允許推送 tag，需由維護者在本機補上）；從市集更新後的對話實測。
 
 依據：院方決定（2026-11-19）——qwen 系列（`qwen3627b`、`tqwen3627b` 與 `-low`／`-medium`／`-high`、`qwen332b`、`tqwen332b`；閘道模型 `Qwen3.6:27B`、`qwen3:32b`）屬中國開源模型，**建議不採用**，LlmGateway 設落日條款，**2027-01-01 下架**。取代：Nemotron 3.5 Super VL（`nemotron35` 不思考、`tnemotron35` 思考，另有 `-low`／`-medium`／`-high`；只經院內 LlmGateway）。模型說明依 StrucMed GitBook「生成式 AI 巨集函數」。
 

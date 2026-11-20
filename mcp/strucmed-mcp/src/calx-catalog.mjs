@@ -145,7 +145,9 @@ export const LLM_ALIASES = {
 export const LLM_REMOVED = ['medgemma:27b', 'gemma3_27b', 'gemma4_31b', 'tgemma4_31b'];
 export const VISION_MODELS = { '': 'gemma3:12b（預設）', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma:4b_vision',
   nemotron35: 'Nemotron-3.5-Super-VL（不思考，只經 Gateway）' };
-export const ASR_PROVIDERS = ['ASUS', 'QWEN'];
+export const ASR_PROVIDERS = ['ASUS'];
+// 已下架的語音服務（院內 QWEN 語音服務 2026-10 底下架）：回 E_ASR_PROVIDER 並說明原因
+export const ASR_REMOVED = { QWEN: '已於 2026-10 底下架' };
 // LLMATTACH 的模型代號（平台 web/js/attachbox.js VISION_MODELS＋GATEWAY_VISION_MODELS）：LLMvision 的代號再加 tnemotron35（思考）。
 // 不在表內的名稱不會被改成預設——經 LlmGateway 時原樣當模型 id 送出，直連時才改用預設；院外站台一律用使用者在「LLM 服務設定」選的模型
 export const ATTACH_MODELS = { ...VISION_MODELS, tnemotron35: 'Nemotron-3.5-Super-VL（思考，只經 Gateway）' };

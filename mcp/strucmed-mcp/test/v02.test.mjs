@@ -101,6 +101,10 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "tnemotron35")', { ...ctx, policy: { gateway_models: gwNemo } })), ['W_LLM_MODEL_GATEWAY_ONLY']);
   assert.ok(codes(lintMacro('LLMvision(1, "看圖", "nemotron35")', { ...ctx, policy: { gateway_models: [{ id: 'gemma3:12b' }] } })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'));
   assert.ok(codes(lintMacro('VOICETOTEXT(1, "GOOGLE")', ctx)).includes('E_ASR_PROVIDER'));
+  assert.deepEqual(codes(lintMacro("VOICETOTEXT(1, 'ASUS')", ctx)), []);
+  // 院內 QWEN 語音服務 2026-10 底下架：不再接受，訊息說明原因與替代
+  const asrGone = lintMacro("VOICETOTEXT(1, 'QWEN')", ctx).findings.find(f => f.code === 'E_ASR_PROVIDER');
+  assert.ok(asrGone && asrGone.level === 'error' && /已於 2026-10 底下架，請改用 'ASUS'/.test(asrGone.message), JSON.stringify(asrGone));
   assert.ok(codes(lintMacro('LLMQUERY(9, "x")', ctx)).includes('E_REF_BROKEN'));
   assert.ok(codes(lintMacro('MACRO(IF(A3 > 1, 1, 3), 2)', ctx)).includes('E_MACRO_SYNTAX'), 'MACRO 目標不能含逗號');
   assert.ok(codes(lintMacro('MACRO(1, 2) + 1', ctx)).includes('E_MACRO_TRAILING'));

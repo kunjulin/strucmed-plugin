@@ -3,7 +3,7 @@
 // finding：{ code, level:'error'|'warn', message }。level=error 的項目由 validate 依「是否本次新增／修改」
 // 決定要當 error 還是 warning（原表單既有）；level=warn 一律是 warning。
 import { check } from './calx.mjs';
-import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, LLM_SUNSET, sunsetModel, sunsetPassed, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
+import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ASR_REMOVED, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, LLM_SUNSET, sunsetModel, sunsetPassed, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
 import { checkAlias } from './policy.mjs';
 import { checkUrl, launchBridge, BRIDGE_PAGE } from './embed.mjs';
 import { enabled } from './flags.mjs';
@@ -427,7 +427,7 @@ export function lintMacro(script, ctx = {}) {
       if (target && target !== '0') targets.push(target);
       if (kind === 'VOICETOTEXT') {
         const p = params[1] !== undefined ? strLiteral(params[1]) : 'ASUS';
-        if (p === null || !ASR_PROVIDERS.includes(p)) out.push(err('E_ASR_PROVIDER', `${no} VOICETOTEXT 的語音服務必須是 ${ASR_PROVIDERS.map(x => `'${x}'`).join(' 或 ')}`));
+        if (p === null || !ASR_PROVIDERS.includes(p)) out.push(err('E_ASR_PROVIDER', `${no} VOICETOTEXT 的語音服務${p !== null && ASR_REMOVED[String(p).toUpperCase()] ? `「${p}」${ASR_REMOVED[String(p).toUpperCase()]}，請改用` : '必須是'} ${ASR_PROVIDERS.map(x => `'${x}'`).join(' 或 ')}`));
         ai.push({ step: i + 1, kind, target, provider: p, inputs: [] });
       } else {
         const model = checkModel(params[2] !== undefined ? params[2] : null, ctx, out, kind);

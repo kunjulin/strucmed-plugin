@@ -68,7 +68,7 @@
   VOICETOTEXT(<C_raw>, 'ASUS'),
   LLMQUERY(<C_note>, IF(LEN(A<C_raw>) < 10, "not available", CONCATENATE("…整理口述…", A<C_raw>)), "nemotron35")
   ```
-- 注意：服務用 `'ASUS'`（平台另接受 `'QWEN'`，其餘 `E_ASR_PROVIDER`；`'QWEN'` 是否隨 qwen 系列落日尚待院方確認，新案不要用）；院外站台改走使用者選的院外語音服務（OpenAI、Groq）；同時只能開一個錄音視窗；音量太小會被判為結束；逐字稿欄位保留給使用者核對。
+- 注意：服務只能 `'ASUS'`（其餘 `E_ASR_PROVIDER`；院內 QWEN 語音服務已於 2026-10 底下架，`'QWEN'` 不再接受）；院外站台改走使用者選的院外語音服務（OpenAI、Groq）；同時只能開一個錄音視窗；音量太小會被判為結束；逐字稿欄位保留給使用者核對。
 
 ### R5 輸入後自動判讀（fur_action_id → 隱藏按鈕）
 - 觸發：使用者在 `C_in` textbox 輸入完成。
