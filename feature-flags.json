@@ -12,5 +12,9 @@
   "formScript": false,
   "formScriptAdvanced": false,
   "embedArea": true,
-  "attachBox": true
+  "attachBox": true,
+  "//runtimeFetch": "runtime_fetch：從站台抓平台前端 web/ 副本到 <HOME>/.strucmed/runtime（HTML 預覽用）。兩段式：第一次只回 plan，第二次帶 confirm_token 才連外；只抓與站台同源的 https 網址，不碰第三方 CDN。false＝整個關掉，使用者改用 STRUCMED_RUNTIME_WEB 指自己的副本。",
+  "runtimeFetch": true,
+  "//browserApprove": "線上寫入的瀏覽器確認頁。true（預設）＝第二段呼叫一定要使用者本人在 127.0.0.1 的頁面按「確認寫入」。false＝直接寫入、不開那一頁（遠端或手機操作時碰不到它）；兩段式與 G2 核准不變，但在 AI 之外看過 plan 的人只剩 AI 工具自己的「要不要允許這次 tool 呼叫」提示，該提示也設成自動允許時就沒有任何人看過。關閉時每次寫入的 plan 都會多一條 W_NO_BROWSER_APPROVE。",
+  "browserApprove": true
 }

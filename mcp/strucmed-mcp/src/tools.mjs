@@ -3,11 +3,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { E, fail } from './errors.mjs';
+import { E, fail, ToolError } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle } from './model.mjs';
+import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle, isNoPatient, applyOptionsToIot, NOPATIENT_CODE } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE, EMBED_DEFERRABLE } from './validate.mjs';
 import { validateForm as embedValidateForm, summarize as embedSummarize, summaryText as embedSummaryText } from './embed.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
@@ -25,7 +25,9 @@ import { suggest } from './dictsuggest.mjs';
 import { editableItems, findControl, refsTo, maxItemId, walk, isControl, areaNode, streamsOf } from './formtree.mjs';
 import { writeMeta, readReview, previewServer, lastReviewSeq, reviewFormulas } from './review.mjs';
 import { replaceUnstorable, firstUnstorable, SUBSTITUTES } from './cp950.mjs';
-import { findRuntimeWeb } from './runtime-web.mjs';
+import { findRuntimeWeb, helpText as runtimeWebHelp } from './runtime-web.mjs';
+import { localStamp, readDrift, verifyRuntime } from './runtime-fetch.mjs';
+import * as site from './site.mjs';
 import { toCsv, parsePlan, planRows, importPlan, normalizeAsr } from './dictcsv.mjs';
 import { checkSnippets, renderSnippets, snippetRefsTo, scriptFunctions, scriptPlan, TEMPLATE_IDS, ADVANCED_IDS, THEMES, CSS_PROPS } from './script-snippets.mjs';
 import { enabled } from './flags.mjs';
@@ -34,6 +36,30 @@ const THEMES_LIST = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.labe
 const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = description => ({ type: 'boolean', description });
+// 表單選項（form_create、form_update_meta 共用）
+const FORM_OPTION_KEYS = ['no_patient', 'f_chtno', 'f_opdno', 'f_day', 'histext', 'hide_assist', 'hide_preset', 'hide_prev_icon'];
+const FORM_OPTIONS = { type: 'object', description: '表單選項', properties: {
+  no_patient: bool(`非病人表單（iot f_nopatient；教案、會議紀錄等與病人無關的表單）：struNote 不要求病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。true 時預設一併 f_chtno:false、f_opdno:false、hide_prev_icon:true（明確指定時以指定值為準）；form_validate 會擋 HIS 參照、HISQUERY、LOOKUPDW、{chtno} 等讀病人資料的寫法（E_NOPATIENT_*）`),
+  f_chtno: bool('依病歷號查近期紀錄（預設 true；非病人表單預設 false）'), f_opdno: bool('依就醫號只查當次'),
+  f_day: { type: 'number', description: '查詢天數（預設 30）' },
+  histext: str('block | dict', { enum: ['block', 'dict'] }),
+  hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示（非病人表單預設 true）') } };
+// 只留有給值的鍵（部分 agent 平台會把沒用到的選填參數填成 '' 或 null），型別不對就拒絕
+function cleanOptions(o) {
+  if (o === undefined || o === null || o === '') return {};
+  if (typeof o !== 'object' || Array.isArray(o)) fail(E.INVALID_INPUT, 'options 必須是物件');
+  checkKeys(o, FORM_OPTION_KEYS, 'options');
+  const out = {};
+  for (const k of FORM_OPTION_KEYS) {
+    const v = o[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (k === 'f_day') { if (!Number.isFinite(Number(v))) fail(E.INVALID_INPUT, 'options.f_day 必須是數字'); out[k] = Number(v); }
+    else if (k === 'histext') { if (!['block', 'dict'].includes(v)) fail(E.INVALID_INPUT, 'options.histext 必須是 block 或 dict'); out[k] = v; }
+    else { if (typeof v !== 'boolean') fail(E.INVALID_INPUT, `options.${k} 必須是 true 或 false`); out[k] = v; }
+  }
+  return out;
+}
+const NOPATIENT_NOTE = `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；平台尚未部署前 struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄`;
 const MAX_SOURCE = 10 * 1024 * 1024;
 const HIS_TEXT_KEYS = { type: 'array', items: { type: 'string' }, description: 'HIS 接收端要的文字鍵（選填；例 ["Report","Impression"]，每個 ≤ 40 字、英數與中文）；只存在本機 draft，不寫進表單，form_validate 與預覽頁的文字輸出會比對' };
 // 路徑與內容擇一：HTTP 模式的呼叫端看不到伺服器的檔案系統，只能直接傳內容。回 true＝用內容。
@@ -298,6 +324,39 @@ function checkKeys(obj, allowed, where) {
   fail(E.UNKNOWN_KEY, `${where} 不認識 ${bad.join('、')}，這次什麼都沒有改${hints.length ? `：${[...new Set(hints)].join('；')}` : ''}。可用的鍵：${allowed.join('、')}`, { unknown: bad, allowed });
 }
 const CHANGE_KEYS = () => Object.keys(CHANGE_PROPS), CONTROL_KEYS = () => [...Object.keys(CONTROL_PROPS), 'from_template_id'], DICT_REF_KEYS = () => Object.keys(DICT_REF_PROPS);
+
+// form_build 的穩定 ID 參照：`{C3}` → 實際 itemid。只換「會放 itemid 的欄位」，說明文字、字典名稱、預設值一律不動。
+// 計算式與巨集腳本內：`{C3}` → `A3`（Calx 的欄位參照），`{#C3}` → `3`（純數字，附件容器的 id 是這一種）。
+const PH_ONE = /^\{#?([A-Za-z][A-Za-z0-9_]*)\}$/;
+const PH_ANY = /\{(#?)([A-Za-z][A-Za-z0-9_]*)\}/g;
+const REF_NUM = ['reference', 'action_id', 'fur_action_id'];   // 整個值就是一個 itemid
+const REF_TEXT = ['formula', 'hisquery', 'action_script'];     // 字串內可有多個占位符
+function resolveRefs(obj, map, where, objKeys) {
+  const miss = [];
+  const one = (v, at) => {
+    const m = typeof v === 'string' ? v.match(PH_ONE) : null;
+    if (!m) return v;
+    if (!map.has(m[1])) { miss.push(`${at}＝${v}`); return v; }
+    return map.get(m[1]);
+  };
+  const out = { ...obj };
+  for (const k of REF_NUM) if (out[k] !== undefined) out[k] = one(out[k], `${where}.${k}`);
+  for (const k of REF_TEXT) {
+    if (typeof out[k] !== 'string') continue;
+    out[k] = out[k].replace(PH_ANY, (t, bare, id) => {
+      if (!map.has(id)) { miss.push(`${where}.${k} 內的 ${t}`); return t; }
+      return bare ? String(map.get(id)) : `A${map.get(id)}`;     // {#C3}＝純數字（附件容器 id）；{C3}＝A3
+    });
+  }
+  if (Array.isArray(out.options)) out.options = out.options.map((o, i) => (o && typeof o === 'object' && Array.isArray(o.further)
+    ? { ...o, further: o.further.map((f, j) => one(f, `${where}.options[${i}].further[${j}]`)) } : o));
+  for (const k of objKeys) {
+    if (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k])) continue;
+    out[k] = Object.fromEntries(Object.entries(out[k]).map(([kk, v]) => [kk, one(v, `${where}.${k}.${kk}`)]));
+  }
+  if (miss.length) fail(E.INVALID_INPUT, `${where} 有無法解析的穩定 ID 參照：${miss.join('、')}；id 必須先在 areas／controls 的 id 宣告過（既有 draft 的欄位請直接寫 itemid）`, { unresolved: miss, known: [...map.keys()] });
+  return out;
+}
 // 單位（M2）：只存 draft 的 units（{ itemid: 單位 }），不進表單 JSON：HIS runtime 與編輯器都不讀它，控制項的欄位集合要與編輯器一致（同 hisTextKeys）
 function setUnit(d, itemid, unit) {
   if (typeof unit !== 'string') fail(E.INVALID_INPUT, 'unit 必須是字串');
@@ -560,11 +619,7 @@ export const TOOLS = [
       groups: { type: 'array', items: { type: 'string', enum: GROUPS }, description: '作業別' },
       description: str('Info 說明'),
       folder_type: str('建議資料夾：usr / sub / dpt / sys（寫入套件 v2 供參考；實際存放於使用者開啟的資料夾）', { enum: ['usr', 'sub', 'dpt', 'sys'] }),
-      options: { type: 'object', description: '表單選項', properties: {
-        f_chtno: bool('依病歷號查近期紀錄（預設 true）'), f_opdno: bool('依就醫號只查當次'),
-        f_day: { type: 'number', description: '查詢天數（預設 30）' },
-        histext: str('block | dict', { enum: ['block', 'dict'] }),
-        hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示') } },
+      options: FORM_OPTIONS,
       his_text_keys: HIS_TEXT_KEYS,
       from_draft_id: str('重建時的舊 draft id（選填）：依字典名稱帶過待新建字典的 desc、memo、fhir 與既有字典綁定') } },
     handler(a) {
@@ -576,12 +631,13 @@ export const TOOLS = [
       const d = {
         draft_id: store.newDraftId(), created: new Date().toISOString(),
         meta: { name, dept_no: String(a.dept_no), shortcut: a.shortcut ? String(a.shortcut).toLowerCase() : '',
-          groups: a.groups || [], description: a.description || '', folder_type: a.folder_type || '', options: a.options || {},
+          groups: a.groups || [], description: a.description || '', folder_type: a.folder_type || '', options: cleanOptions(a.options),
           ...(a.his_text_keys !== undefined && { hisTextKeys: checkHisTextKeys(a.his_text_keys) }) },
         areas: [], pendingDictionaries: [], nextItemId: 1, ...(carried && { carried })
       };
       store.saveDraft(d);
       return { draft_id: d.draft_id, ...shortcutNote(a.shortcut),
+        ...(isNoPatient(d) && { no_patient: true, no_patient_note: NOPATIENT_NOTE }),
         ...(carried && { carried: { from: carried.from, pending: carried.pending.map(p => p.name), bound: carried.bound.map(b => b.name) } }) };
     }
   },
@@ -663,11 +719,13 @@ export const TOOLS = [
       d.areas.forEach(x => { types[x.area.itemtype] = (types[x.area.itemtype] || 0) + 1; });
       return {
         draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom, ...shortcutNote(a.shortcut),
+        ...(isNoPatient(d) && { no_patient: true }),
         area_types: types, controls: v.stats.controls, next_itemid: d.nextItemId,
         js_chars: js.length, presets: d.source.presets.length, presets_dropped: keepPresets ? 0 : srcPresets.length,
         notes: [...(forUpdate
           ? [`用於更新範本 ${srcID}（online_template_update）`, '上架時名稱、捷徑、作業別、Info 沿用線上值；要改請用 form_update_meta 明確設定']
           : ['輸出為新表單，不沿用原 templateID', '捷徑與作業別預設不沿用（避免在 HIS 清單重複）']),
+          ...(isNoPatient(d) ? ['來源是非病人表單（iot f_nopatient）：選項原樣保留；' + NOPATIENT_NOTE] : []),
           ...(srcPresets.length ? [keepPresets
             ? `保留來源的 ${srcPresets.length} 筆表單預設（片語）：form_export 會寫進套件；片語是使用者存下的填寫值，可能含病人資料，請看 validation 的 E_PHI_SUSPECT／W_PHI_SUSPECT`
             : `來源有 ${srcPresets.length} 筆表單預設（片語），未帶入 draft（可能含病人資料；上架本來就不寫入）；確定要帶進匯出套件請重新 form_import 並帶 keep_presets: true`] : [])],
@@ -677,11 +735,13 @@ export const TOOLS = [
   },
   {
     name: 'form_update_meta',
-    description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部、HIS 接收端要的文字鍵（離線）；drop_presets:true 移除改版來源帶來的表單預設（片語）。',
+    description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部、HIS 接收端要的文字鍵、表單選項（options，只改有帶的鍵；改版 draft 直接改來源的 iot 選項）（離線）；drop_presets:true 移除改版來源帶來的表單預設（片語）。' +
+      'options.no_patient:true 把表單設成非病人表單（同 form_create），之後 form_validate 會把既有的 HIS 參照、HISQUERY、LOOKUPDW、{chtno} 等一律列為 error；no_patient:false 取消，但不會自動把 f_chtno、hide_prev_icon 改回來。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), name: str('表單名稱（≤36 字）'), shortcut: str('捷徑（一律存成小寫；空字串＝不上架）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS } }, description: str('Info'),
       folder_type: str('建議資料夾', { enum: ['usr', 'sub', 'dpt', 'sys', ''] }), dept_no: str('科部代碼'), his_text_keys: HIS_TEXT_KEYS,
+      options: FORM_OPTIONS,
       drop_presets: bool('移除 draft 裡的表單預設（片語），form_export 不再寫進套件；疑似含病人資料（E_PHI_SUSPECT）時用') } },
     handler(a) {
       const d = store.loadDraft(a.draft_id);
@@ -702,9 +762,24 @@ export const TOOLS = [
       if (a.folder_type !== undefined) d.meta.folder_type = a.folder_type;
       if (a.dept_no !== undefined) d.meta.dept_no = String(a.dept_no);
       if (a.his_text_keys !== undefined) d.meta.hisTextKeys = checkHisTextKeys(a.his_text_keys);
+      let optionsChanged;
+      const opt = cleanOptions(a.options);
+      if (Object.keys(opt).length) {
+        const was = isNoPatient(d);
+        if (d.source && d.source.iot) optionsChanged = applyOptionsToIot(d.source.iot, opt);
+        else {
+          optionsChanged = Object.keys(opt).filter(k => (d.meta.options || {})[k] !== opt[k]);
+          d.meta.options = { ...(d.meta.options || {}), ...opt };
+        }
+        // 這次才設成非病人表單：既有內容的違規一律 error（validate 的 npAll）
+        if (!was && isNoPatient(d)) d.noPatientSet = true;
+        if (was && !isNoPatient(d)) delete d.noPatientSet;
+      }
       d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
-      return { meta: d.meta, ...shortcutNote(a.shortcut), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }) };
+      return { meta: d.meta, ...shortcutNote(a.shortcut), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }),
+        ...(optionsChanged && { options_changed: optionsChanged, ...(d.source && d.source.iot && { iot_options: Object.fromEntries(['f_nopatient', 'f_chtno', 'f_opdno', 'f_hideprevicon', 'f_hideAssist', 'f_hidePreset', 'f_day', 'f_histext'].filter(k => d.source.iot[k] !== undefined).map(k => [k, d.source.iot[k]])) }) }),
+        ...(isNoPatient(d) && { no_patient: true, no_patient_note: NOPATIENT_NOTE }) };
     }
   },
   {
@@ -1020,6 +1095,195 @@ export const TOOLS = [
     }
   },
   {
+    name: 'form_build',
+    description: '（離線，批次）一次建完整張表單：form_create（或沿用 draft_id）→ 逐區塊 form_add_area → 逐欄 form_add_control（說明文字＋控制項＋換行）→ ' +
+      '第二輪回填 formula／action_script（與 embed 的 outputs）→ form_validate。**內部就是依序呼叫上面那些 tool**，行為、警告與錯誤碼（E_UNKNOWN_KEY、E_EMBED_*、W_DICT_PREFER_SYSTEM…）與逐筆呼叫完全相同，' +
+      '只是省掉來回。itemid 仍依建立順序分配，所以參照用穩定 ID 寫：每個區塊與控制項可給 id（例 A1、C3），在 reference、action_id、fur_action_id、further、formula、hisquery、action_script 與 embed 的 inputs／outputs 內寫成 `{C3}`，' +
+      '本工具換成實際 itemid（回傳 mapping）；計算式與巨集腳本內 `{C3}` 換成 Calx 的 `A3`，`{#C3}` 換成純數字 `3`（附件容器的 id 是這一種）。formula 與 action_script 一定在所有欄位建好後才寫入（與 agents/form-builder.md 的做法相同），所以可以放心引用之後才建的欄位。' +
+      '中途失敗時回 E_BUILD_FAILED，details 寫出失敗在哪一步、draft 已經建到哪裡（draft 保留，不要整張重來）：照 details.next 用單筆 tool 接著修。' +
+      '建完之後的修補（審閱迴圈、使用者意見）仍用單筆 tool：form_update_control／form_add_control／form_move_control…',
+    get inputSchema() {
+      const area = TOOLS.find(t => t.name === 'form_add_area').inputSchema;
+      const ctl = TOOLS.find(t => t.name === 'form_add_control').inputSchema;
+      const areaProps = Object.fromEntries(Object.entries(area.properties).filter(([k]) => k !== 'draft_id'));
+      const ctlProps = Object.fromEntries(Object.entries(ctl.properties).filter(([k]) => k !== 'draft_id' && k !== 'area_itemid'));
+      // additionalProperties 寫在這裡：inputSchema 是 getter，server.mjs 事後賦值會落在拋棄掉的物件上
+      return { type: 'object', required: ['areas'], additionalProperties: false, properties: {
+        draft_id: str('既有 draft（改版）；與 create 擇一'),
+        create: { type: 'object', additionalProperties: false, description: '新表單：form_create 的參數（與 draft_id 擇一）',
+          properties: TOOLS.find(t => t.name === 'form_create').inputSchema.properties },
+        areas: { type: 'array', description: '依建立順序排列的區塊；每個區塊是 form_add_area 的參數（不含 draft_id），另加 id（穩定 ID）與 controls',
+          items: { type: 'object', additionalProperties: false, properties: {
+            id: str('穩定 ID（例 A1）；供 `{A1}` 參照與回傳 mapping'),
+            controls: { type: 'array', description: '區塊內依序建立的控制項；每筆是 form_add_control 的參數（不含 draft_id、area_itemid），另加 id',
+              items: { type: 'object', additionalProperties: false, properties: { id: str('穩定 ID（例 C3）'), ...ctlProps } } },
+            ...areaProps } } },
+        updates: { type: 'array', description: '第二輪要回填的修改（form_update_control 的參數；itemid 或 id 擇一）；本工具自動回填的 formula／action_script 不必寫在這裡',
+          items: { type: 'object', additionalProperties: false, properties: {
+            id: str('控制項的穩定 ID'), itemid: { type: 'number', description: '控制項 itemid（既有 draft 的欄位用這個）' },
+            label_text: str('說明文字（不可含換行）'),
+            changes: { type: 'object', additionalProperties: false, properties: CHANGE_PROPS } } } },
+        skip_validate: bool('不在最後跑 form_validate（預設會跑）')
+      } };
+    },
+    arg_hints: { controls: 'controls 放在 areas[] 的每個區塊內', control: 'control 放在 areas[].controls[] 的每一筆內', name: '表單名稱放在 create.name', dept_no: '科部放在 create.dept_no' },
+    handler(a) {
+      const T = n => TOOLS.find(t => t.name === n);
+      const areas = a.areas;
+      if (!Array.isArray(areas) || !areas.length) fail(E.INVALID_INPUT, 'areas 至少要有一個區塊');
+      if (!a.create === !a.draft_id) fail(E.INVALID_INPUT, 'create 與 draft_id 必須擇一：新表單帶 create，改版或續建帶 draft_id');
+      const updates = a.updates === undefined ? [] : a.updates;
+      if (!Array.isArray(updates)) fail(E.INVALID_INPUT, 'updates 必須是陣列');
+
+      // ── 一、先把所有能先檢查的都檢查完，再開始寫：失敗時一個也沒建，錯誤碼與逐筆呼叫相同 ──
+      // 批次呼叫繞過 server 的 checkArgs，所以未知鍵自己檢查（F-39：不靜默忽略）
+      const areaKeys = [...Object.keys(T('form_add_area').inputSchema.properties).filter(k => k !== 'draft_id'), 'id', 'controls'];
+      const ctlKeys = [...Object.keys(T('form_add_control').inputSchema.properties).filter(k => k !== 'draft_id' && k !== 'area_itemid'), 'id'];
+      if (a.create) checkKeys(a.create, Object.keys(T('form_create').inputSchema.properties), 'create');
+      areas.forEach((ar, i) => {
+        if (!ar || typeof ar !== 'object' || Array.isArray(ar)) fail(E.INVALID_INPUT, `areas[${i}] 必須是物件`);
+        checkKeys(ar, areaKeys, `areas[${i}]`);
+        const cs = ar.controls === undefined ? [] : ar.controls;
+        if (!Array.isArray(cs)) fail(E.INVALID_INPUT, `areas[${i}].controls 必須是陣列`);
+        cs.forEach((c, j) => {
+          if (!c || typeof c !== 'object' || Array.isArray(c)) fail(E.INVALID_INPUT, `areas[${i}].controls[${j}] 必須是物件`);
+          checkKeys(c, ctlKeys, `areas[${i}].controls[${j}]`);
+          checkKeys(c.control, CONTROL_KEYS(), 'control');                       // 與 form_add_control 同一句話
+          checkKeys(c.control && c.control.dictionary, DICT_REF_KEYS(), 'control.dictionary');
+        });
+      });
+      updates.forEach((u, i) => {
+        if (!u || typeof u !== 'object' || Array.isArray(u)) fail(E.INVALID_INPUT, `updates[${i}] 必須是物件`);
+        checkKeys(u, ['id', 'itemid', 'label_text', 'changes'], `updates[${i}]`);
+        checkKeys(u.changes, CHANGE_KEYS(), 'changes');
+        checkKeys(u.changes && u.changes.dictionary, DICT_REF_KEYS(), 'changes.dictionary');
+        if (!String(u.id ?? '').trim() === (u.itemid === undefined)) fail(E.INVALID_INPUT, `updates[${i}] 的 id 與 itemid 必須擇一`);
+      });
+
+      // 先算出每個穩定 ID 的 itemid（form_add_area 與 form_add_control 各占用剛好 1 個，依呼叫順序），參照才解得開。
+      // 這一段完全唯讀：新 draft 從 1 起算，續建讀既有 draft 的 nextItemId（draft 不存在就在這裡回 E_NOT_FOUND）
+      let next = a.create ? 1 : store.loadDraft(a.draft_id).nextItemId;
+      const map = new Map();
+      const claim = (id, where) => {
+        const itemid = next++;
+        const key = String(id ?? '').trim();
+        if (!key) return itemid;
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) fail(E.INVALID_INPUT, `${where} 的 id「${key}」只能用英文字母開頭的英數與底線（例 A1、C3）`);
+        if (map.has(key)) fail(E.INVALID_INPUT, `${where} 的 id「${key}」重複`);
+        map.set(key, itemid);
+        return itemid;
+      };
+      const planned = areas.map((ar, i) => ({
+        i, id: ar.id, itemid: claim(ar.id, `areas[${i}]`),
+        controls: (ar.controls || []).map((c, j) => ({ j, id: c.id, itemid: claim(c.id, `areas[${i}].controls[${j}]`) }))
+      }));
+      // 占位符一次全部解開（解不開就在這裡回 E_INVALID_INPUT，什麼都還沒建）
+      const prepared = planned.map(ap => {
+        const { id, controls, ...areaArgs } = areas[ap.i];
+        const where = `areas[${ap.i}]${id ? `（${id}）` : ''}`;
+        return {
+          ...ap, where, args: resolveRefs(areaArgs, map, where, ['inputs', 'outputs']),
+          controls: ap.controls.map(cp => {
+            const { id: cid, control: ctlIn, ...rest } = controls[cp.j];
+            const w = `areas[${ap.i}].controls[${cp.j}]${cid ? `（${cid}）` : ''}`;
+            return { ...cp, where: w, rest, control: resolveRefs(ctlIn || {}, map, `${w}.control`, []) };
+          })
+        };
+      });
+      const preparedUpdates = updates.map((u, i) => {
+        const where = `updates[${i}]`;
+        const key = String(u.id ?? '').trim();
+        const itemid = key ? map.get(key) : Number(u.itemid);
+        if (itemid === undefined) fail(E.NOT_FOUND, `${where} 的 id「${key}」不在 areas／controls 宣告的 id 裡（既有 draft 的欄位請直接寫 itemid）`, { known: [...map.keys()] });
+        return { tool: 'form_update_control', where, why: '呼叫端指定的回填',
+          args: { itemid, ...(u.label_text !== undefined && { label_text: u.label_text }), changes: resolveRefs(u.changes || {}, map, `${where}.changes`, []) } };
+      });
+
+      // ── 二、建置。每一步都是現有 tool 的 handler，結果、警告與錯誤碼原樣保留 ──
+      const create = a.create ? T('form_create').handler(a.create) : null;
+      const draft_id = create ? create.draft_id : a.draft_id;
+      const steps = [], warnings = [], built = { areas: [], controls: [] }, deferred = [], filled = [];
+      let phase = 'areas', at = '';
+      const record = (step, where, r) => {
+        steps.push({ step, where, ...(r && r.warnings && r.warnings.length ? { warnings: r.warnings } : {}) });
+        if (r && Array.isArray(r.warnings)) warnings.push(...r.warnings);
+      };
+      try {
+        for (const ap of prepared) {
+          at = ap.where;
+          const args = { ...ap.args };
+          // embed 的 outputs 指向之後才建的欄位時先不帶，第二輪以 form_update_area 一次補上完整物件（同 agents/form-builder.md）
+          if (args.outputs && Object.values(args.outputs).some(v => Number(v) > ap.itemid)) {
+            deferred.push({ tool: 'form_update_area', where: ap.where, why: 'embed 的 outputs 指向之後才建的欄位', args: { itemid: ap.itemid, outputs: args.outputs } });
+            delete args.outputs;
+          }
+          const r = T('form_add_area').handler({ draft_id, ...args });
+          if (Number(r.area_itemid) !== ap.itemid) fail(E.DUP_ITEMID, `itemid 與預測不符（預測 #${ap.itemid}、實際 #${r.area_itemid}），參照可能綁錯，已停止；請改用逐筆呼叫`);
+          record('form_add_area', at, r);
+          built.areas.push({ ...(ap.id && { id: ap.id }), itemid: ap.itemid, type: ap.args.type || 'form', ...(r.pending && { pending: r.pending }) });
+
+          for (const cp of ap.controls) {
+            at = cp.where;
+            const ctl = { ...cp.control };
+            const later = {};
+            // 計算式與巨集腳本一律第二輪才寫：它們引用其他欄位，建立時目標可能還不存在
+            if (ctl.datatype === 'label' && (ctl.formula !== undefined || ctl.format === 'formula')) {
+              if (String(ctl.formula ?? '').trim()) { later.label_format = 'formula'; later.formula = String(ctl.formula); }
+              ctl.format = 'formula';
+              delete ctl.formula;
+            }
+            if ((ctl.datatype === 'action' || ctl.datatype === 'action2') && String(ctl.action_script ?? '').trim()) {
+              later.action_script = String(ctl.action_script);
+              delete ctl.action_script;
+            }
+            const r = T('form_add_control').handler({ draft_id, area_itemid: ap.itemid, ...cp.rest, control: ctl });
+            if (Number(r.itemid) !== cp.itemid) fail(E.DUP_ITEMID, `itemid 與預測不符（預測 #${cp.itemid}、實際 #${r.itemid}），參照可能綁錯，已停止；請改用逐筆呼叫`);
+            record('form_add_control', at, r);
+            built.controls.push({ ...(cp.id && { id: cp.id }), itemid: cp.itemid, where: r.where, dictionary: r.dictionary, dicid: r.dicid, dicrole: r.dicrole });
+            if (Object.keys(later).length) deferred.push({ tool: 'form_update_control', where: cp.where, why: '計算式／巨集腳本第二輪回填', args: { itemid: cp.itemid, changes: later } });
+          }
+        }
+        deferred.push(...preparedUpdates);     // 呼叫端指定的回填排在自動回填之後
+
+        phase = 'updates';
+        for (const dfr of deferred) {
+          at = `${dfr.where}（${dfr.why}）`;
+          const r = T(dfr.tool).handler({ draft_id, ...dfr.args });
+          record(dfr.tool, at, r);
+          filled.push({ tool: dfr.tool, itemid: dfr.args.itemid, where: dfr.where, why: dfr.why,
+            ...(r.deferred_errors && r.deferred_errors.length && { deferred_errors: r.deferred_errors }),
+            ...(r.script_warnings && r.script_warnings.length && { script_warnings: r.script_warnings }),
+            ...(r.pending && { pending: r.pending }) });
+        }
+      } catch (e) {
+        // 錯誤碼與訊息沿用原來那個 tool（與逐筆呼叫相同），只在後面補上「建到哪裡」；非 ToolError 才用 E_BUILD_FAILED
+        const build = {
+          draft_id, failed_at: { phase, where: at, done_steps: steps.length },
+          calls: steps.length + (create ? 1 : 0), steps, mapping: Object.fromEntries(map), built,
+          pending_updates: deferred.slice(filled.length).map(x => ({ tool: x.tool, where: x.where, why: x.why, args: { draft_id, ...x.args } })),
+          next: 'draft 已建到 build.built 列出的部分，不要整張重來：先 form_preview(tree) 看現況，用單筆 tool 修掉 failed_at 那一項（必要時 form_add_area／form_add_control 續建剩下的區塊與欄位），再把 pending_updates 逐筆原樣呼叫，最後 form_validate'
+        };
+        const tail = `（form_build：失敗在${phase === 'areas' ? '建置' : '第二輪回填'}的 ${at}；draft ${draft_id} 保留，已建 ${built.areas.length} 個區塊、${built.controls.length} 個控制項，詳見 details.build）`;
+        if (e instanceof ToolError) throw new ToolError(e.code, `${e.message}${tail}`, { ...(e.details || {}), build });
+        fail(E.BUILD_FAILED, `${String(e && e.message || e)}${tail}`, { build });
+      }
+
+      const validate = a.skip_validate ? null : T('form_validate').handler({ draft_id });
+      return {
+        draft_id, ...(create && { created: create }),
+        calls: steps.length + (create ? 1 : 0),
+        mapping: Object.fromEntries(map), areas: built.areas, controls: built.controls,
+        filled, steps, warnings,
+        ...(validate && { validate }),
+        notes: [
+          `一次呼叫完成 ${steps.length + (create ? 1 : 0)} 個單筆 tool 的工作；itemid 依建立順序分配，mapping 是穩定 ID → itemid 的對照表`,
+          '計算式與巨集腳本是第二輪寫入的（filled），所以可以引用之後才建的欄位',
+          '建完之後的修補請用單筆 tool（form_update_control／form_add_control／form_move_control／form_update_area），一輪一個呼叫'
+        ]
+      };
+    }
+  },
+  {
     name: 'form_move_control',
     description: '（離線）把控制項（連同前方說明文字與同一行的後綴文字）搬到另一個區塊、格子，或同一區塊的其他位置。itemid 不變，計算式、巨集、選項連動的參照都不受影響；不需要重建 draft。' +
       'after_itemid 指定放在目標串流的哪個控制項之後（0＝最前面，文字區塊有可見標題行時會排在標題之前並回 W_BEFORE_TITLE），不帶則放在末端；目標是表格或頁籤時帶 cell（同 form_add_control）。' +
@@ -1280,7 +1544,7 @@ export const TOOLS = [
     name: 'form_preview',
     description: '呈現表單結構供使用者確認。tree / markdown：文字結構。html（v0.2，Claude 內部驗證用，見 SKILL §2c）：以 HIS 端 runtime（TempHtml）在本機離線呈現，' +
       '由 Claude 在內建瀏覽器設值、看計算式結果、執行巨集（LLM、語音、HIS 查詢改為顯示將送出的內容，不實際呼叫；網路由 CSP 封鎖），再把結果交給使用者檢查。' +
-      'html 需要平台前端的本機副本（STRUCMED_RUNTIME_WEB；沒設時依序找 <workspace>/strucmed/web、<workspace>/repo/strucmed/web、<workspace>/../strucmed/web，回傳的 runtime_web 是實際結果）與 harness 伺服器。' +
+      'html 需要平台前端的本機副本與 harness 伺服器。副本位置依序取 STRUCMED_RUNTIME_WEB → 本機快取（<HOME>/.strucmed/runtime-web.json，由 scripts/check-env.mjs 寫入）→ 工作目錄與它上層數層的 strucmed/web、repo/strucmed/web 與 HOME 底下常見的 checkout 位置；回傳的 runtime_web 是實際結果，runtime_available:false 時 notes 寫出設定指令。' +
       'url 取自 harness 寫的 .strucmed/preview/server.json（實際的埠）；伺服器還沒開、或是別份 plugin 的伺服器（W_PREVIEW_OTHER_HARNESS）時 url 是 null，執行 open 欄位的指令（會自動啟動、避開被占用的埠）取得 link。' +
       'html 同時是審閱模式：多寫 <draft_id>.meta.json（欄位事實、計算式試算、HIS 文字鍵），回傳 meta_file、review_dir；使用者在預覽頁改說明文字、選項、字典補述、留意見，按「送出意見」或「定稿」寫到 review_dir，以 form_review_read 讀回。套用第 N 次意見後帶 applied_seq 重新呼叫，再請使用者重新整理。' +
       'applied_seq 超過這個 draft 實際有過的意見（例如重建後的新 draft）時不採用，回 W_APPLIED_SEQ_RESET。formulas_from_review:true 自動讀 reviewer 的 review.md「## 試算」，不必逐字謄寫 formulas。',
@@ -1318,18 +1582,40 @@ export const TOOLS = [
       if (stale_formulas.length) warnings.push(`W_REVIEW_FORMULA_STALE：${stale_formulas.map(id => '#' + id).join('、')} 的試算對應的計算式與 draft 不同，沒有採用；請重跑 formula_check`);
       const web = findRuntimeWeb(ws.root), server = previewServer(ws);
       if (server && server.other) warnings.push(`W_PREVIEW_OTHER_HARNESS：埠 ${server.port} 上是別份 plugin 的預覽伺服器（${server.version || '3.9.2 以前'}），不沿用；請執行 open 欄位的指令，會改啟這一版的伺服器`);
+      // 從站台抓來的快取：開預覽前重算每個檔案的 sha256 比對，不符就當成沒有 runtime，不默默使用（第 7 項）
+      const fetched = web.available && web.source === 'fetched' ? verifyRuntime(web.path) : null;
+      if (fetched && !fetched.ok) {
+        warnings.push(`E_RUNTIME_HASH：抓來的 runtime 快取雜湊驗證沒通過（${fetched.reason}；不符 ${fetched.mismatched.length} 個、缺 ${fetched.missing.length} 個），不會用它開預覽。` +
+          `請執行 runtime_fetch(refetch: true) 重抓，或設 STRUCMED_RUNTIME_WEB 指向自己的副本。${[...fetched.mismatched, ...fetched.missing].slice(0, 5).join('、')}`);
+      }
+      const runtimeOk = web.available && !(fetched && !fetched.ok);
+      const stamp = runtimeOk ? localStamp(web.path) : '';
+      // 版本漂移：比對站台是連外的事，由 runtime_status 做（MCP 的「預設離線」不變），這裡只讀它寫下的結果
+      const drift = runtimeOk ? readDrift() : null;
+      if (drift && drift.newer_on_site && drift.site_stamp && drift.site_stamp !== stamp) {
+        warnings.push(`W_RUNTIME_STALE：本機 runtime 是 ver ${stamp || '未知'}，站台（${drift.site || drift.base}）是 ver ${drift.site_stamp}（${drift.age_hours} 小時前比對）。` +
+          '預覽畫面不會提示這件事，計算式與巨集的行為可能與 HIS 端不同；要更新執行 runtime_fetch(refetch: true)。');
+      } else if (runtimeOk && (!drift || drift.stale) && site.profile()) {
+        // 只有「站台連得到、比得出來」時才提醒；離線時比不了，提醒只是雜訊（本工具自己不連外）
+        warnings.push('W_RUNTIME_UNCHECKED：還沒有（或超過 24 小時沒有）比對站台的 runtime 版本。開預覽前請先呼叫 runtime_status，確認本機跑的引擎與站台同版。');
+      }
       return {
-        url: server && !server.other ? `http://127.0.0.1:${server.port}/__preview/${d.draft_id}` : null,
+        // 預覽網址帶 harness 啟動時產生的一次性 nonce（server.json 的 nonce）：伺服器重啟就換一個，舊連結失效
+        url: server && !server.other ? `http://127.0.0.1:${server.port}/__preview/${d.draft_id}${server.nonce ? `?n=${encodeURIComponent(server.nonce)}` : ''}` : null,
         file: path.relative(ws.root, file), ...written,
         // 檢查伺服器、沒開就在背景啟動、印出可點的連結（本 MCP 不連線，所以不自己探測埠）
         open: `node "${PREVIEW_SCRIPT}" ${d.draft_id} --workspace "${ws.root}"`,
-        runtime_available: web.available, runtime_web: web.path, ...(formulas_source && { formulas_source }), warnings,
+        runtime_available: runtimeOk, runtime_web: web.path, runtime_source: web.source,
+        ...(stamp && { runtime_version: stamp }),
+        ...(fetched && { runtime_verified: fetched.ok }),
+        ...(formulas_source && { formulas_source }), warnings,
         notes: [
           '只在本機離線呈現；不存檔、不匯入。draft 修改後要重新呼叫本工具並重新整理頁面',
           'LLM／影像 LLM／語音：在目標欄位顯示「將送出的 prompt 與模型」，不實際呼叫',
           'HIS 參照：在欄位顯示查詢字串，不實際查詢；倉儲與 HIS API 請求一律封鎖，頁面底部列出封鎖與模擬紀錄',
-          ...(web.available ? [`runtime：${web.path}（${web.source === 'env' ? 'STRUCMED_RUNTIME_WEB' : '在工作目錄附近找到'}）`]
-            : [`找不到 TempHtml.html（找過 ${web.tried.join('、')}）：HTML 預覽需要平台前端的本機副本（設定 STRUCMED_RUNTIME_WEB）；編輯器匯出的 .htm 不能代替（引擎與函式庫都向站台載入，預覽會封鎖）`])
+          ...(runtimeOk
+            ? [`runtime：${web.path}${stamp ? `（ver ${stamp}）` : ''}（${web.source === 'env' ? 'STRUCMED_RUNTIME_WEB' : web.source === 'cache' ? `本機快取 ${web.cache_file}` : web.source === 'fetched' ? '從站台抓來的快取，雜湊已驗證' : '在工作目錄附近找到'}）；預覽頁橫幅也會顯示這個版本`]
+            : [`找不到可用的 TempHtml.html：${runtimeWebHelp(web)}或用 runtime_fetch 從站台抓一份（兩段式，第一次只回 plan）。`])
         ]
       };
     }
@@ -1466,6 +1752,7 @@ export const TOOLS = [
             overwrite: w.exists.map(f => path.relative(ws.root, f)),
             new_dictionaries: d.pendingDictionaries.map(p => p.name),
             import_mode: d.pendingDictionaries.length ? '匯入表單及字典（必須）' : '匯入表單',
+            ...(v.no_patient && { no_patient: NOPATIENT_NOTE }),
             warnings: v.warnings, stats: v.stats,
             ...scriptPlan(d)
           },

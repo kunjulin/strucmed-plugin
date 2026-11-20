@@ -43,7 +43,7 @@ G1、G3 編號停用，不重新編號：舊文件、CHANGELOG 與案例文件�
 ## 表單草案
 Status: Ready            ← Ready | NeedsRevision | Blocked
 Revision: 1              ← 每次修改 +1
-Inputs: dept_no=33F00; groups=; publish=false; folder=usr; his_text_keys=Report,Impression; dictionary_index=online 2026-10-26
+Inputs: dept_no=33F00; groups=; publish=false; folder=usr; no_patient=false; his_text_keys=Report,Impression; dictionary_index=online 2026-10-26
 
 ### 結構
 | ID | 區塊／控制項 | datatype | 說明文字 | 選項／範圍 | 字典（名稱／完整 id／層級；或「新建：一行 desc」） | 必填 | 備註（further→C2；cell 從 0 起算：row/col 或 index；radiobutton 每列幾個） |
@@ -100,6 +100,7 @@ A2 身體測量（formtable）
 | 捷徑／作業別 | —／— |
 | 保存後即上架 | 否 |
 | 更新既有範本 | —（或 templateID） |
+| 非病人表單 | 否（是：struNote 不需病歷號，平台以保留代碼開啟；`form_create` 帶 `options.no_patient: true`，不得有 HIS 參照、倉儲查詢、`{chtno}`） |
 
 ### 待決（有才寫）
 要使用者取捨的地方：planner 依建議值先寫進結構，這裡列出建議值與替代方案，skill 在草案摘要後一起列。
@@ -131,13 +132,17 @@ Status: Ready
 Revision: 1
 
 ### 驗證結果
-| 計算式 | 白話 | 試算 | 結果 | 符合 |
-|---|---|---|---|---|
-（formula_check 的 labeled 與 samples；runtime 不可用時註明「離線試算」；巨集沒有實跑的列出來）
+| 欄位 | 白話 | 試算 | 細節 |
+|---|---|---|---|
+| #9 BMI＝[體重] / ([身高]/100)^2 | 體重 ÷（身高 m）^2 | 3／3 通過 | review.md「## 試算」 |
 
-- 審查：error 0、warning n（review.md 路徑）；warning 逐條
+- **一條計算式只佔一列**：`labeled`（參照換成欄位名稱）、白話、「通過幾／共幾」。試算的每一組值不抄進來，指向 `review.md` 的「## 試算」。
+- **只有不符的樣本才逐列展開**（`match: false`、`E_FORMULA_SAMPLE_MISMATCH`、或回 `reason` 無法離線試算的）：在該列下面縮排列出 `values`、`expect`、`value` 與原因，並註明「離線試算」或「需以 runtime 驗證」。全部通過就不展開。
+- 巨集沒有實跑的列一行說明（哪一顆按鈕、為什麼沒跑）。
+- 審查：error 0、warning n（review.md 路徑）；warning 的本文寫在「### 警告」，這裡不重複。
 - W_AI_DATAFLOW：…
 - W_EMBED_DATAFLOW：…（有嵌入頁面時；主機、參數、寫回欄位）
+- W_NOPATIENT_FORM：…（非病人表單時；平台部署前的暫行做法、不要用倉儲以病歷號查詢）
 
 ### HIS 文字輸出
 - 模式：histextbyblock；回 HIS 的區塊：…
@@ -153,6 +158,7 @@ Revision: 1
 
 ### 上架
 （`references/PublishWorkflow.md` §3 的表；離線時換成 form_export 的 plan：檔案、覆寫、匯入模式）
+- 非病人表單（plan 有 `no_patient` 時必列，原樣一行）：非病人表單：struNote 不需病歷號，平台以保留代碼開啟
 
 ### 表單 JS（有片段時才有）
 - 片段：style#look（樣式：主題 clean、2 條規則）、guard#bmi-high（條件提示：…）；sha256 <plan.script.sha256>
@@ -163,6 +169,12 @@ Revision: 1
 
 ### 警告
 - …
+
+**同一件事只寫一行**（定稿檔是給人看完就按的，不是警告清單的轉貼）：
+- 既有字典沒有補述：不要每個欄位一條。併成「既有字典 N 本無補述（NAME1、NAME2…）」一行（`W_DICT_NO_MEMO`、`W_MEMO_INCOMPLETE`、`W_MEMO_NO_MEANING`、`W_MEMO_EXISTING_REPEAT` 都算同一件事；MCP 在 CSV 重複匯回時已經用 `W_MEMO_EXISTING_REPEAT` 併過一次）。
+- `W_REF_NO_MEMO`（計算式引用的欄位字典沒有補述）：去重後也只寫一行，列出字典名稱。
+- 其他同碼的警告（`W_DICT_DEPT_LEVEL`、`W_PROMPT_*`…）：同一個碼併成一行，括號裡列欄位或字典；內容真的不同（不同原因、不同處理建議）才分開寫。
+- 併行之後本數要與「### 字典」的 CSV 一致。
 
 ## 核准
 Status: Pending          ← Pending | Approved

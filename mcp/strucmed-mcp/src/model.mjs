@@ -257,14 +257,55 @@ function stripTrailingNewline(items) {
   return out;
 }
 
+// 非病人表單（iot f_nopatient，平台 kunjulin/strucmed 約定）：平台以保留代碼開啟，struNote 不要求病歷號。
+// 保留代碼只用在說明文字；實際值由平台設定決定
+export const NOPATIENT_CODE = 'APP-NP';
+// no_patient:true 時的預設：不以病歷號／就醫號查近期紀錄、隱藏「上次紀錄」圖示；使用者明確指定的值優先
+export function iotOptionFields(o = {}) {
+  const np = o.no_patient === true;
+  return {
+    f_opdno: !!o.f_opdno,
+    f_chtno: typeof o.f_chtno === 'boolean' ? o.f_chtno : !np,
+    f_hideprevicon: typeof o.hide_prev_icon === 'boolean' ? o.hide_prev_icon : np,
+    // 只有 true 才寫出：一般表單的輸出與既有版本逐位元相同（平台預設 false）
+    ...(np && { f_nopatient: true })
+  };
+}
+// draft 是否為非病人表單：改版 draft 以來源 iot 為準（form_update_meta 的 options 直接改它），新 draft 看 meta.options
+export function isNoPatient(draft) {
+  if (draft.source && draft.source.iot) return draft.source.iot.f_nopatient === true;
+  return ((draft.meta || {}).options || {}).no_patient === true;
+}
+// form_update_meta(options) 套到改版 draft 的來源 iot；回傳實際改到的 iot 鍵
+const OPTION_IOT = { f_chtno: ['f_chtno', Boolean], f_opdno: ['f_opdno', Boolean], hide_prev_icon: ['f_hideprevicon', Boolean],
+  hide_assist: ['f_hideAssist', Boolean], hide_preset: ['f_hidePreset', Boolean],
+  f_day: ['f_day', v => String(v)], histext: ['f_histext', v => (v === 'dict' ? 'histextbydict' : 'histextbyblock')] };
+export function applyOptionsToIot(iot, o = {}) {
+  const changed = [];
+  const set = (k, v) => { if (iot[k] !== v) { iot[k] = v; changed.push(k); } };
+  if (o.no_patient === true) {
+    set('f_nopatient', true);
+    if (typeof o.f_chtno !== 'boolean') set('f_chtno', false);
+    if (typeof o.f_opdno !== 'boolean') set('f_opdno', false);
+    if (typeof o.hide_prev_icon !== 'boolean') set('f_hideprevicon', true);
+  } else if (o.no_patient === false && iot.f_nopatient !== undefined) { delete iot.f_nopatient; changed.push('f_nopatient'); }
+  for (const [k, [key, conv]] of Object.entries(OPTION_IOT)) {
+    if (o[k] === undefined || o[k] === null || o[k] === '') continue;
+    set(key, conv(o[k]));
+  }
+  return changed;
+}
+
 export function iotObject(meta, generator) {
   const o = meta.options || {};
+  const f = iotOptionFields(o);
   return {
     itemtype: 'iot', editorver: EDITORVER, sheetid: '',
-    f_opdno: !!o.f_opdno, f_chtno: o.f_chtno !== undefined ? !!o.f_chtno : true,
+    f_opdno: f.f_opdno, f_chtno: f.f_chtno,
+    ...(f.f_nopatient && { f_nopatient: true }),
     templateID: '',
     f_histext: o.histext === 'dict' ? 'histextbydict' : 'histextbyblock',
-    f_hideprevicon: !!o.hide_prev_icon, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,
+    f_hideprevicon: f.f_hideprevicon, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,
     f_day: String(o.f_day !== undefined ? o.f_day : 30),
     d_url: '',                           // filled by the editor with its warehouse URL
     modifiedUser: generator, modifiedDept: '', modifiedDate: 0

@@ -73,13 +73,18 @@ if (online) check('login', true, '登入：online_login 會以瀏覽器開啟站
 check('llmgateway', true, profile === 'external' ? 'LlmGateway：院外站台不可用（模型白名單使用內建靜態表；表單的 LLM 改走院外 LLM 服務，不經 LlmGateway）' : env.LLMGW_API_KEY ? 'LlmGateway：已設定金鑰' : 'LlmGateway：本 shell 未見 token（選用；/plugin configure 填「LlmGateway token」，院內才用得到；未設定時模型白名單使用內建靜態表）', 'ok');
 check('fmapi', true, profile === 'internal' || env.FMAPI_BASE_URL ? 'FMapi：可用（院內）' : 'FMapi：只有院內提供（選用）', 'ok');
 
-// runtime 驗證需要平台前端副本，與 form_preview 同一份判斷。plugin 設定的「平台 web/ 副本」只傳給 MCP，這個 shell 看不到，所以這裡不下結論
-const { findRuntimeWeb } = await import(pathToFileURL(path.join(PLUGIN_ROOT, 'mcp', 'strucmed-mcp', 'src', 'runtime-web.mjs')).href);
+// runtime 驗證需要平台前端副本，與 form_preview 同一份判斷與同一份訊息。plugin 設定的「平台 web/ 副本」只傳給 MCP，這個 shell 看不到，所以這裡不下結論。
+// 只要這個 shell 解析出可用路徑（環境變數或目錄搜尋），就寫回本機快取：之後在別的工作目錄啟動 MCP 也找得到（F-01）。
+const { findRuntimeWeb, saveRuntimeWeb, helpText } = await import(pathToFileURL(path.join(PLUGIN_ROOT, 'mcp', 'strucmed-mcp', 'src', 'runtime-web.mjs')).href);
 const web = findRuntimeWeb(workspace);
 const runtimeWeb = web.path, hasRuntime = web.available;
 const runtimeNote = '以 MCP form_preview 的 runtime_available 為準';
-check('runtime_web', true, hasRuntime ? `runtime 副本：${runtimeWeb}（${runtimeNote}）` : `本 shell 找不到 TempHtml.html（找過 ${web.tried.join('、')}），不代表預覽頁不可用：plugin 設定的「平台 web/ 副本」只有 MCP 讀得到，${runtimeNote}`, hasRuntime ? 'ok' : 'warning');
+const cached = hasRuntime ? saveRuntimeWeb(runtimeWeb) : { ok: false, file: web.cache_file, written: false, reason: '沒有可用路徑，不寫入快取' };
+check('runtime_web', true, hasRuntime
+  ? `runtime 副本：${runtimeWeb}（來源 ${web.source}${cached.written ? `；已寫回快取 ${cached.file}` : cached.ok ? '；快取已是這個路徑' : ''}）（${runtimeNote}）`
+  : `本 shell 找不到 TempHtml.html，不代表預覽頁不可用：plugin 設定的「平台 web/ 副本」只有 MCP 讀得到，${runtimeNote}。${helpText(web)}`,
+  hasRuntime ? 'ok' : 'warning');
 
 const ok = checks.every(c => c.ok);
-console.log(JSON.stringify({ ok, plugin_root: PLUGIN_ROOT, workspace, mcp_version: mcpVersion, mode: online ? 'online' : 'offline', site: { profile, label: profile === 'custom' ? '自訂站台' : profile ? site.sites()[profile].label : '離線', reachable: reach, selected_by: explicit ? 'STRUCMED_ONLINE_BASE_URL' : siteMode === 'auto' ? 'auto' : `STRUCMED_SITE=${siteMode}` }, env_present: env, runtime_web: { path: runtimeWeb, available: hasRuntime, note: runtimeNote }, checks }, null, 2));
+console.log(JSON.stringify({ ok, plugin_root: PLUGIN_ROOT, workspace, mcp_version: mcpVersion, mode: online ? 'online' : 'offline', site: { profile, label: profile === 'custom' ? '自訂站台' : profile ? site.sites()[profile].label : '離線', reachable: reach, selected_by: explicit ? 'STRUCMED_ONLINE_BASE_URL' : siteMode === 'auto' ? 'auto' : `STRUCMED_SITE=${siteMode}` }, env_present: env, runtime_web: { path: runtimeWeb, available: hasRuntime, note: runtimeNote, source: web.source, cache_file: web.cache_file, cache_written: cached.written, tried: web.tried }, checks }, null, 2));
 process.exit(ok ? 0 : 1);

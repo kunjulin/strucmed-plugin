@@ -97,6 +97,10 @@ test('antigravity manifest: plugin root files, same version, relative paths from
   const script = cmd.match(/(hooks\/antigravity\/[\w-]+\.js)/)[1];
   assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, script)), script);
   assert.match(cmd, /agy-node/);
-  assert.match(cmd, /"decision":"deny"/, '找不到 node 時一律阻擋');
+  // Windows 由 cmd.exe 執行、macOS／Linux 由 sh 執行：只用兩邊都懂的 ||，不用 for／exec／command -v／單引號 echo。
+  // 三個 node 都找不到時指令以非 0 結束，Antigravity 擋下 tool 呼叫（一律阻擋）。
+  assert.doesNotMatch(cmd, /\bfor\b|\bdo\b|\bexec\b|command -v|'/, 'hook 指令要能在 cmd.exe 與 sh 執行');
+  assert.deepEqual(cmd.split(' || ').map(s => s.trim().endsWith(script)), [true, true, true]);
+  assert.match(cmd, /\|\| node hooks\/antigravity\//);
   assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, 'rules', 'AGENTS.md')));
 });

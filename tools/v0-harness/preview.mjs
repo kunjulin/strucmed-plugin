@@ -116,8 +116,11 @@ if (!port) {
   process.exit(1);
 }
 
-const url = `http://127.0.0.1:${port}/__preview/${id}`;
-const page = await probe(port, '/__preview/' + id, 5000);
+// 預覽網址帶一次性 nonce（serve.mjs 啟動時產生、寫在 server.json）：伺服器重啟就換一個，舊連結失效
+const nonce = (() => { try { return String(JSON.parse(fs.readFileSync(path.join(WORKSPACE, '.strucmed', 'preview', 'server.json'), 'utf8')).nonce || ''); } catch { return ''; } })();
+const q = nonce ? `?n=${nonce}` : '';
+const url = `http://127.0.0.1:${port}/__preview/${id}${q}`;
+const page = await probe(port, `/__preview/${id}${q}`, 5000);
 out({
   ok: !!page && page.status === 200,
   url,

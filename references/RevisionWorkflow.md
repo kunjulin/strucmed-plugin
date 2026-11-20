@@ -16,7 +16,7 @@
    - **捷徑與作業別預設不沿用**：沿用會與原表單在 HIS 清單重複。只有使用者明確要求時才以 `form_update_meta` 設定。
 2. `form_preview` 給使用者看原表單結構與 itemid，確認要改哪些地方。
 3. 依需求修改：
-   - `form_update_meta`：名稱、捷徑、作業別、Info
+   - `form_update_meta`：名稱、捷徑、作業別、Info、表單選項（`options`；改版 draft 直接改來源的 iot 選項）
    - `form_update_control`：說明文字、預設值、必填、選項、字典；計算式、HIS 參照、巨集腳本（v0.2，見 §3b）
    - `form_add_control`：只能加在文字區塊。itemid 自動接續原表單最大值
    - `form_add_area`：新增文字區塊；`after_itemid` 插在指定區塊之後
@@ -26,6 +26,7 @@
    - **本次改到的面向**有問題 → error，必須修正。
    - 原表單既有的問題 → warning（標示「原表單既有」）。要逐條告知使用者，但不擋輸出。
    - `W_CUSTOM_JS`：原表單有自訂 JS，本工具未審查。要明確告知使用者。
+   - 非病人表單（`FormDesignRules.md`〈非病人表單〉）：來源 iot 有 `f_nopatient: true` 時 `form_import` 回 `no_patient: true`，選項原樣保留到輸出與上架。原表單既有的 HIS 參照等列 warning（原表單既有），改到就是 error。要把一般表單改成非病人表單用 `form_update_meta(options: { no_patient: true })`：這是本次的修改，既有的 HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`{chtno}` 一律 `E_NOPATIENT_*`，要先移除或改寫。
 5. 定稿 G2 後 `form_export` 兩段式。manifest 會列出「改版自」與本次改動的控制項（✎）。
 
 **v1 限制**（告訴使用者，請其匯入後在編輯器調整）：

@@ -7,6 +7,9 @@
   'use strict';
   var meta = window.__reviewMeta;
   var draftId = (location.pathname.match(/\/__preview\/(d-[0-9a-f]{12})/) || [])[1];
+  // 預覽網址的一次性 nonce：/__review 也帶上它（serve.mjs 的 Host／Origin 檢查照舊，這是多一道）
+  var nonce = (location.search.match(/[?&]n=([0-9a-f]+)/) || [])[1] || '';
+  var reviewUrl = function (suffix) { return '/__review/' + draftId + (suffix || '') + (nonce ? '?n=' + nonce : ''); };
   // runtime 會改寫 tempdata，卡片的原值以載入前的快照為準
   var source = window.__previewData ? JSON.parse(JSON.stringify(window.__previewData)) : [];
   var MEMO_KEYS = ['meaning', 'type', 'unit', 'range', 'func', 'usecase', 'interop', 'asr', 'calx', 'llm', 'scope'];
@@ -150,27 +153,61 @@
     statusLine.style.color = '';
     statusLine.appendChild(box);
   }
+  // 疑似病歷號／身分證字號不送出（規則來自 /__harness/phi.js，與 MCP 的 phi.mjs 同一份；serve.mjs 另有伺服器端的最後一道）
+  function stripPhi(body) {
+    var phi = window.__strucmedPhi, dropped = [];
+    if (!phi) return dropped;                         // phi.js 沒載入時交給伺服器端擋
+    Object.keys(body.values || {}).forEach(function (k) {
+      var why = phi.reason(body.values[k]);
+      if (!why) return;
+      dropped.push((fields[k] && fields[k].caption ? fields[k].caption : '#' + k) + '：' + (phi.label[why] || why));
+      delete body.values[k];
+    });
+    if (body.text_output && typeof body.text_output === 'object') {
+      Object.keys(body.text_output).forEach(function (k) {
+        var why = phi.reason(body.text_output[k]);
+        if (!why) return;
+        dropped.push('HIS 文字輸出 ' + k + '：' + (phi.label[why] || why));
+        delete body.text_output[k];
+      });
+    } else if (typeof body.text_output === 'string' && phi.reason(body.text_output)) {
+      dropped.push('HIS 文字輸出：' + (phi.label[phi.reason(body.text_output)] || ''));
+      delete body.text_output;
+    }
+    (body.items || []).forEach(function (it) {
+      if (!it || typeof it.text !== 'string') return;
+      var why = phi.reason(it.text);
+      if (!why) return;
+      dropped.push('意見文字：' + (phi.label[why] || why));
+      it.text = '（已移除：疑似個資，未寫入）';
+    });
+    return dropped;
+  }
   function submit(status) {
     if (!draftId) return setStatus('網址沒有 draft_id，無法送出', true);
     if (status === 'revise' && !collectItems().length) return askFinalize();
     var body = { v: 1, draft_id: draftId, status: status, values: readValues(), items: collectItems() };
     if (textOpened) body.text_output = readText();
+    var dropped = stripPhi(body);
     setStatus('送出中…');
-    fetch('/__review/' + draftId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    fetch(reviewUrl(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j.ok) throw new Error(j.error || '伺服器拒絕');
         rebase();
         if (panelMode === 'card' || panelMode === 'area') renderPanel();
         refreshMarks();
-        setStatus(status === 'finalize' ? '已定稿（第 ' + j.seq + ' 次意見），請回到對話' : '第 ' + j.seq + ' 次意見已送出，請回到對話');
+        var msg = status === 'finalize' ? '已定稿（第 ' + j.seq + ' 次意見），請回到對話' : '第 ' + j.seq + ' 次意見已送出，請回到對話';
+        var all = dropped.concat((j.phi_dropped || []).map(function (x) { return x.where + '：' + (x.label || x.reason); }));
+        if (all.length) msg += '　⚠ ' + all.length + ' 個疑似個資的值沒有送出（' + all.join('；') + '）';
+        setStatus(msg);
       })
       .catch(function (e) { setStatus('送出失敗：' + e.message + '（修改還留在頁面上，可再按一次）', true); });
   }
   // 重新整理後回填上一次的值；SetValueByID 不會重算，填完統一 calculate。label 是計算結果不回填
   function restore() {
     if (!draftId) return;
-    fetch('/__review/' + draftId + '/latest')
+    fetch(reviewUrl('/latest'))
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j) return;

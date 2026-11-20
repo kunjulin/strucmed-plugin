@@ -1,0 +1,188 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-20T13:16:41.554Z",
+    "tools": [
+      {
+        "vendor": "Chang Gung Memorial Hospital",
+        "name": "strucmed-plugin scripts/sbom.mjs",
+        "version": "3.15.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "strucmed-plugin",
+      "name": "strucmed",
+      "version": "3.15.0",
+      "supplier": {
+        "name": "Chang Gung Memorial Hospital（長庚醫療財團法人）",
+        "url": [
+          "https://github.com/kunjulin/strucmed-plugin"
+        ],
+        "contact": [
+          {
+            "name": "來源國：TW"
+          }
+        ]
+      },
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "strucmed:scope",
+        "value": "plugin 本身（安裝到 AI 工具裡執行的部分）"
+      },
+      {
+        "name": "strucmed:runtime-third-party",
+        "value": "0（執行期不載入任何第三方套件）"
+      },
+      {
+        "name": "strucmed:outbound",
+        "value": "預設離線。對外連線只有三處，都要使用者動作：站台（strucmed API v2，瀏覽器登入）、LlmGateway／FMapi（院內、需金鑰）、runtime_fetch（兩段式確認，只抓站台同源的靜態檔，不碰第三方 CDN）"
+      },
+      {
+        "name": "strucmed:patient-data",
+        "value": "plugin 沒有查詢或存檔病人紀錄的 tool；平台對 strucmed-mcp 的 token 呼叫病人資料 API 一律回 403"
+      },
+      {
+        "name": "strucmed:note",
+        "value": "表單 APP 範本的相依不在這一份，見 sbom-form-app.json；HTML 預覽用的平台前端快取見 sbom-runtime.json"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "strucmed-mcp",
+      "name": "strucmed-mcp",
+      "version": "2.18.0",
+      "description": "MCP 伺服器（Node ESM）。自有程式，執行期零第三方相依（package.json 的 dependencies 是空的，沒有 node_modules）。",
+      "supplier": {
+        "name": "Chang Gung Memorial Hospital（長庚醫療財團法人）",
+        "url": [
+          "https://github.com/kunjulin/strucmed-plugin"
+        ],
+        "contact": [
+          {
+            "name": "來源國：TW"
+          }
+        ]
+      },
+      "publisher": "Kunjulin",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "strucmed:origin",
+          "value": "first-party"
+        },
+        {
+          "name": "strucmed:country",
+          "value": "TW"
+        },
+        {
+          "name": "strucmed:runtime-dependencies",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "calx-derived",
+      "name": "calx.mjs（改寫自 jQuery Calx 2.2.8）",
+      "version": "2.2.8",
+      "description": "mcp/strucmed-mcp/src/calx.mjs 的計算式詞法與文法規則改寫自 jQuery Calx 2.2.8，用於離線檢查表單計算式語法。原始碼改寫後納入本專案，不在執行期下載。",
+      "supplier": {
+        "name": "Xsanisty / Ikhsan Agustian",
+        "url": [
+          "https://github.com/xsanisty/calx.js"
+        ],
+        "contact": [
+          {
+            "name": "來源國：ID（印尼）"
+          }
+        ]
+      },
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/xsanisty/jquery-calx"
+        }
+      ],
+      "properties": [
+        {
+          "name": "strucmed:origin",
+          "value": "third-party-derived"
+        },
+        {
+          "name": "strucmed:country",
+          "value": "ID"
+        },
+        {
+          "name": "strucmed:notice",
+          "value": "THIRD_PARTY_NOTICES.md〈jQuery Calx〉"
+        }
+      ]
+    },
+    {
+      "type": "platform",
+      "bom-ref": "nodejs-host",
+      "name": "Node.js",
+      "version": ">=20",
+      "description": "執行環境。**由宿主機器提供，不隨 plugin 發佈、不由 plugin 安裝**（AI 工具或使用者自行安裝的 Node）。",
+      "supplier": {
+        "name": "OpenJS Foundation",
+        "url": [
+          "https://nodejs.org"
+        ],
+        "contact": [
+          {
+            "name": "來源國：US"
+          }
+        ]
+      },
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "strucmed:origin",
+          "value": "host-provided"
+        },
+        {
+          "name": "strucmed:country",
+          "value": "US"
+        },
+        {
+          "name": "strucmed:shipped-with-plugin",
+          "value": "false"
+        }
+      ]
+    }
+  ],
+  "serialNumber": "urn:uuid:9eeab87a-6f33-e410-ec08-ca2747a68f0e"
+}

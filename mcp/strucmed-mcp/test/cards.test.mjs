@@ -11,6 +11,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(HERE, '../src/server.mjs');
 const TOKEN = 'card-token-' + Math.random().toString(36).slice(2);
 let ws, proc, url, seq = 0;
+// 卡片只在「沒有預覽頁」時出現（cardsEnabled 看 runtime 可不可用），所以要卡片的測試必須明確關掉 runtime 的尋找：
+// 開發機上常設 STRUCMED_RUNTIME_WEB，HOME 底下也可能有副本或 runtime_fetch 的快取
+const NO_RUNTIME = { STRUCMED_RUNTIME_WEB: '', STRUCMED_RUNTIME_WEB_CACHE: 'none', STRUCMED_HOME: path.join(os.tmpdir(), 'strucmed-cards-nohome') };
 
 function startServer(env) {
   return new Promise((resolve, reject) => {
@@ -31,7 +34,7 @@ const text = r => JSON.parse(r.content[0].text);
 
 before(async () => {
   ws = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-cards-'));
-  const started = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: '' });
+  const started = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: '', ...NO_RUNTIME });
   proc = started.p; url = started.url;
 });
 after(() => { proc.kill(); fs.rmSync(ws, { recursive: true, force: true }); });
@@ -116,7 +119,7 @@ test('preview and export carry structuredContent; export plan → confirm → fi
   // a custom out_dir inside the workspace gets links too; the link then points at the latest export
   const plan2 = await call('form_export', { draft_id, out_dir: 'exports/sub', overwrite: true });
   const done2 = text(await call('form_export', { draft_id, out_dir: 'exports/sub', overwrite: true, confirm_token: plan2.structuredContent.confirm_token })).data;
-  assert.match(done2.files.htm, /^exports\/sub\//);
+  assert.match(done2.files.htm, /^exports[\\/]sub[\\/]/);   // Windows 用 \，其他用 /
   const res2 = await fetch(done2.download.htm);
   assert.equal(res2.status, 200);
   assert.match(res2.headers.get('content-disposition'), /%E6%94%B9%E5%90%8D\.htm/, 'file is named after the renamed draft');
@@ -126,7 +129,7 @@ test('preview and export carry structuredContent; export plan → confirm → fi
 test('有預覽頁（runtime 可用）時 form_export 不帶卡片：tools/list 沒有 _meta，結果沒有 structuredContent', async () => {
   const web = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-cards-web-'));
   fs.writeFileSync(path.join(web, 'TempHtml.html'), '<html></html>');
-  const s = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: '', STRUCMED_RUNTIME_WEB: web });
+  const s = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: '', STRUCMED_RUNTIME_WEB: web, STRUCMED_RUNTIME_WEB_CACHE: 'none' });
   const ask = async (method, params) => (await (await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   try {
     assert.equal((await ask('tools/list', {})).tools.find(t => t.name === 'form_export')._meta, undefined);
@@ -144,7 +147,7 @@ test('有預覽頁（runtime 可用）時 form_export 不帶卡片：tools/list 
 });
 
 test('STRUCMED_PUBLIC_URL overrides the derived origin in download links', async () => {
-  const s = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: 'https://forms.example.org/' });
+  const s = await startServer({ STRUCMED_WORKSPACE: ws, STRUCMED_HTTP_PORT: '0', STRUCMED_HTTP_TOKEN: TOKEN, STRUCMED_SITE: '', STRUCMED_PUBLIC_URL: 'https://forms.example.org/', ...NO_RUNTIME });
   try {
     const res = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'form_search', arguments: {} } }) });

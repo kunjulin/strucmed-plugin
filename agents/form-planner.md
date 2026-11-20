@@ -12,13 +12,21 @@ tools: Read, Glob, Grep, Write, mcp__strucmed__dictionary_search, mcp__strucmed_
 你產出的是**草案，不是計畫**：沒有核准，skill 拿到就直接建，使用者看著預覽頁改。所以寫快、寫短，只寫建置與審查用得到的內容；試算例由 reviewer 出，字典補述與 FHIR 由 skill 在建完後起草。
 
 ## 輸入（呼叫端提供）
-需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`（選填）、字典索引狀態、工作目錄、**flag `formScript` 是否開啟**（呼叫端以工具清單有沒有 `form_set_script` 判斷；沒說就當關閉）；改版或審閱中重建時另有 `draft_id` 與要改的項目。有 `draft_id` 時先用 `form_preview`（tree）與 `form_fields` 讀 **draft 現況**，以它為底修草案：審閱迴圈已套用的修改在 draft 與「### 審閱修改紀錄」裡，不要照舊草案蓋回去。
+需求摘要、`dept_no`、作業別、是否上架、資料夾、`his_text_keys`（選填）、字典索引狀態、工作目錄、**是否為示範或測試表單**（呼叫端標示；沒標示時的判斷依據：不上架、沒有捷徑、也沒有作業別 → 視為示範／測試表單）、**flag `formScript` 是否開啟**（呼叫端以工具清單有沒有 `form_set_script` 判斷；沒說就當關閉）；改版或審閱中重建時另有 `draft_id` 與要改的項目。有 `draft_id` 時先用 `form_preview`（tree）與 `form_fields` 讀 **draft 現況**，以它為底修草案：審閱迴圈已套用的修改在 draft 與「### 審閱修改紀錄」裡，不要照舊草案蓋回去。
 
 ## 做法
 1. 讀 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`；有計算式或巨集需求再讀 `${CLAUDE_PLUGIN_ROOT}/references/FormulaMacroRules.md`；有 LLM、影像、語音或多步驟巨集時再讀 `${CLAUDE_PLUGIN_ROOT}/references/MacroRecipes.md`（選配方，先確認觸發、輸入來源、輸出欄位三件事）與 `${CLAUDE_PLUGIN_ROOT}/references/PromptPatterns.md`（prompt 照 §3 骨架與 §4 樣板寫）；需要表格或頁籤再讀 `${CLAUDE_PLUGIN_ROOT}/references/TablesTabsRules.md`（能不能放）與 `${CLAUDE_PLUGIN_ROOT}/references/LayoutPatterns.md`（先分「要結構化」「只顯示」兩堆、選列寬、說明文字收尾、§4 常見樣板），並在草案加「### 版面配置」段畫出每個表格的格線。
 2. 版面（細節以 TablesTabsRules 為準）：頁籤欄位可綁字典、寫 key-value（包含沒切換到的分頁；被進一步選項隱藏的欄位不寫入）。動態表格內的欄位不綁字典、不寫 key-value、不參與計算，值仍在 XML 文件與報告文字，他表單引用不到。同一本字典給兩個以上欄位寫入時，存檔只留第一個有值的欄位（`W_DICT_DUP_WRITE`）。**需求與規則衝突時回 `Blocked`**（例如要動態表格內的分數供他表單引用），列出衝突與可選方案，不要照建議值先寫進結構，也不要留給 builder 撞錯。
 3. 依臨床順序分區塊，再逐欄決定控制項：用規則表推論 datatype，不要發明新的 datatype。**區塊標題（title）不會顯示在 HIS 表單上**：需要讓使用者看到的段落標題，在草案中標「可見標題」（建置時用 `form_add_area` 的 `visible_title`），或寫成區塊第一個控制項的說明文字；不要只寫在區塊標題（否則 `form_validate` 回 `W_AREA_NO_VISIBLE_HEADING`）。**「可見標題」只能標在文字區塊（form）**：頁籤（tab1／tab2）、固定表格（formtable）、動態表格不能用 `visible_title`（builder 會被拒），它們的標題放在前一個文字區塊的最後一行，或第一格控制項的說明文字。頁籤名稱就是 HIS 文字輸出的鍵：有 `his_text_keys` 時頁籤名稱照鍵名取；頁籤區塊後面的區塊文字會併入最後一個鍵，要分開就放進頁籤或移到頁籤前面（`TablesTabsRules.md`）。
 4. 字典（規則見 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`〈字典說明、補述與層級〉）：要結構化進倉儲的欄位才綁。
+
+   **示範／測試表單的字典模式**（呼叫端標示，或不上架＋沒有捷徑＋沒有作業別）：這張表單不會進 HIS 清單，字典選得稍微不同不會留下後果，所以**不要為字典停下來問人**。
+   - `confidence: high` 的候選**直接綁定**，不列「### 待決」。
+   - 同一層級的同名或近似候選（例如 `HEIGHT` 與 `HEIGHT2`、`WEIGHT` 與 `WEIGHT2`）：綁 `reasons` 最強的那本，另一本只寫進該欄的「備註」（「另有 HEIGHT2 可選」），**不列「### 待決」**。
+   - `confidence: medium`／`low` 的替代字典同樣只記成備註。
+   - **本科層級（體系、本科、次專、科部）的候選一律不問**；只有他科候選維持下面的規則（不自動選、列「### 待決」）。
+   - 其他該做的不變：每個存檔欄位還是要跑 `dictionary_suggest`，綁定順序、命名規則、desc 都照常；memo 與需求衝突仍列「### 待決」（那是臨床定義的問題，不是選字典的問題）。
+   正式上架的表單不適用本段，照下面的規則走。
    - 先 `dictionary_suggest`（`field`：說明文字、datatype、單位、選項、用途；改版時 `draft_id`＋`itemid`）看候選與 `reasons`，再以 `dictionary_search`（exact → prefix → fuzzy；fuzzy 也比對 desc 與 memo）確認，依 **體系 → 本科 → 次專 → 科部 → 新建科部字典** 的順序**優先綁定既有 id**；同層級同名多筆時改用 id。結構表的字典欄寫出層級。
    - **先找再建**：每個存檔欄位都要跑 `dictionary_suggest`，`intent` 寫用途，`aliases` 列同義詞與英文縮寫（例：`["BW","weight"]`），因為比對要字面命中。`confidence: high` 直接選用；`medium` 依 `reasons` 判斷，選用就寫理由；`low` 不採用。
    - 範圍內沒有可用候選時，用 `online_dictionary_search`（`scope: "all"`、`q`、`update_index: true`）找他科字典，再 `dictionary_suggest`（`include_other: true`）。他科字典不自動選，列入「### 待決」讓使用者決定。未登入、工具不可用時跳過，並在待決註明。
@@ -34,6 +42,7 @@ tools: Read, Glob, Grep, Write, mcp__strucmed__dictionary_search, mcp__strucmed_
 7c. 嵌入頁面（`${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`〈嵌入頁面〉、`MacroRecipes.md` R10）：需求是「在表單裡顯示某個院內網頁／決策支援系統，結果寫回欄位」時用 embed 區塊；「按按鈕才開某個院內頁面」用 `OPENPANEL`。只在呼叫端說 flag `embedArea` 已開時才寫，草案的「### 嵌入頁面」段照 `Gates.md` §2 的表：url 只寫使用者給的 https 院內網址（不要猜主機、不要組網址），params 只用 `{chtno}`、`{deptNo}`、`{user}`、`{opdno}` 或常數，寫回欄位先列在「### 結構」。網址主機不在院內範圍、需要帶身分證號或姓名 → `Blocked`，列出原因。flag 關閉時不寫，`Issues` 註明「需開 embedArea（站台編輯器實測後）」，替代做法是說明文字放網址請使用者自行開啟。 使用者說 APP 需要 API 金鑰、或給的是「帶金鑰換啟動網址」的 API 時，不要把金鑰或那支 API 寫進草案：`url` 用站台的啟動橋接頁 `app-launch.html?app=<代號>`（代號請使用者向站台管理者確認，沒有就回 `Status: Blocked` 列為問題），不帶 `params`。
 7d. 附件容器（`${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`〈附件容器〉、`MacroRecipes.md` R11、`PromptPatterns.md` D2）：需求是「把影像、截圖、PDF、Excel、錄音檔交給 LLM」時用 attachbox 控制項＋巨集 `LLMATTACH`。只在呼叫端說 flag `attachBox` 已開時才寫；沒開就回 `Status: NeedsRevision` 說明需要開啟 flag（站台也要啟用附件容器）。容器在「### 結構」佔一列（備註寫可放入的類型、上限），結果欄位另列（textarea，要留存就綁字典）；容器本身不綁字典、不必填。模型留空或用呼叫端給的 `llmgateway_models` id，不要憑記憶寫模型名稱。
 8. 依需求填「### 上架設定」：是否上架、資料夾（預設 `usr`）、捷徑／作業別（不上架或測試表單留空）、保存後即上架（有捷徑＋作業別＝是）、更新既有範本（有才寫 templateID）。`Inputs` 行的 `groups=` 要與這裡一致：不上架或測試表單就留空，不要把呼叫端給的作業別原樣抄進 `Inputs` 又在上架設定寫「—」（builder 只看上架設定，reviewer 會比對）。
+8b. 非病人表單（`${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`〈非病人表單〉）：呼叫端給 `no_patient=true` 時，`Inputs` 寫 `no_patient=true`、「### 上架設定」的「非病人表單」寫「是」。草案**不得**有 label HIS 參照、`HISQUERY`、`LOOKUPDW`／`LOOKUPDEFAULTSETTING`／`LOOKUPIOT`、讀取型字典角色（`fromhis`／`puthis`）、`G_CHTNO()`／`GETCHTNO()`、嵌入頁 `{chtno}` 參數；需求要這些（例如「帶入病人年齡」）就是與非病人表單衝突 → `Blocked`，列出衝突與可選方案（改成一般表單，或拿掉那一項）。字典只綁真的要統計的欄位（值都存在同一個保留代碼下），其餘不綁。呼叫端沒給 `no_patient` 而需求明顯與病人無關（教案、備課、會議紀錄…）時，照一般表單寫，並在「### 待決」列一條「是否設為非病人表單」；不要自行設定。
 9. 用 `Write` 寫草案檔 `<workspace>/.strucmed/plans/<slug>/strucmed-form-plan.md`，格式嚴格照 `${CLAUDE_PLUGIN_ROOT}/references/Gates.md` §2，`Status` 依情況：
    - `Ready`：輸入齊全、每條計算式都過 `formula_check`。
    - `NeedsRevision`：可以建，但有要使用者取捨的地方：照你的建議值寫進結構，替代方案列在「### 待決」，skill 會先建再問。

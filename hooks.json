@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "for n in agy-node \"$HOME/Library/Application Support/Antigravity/bin/agy-node\" node; do if command -v \"$n\" >/dev/null 2>&1; then exec \"$n\" hooks/antigravity/validate-gate.js; fi; done; echo '{\"decision\":\"deny\",\"reason\":\"strucmed 閘門：找不到 node（agy-node），無法檢查上架核准\"}'",
+            "command": "agy-node hooks/antigravity/validate-gate.js || \"$HOME/Library/Application Support/Antigravity/bin/agy-node\" hooks/antigravity/validate-gate.js || node hooks/antigravity/validate-gate.js",
             "timeout": 20
           }
         ]

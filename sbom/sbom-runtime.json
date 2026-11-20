@@ -1,0 +1,36 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-20T13:16:41.554Z",
+    "tools": [
+      {
+        "vendor": "Chang Gung Memorial Hospital",
+        "name": "strucmed-plugin scripts/sbom.mjs",
+        "version": "3.15.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "strucmed platform web runtime (local cache)",
+      "version": ""
+    },
+    "properties": [
+      {
+        "name": "strucmed:scope",
+        "value": "HTML 預覽用的平台前端 web/ 本機快取"
+      },
+      {
+        "name": "strucmed:state",
+        "value": "找不到 manifest（C:\\Users\\kunju\\.strucmed\\runtime\\.strucmed-runtime.json）：這台機器還沒有用 runtime_fetch 抓過，或使用者用的是自己的副本（STRUCMED_RUNTIME_WEB）"
+      },
+      {
+        "name": "strucmed:note",
+        "value": "這份快取不是 plugin 的一部分，也不隨 plugin 發佈；抓過之後再跑一次 npm run sbom 就會有內容"
+      }
+    ]
+  },
+  "components": [],
+  "serialNumber": "urn:uuid:7ac2c65e-f410-0077-804a-08a800884be8"
+}

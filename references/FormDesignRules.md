@@ -1,4 +1,4 @@
-# 表單設計規則（控制項推論、字典、必填、禁止事項）
+# 表單設計規則（控制項推論、字典、必填、非病人表單、禁止事項）
 
 > 規則依據平台 runtime 實測。由 `create-form`、`edit-form` 與 `form-planner`、`form-reviewer` 載入。
 
@@ -96,6 +96,48 @@
 - 音檔一個最長 2 小時；院外站台 10 分鐘一段轉寫，院內 30 秒一段（長音檔會遇到每分鐘次數上限而等待）。
 - 院外站台每次送出前都會跳確認，列出送出的影像張數、文件數與對象；語音轉寫另有語音服務的同意畫面。
 - 揭露：用到容器的巨集列進 `W_AI_DATAFLOW`（哪些容器、可放入的類型、送給哪個模型），`form_fields` 的容器欄位也會標示。
+
+## 非病人表單（表單選項 `no_patient`）
+
+醫學教育、行政用途、與病人無關的表單（例：「教案一頁通」——教師備課、上傳參考資料、院內 LLM Gateway 產生教案；會議紀錄；教學評量的教師備課）。院方決定：這類表單由平台自動帶**固定保留代碼**（預設 `APP-NP`）開啟，struNote 不再要求病歷號；「上次紀錄」只看自己的。
+
+**怎麼設**：`form_create`（或改版時 `form_update_meta`）的 `options.no_patient: true` → 定義檔 iot 的 `f_nopatient: true`。同時預設 `f_chtno: false`、`f_opdno: false`、`hide_prev_icon: true`（不以病歷號／就醫號查近期紀錄、隱藏「上次紀錄」圖示）；使用者明確指定時以指定值為準（`W_NOPATIENT_OPTION` 提醒）。匯出 `.htm`／`.package.json`、`form_import`、改版、上架都保留這個選項。一般表單不寫出 `f_nopatient`（平台預設 false）。
+
+**何時提出**：需求明顯與病人無關時，由 skill 在需求階段提出這個選項給使用者決定；不要自行認定。表單裡只要有任何一欄在記錄特定病人（病歷號、床號、病人的檢驗或評估），就**不是**非病人表單。
+
+**取捨（提問時寫在選項說明）**：
+
+| | 非病人表單 | 一般表單 |
+|---|---|---|
+| 開啟 | 不需病歷號，平台帶保留代碼 | 要有病歷號（HIS 帶入或 struNote 輸入） |
+| 「上次紀錄」 | 只看自己的；圖示預設隱藏 | 依病歷號／就醫號查 |
+| HIS 參照、HISQUERY、LOOKUPDW 等 | **不能用**（沒有病人可查） | 可用 |
+| 字典寫入（tohis） | 可以，但所有人的值都存在同一個保留代碼下；**不要用倉儲以病歷號查詢這類紀錄**。不需要統計的欄位不綁字典 | 依病歷號進倉儲 |
+| LLM 巨集、附件容器、樣式片段 | 照常 | 照常 |
+
+**`form_validate` 的檢查**（非病人表單才有；本工具新建的表單、或這次才設成非病人的，一律 error；改版時原表單本來就是非病人表單、這次沒動到的部分照慣例列 warning「原表單既有」）：
+
+| 代碼 | 觸發 |
+|---|---|
+| `E_NOPATIENT_HISQUERY` | label 的 HIS 參照（format=hisquery）、巨集 `HISQUERY` |
+| `E_NOPATIENT_LOOKUPDW` | `LOOKUPDW`、`DWLOOKUP`、`LOOKUPDEFAULTSETTING`、`SETLOOKUPDEFAULT`、`LOOKUPIOT`（以病歷號查倉儲） |
+| `E_NOPATIENT_DICT_READ` | 字典角色 `fromhis`／`puthis`（開表單時以病歷號從倉儲帶值）；改 `tohis` 或 `nohis` |
+| `E_NOPATIENT_CHTNO_FUNC` | `G_CHTNO()`、`GETCHTNO()`（讀到的是保留代碼，不是病歷號） |
+| `E_NOPATIENT_EMBED_CHTNO` | 嵌入頁 `params` 用 `{chtno}` |
+| `W_NOPATIENT_OPDNO_FUNC` | `G_OPDNO()`、`GETOPDNO()`、`GETPACSNO()`（多半是空值） |
+| `W_NOPATIENT_EMBED_OPDNO` | 嵌入頁 `params` 用 `{opdno}` |
+| `W_NOPATIENT_EMBED_CONTEXT` | 有 embed 區塊：runtime 仍以 `strucmed.context` 送出病歷號欄位，內容是保留代碼；嵌入頁不可用它查病人 |
+| `W_NOPATIENT_LOADDOC` | `LOADDOC`、`LOADXML`（以保留代碼取回最近存檔） |
+| `W_NOPATIENT_OPTION` | 明確開了 `f_chtno`／`f_opdno` 或顯示「上次紀錄」圖示 |
+| `W_NOPATIENT_DICT_WRITE` | 有欄位寫入字典（值以保留代碼進倉儲） |
+| `W_NOPATIENT_FORM` | 每張非病人表單都有：交付時必須告知下面兩點 |
+
+函數名稱只比對字串以外的部分：提示詞文字裡提到函數名或 `{chtno}` 不算。`{user}`、`{deptNo}` 與常數參數、`G_USERNM()`、`G_DEPTNO()` 照常可用。
+
+**交付時必須告知**（manifest「## 非病人表單」、定稿檔「### 上架」、`W_NOPATIENT_FORM`）：
+- 非病人表單：struNote 不需病歷號，平台以保留代碼開啟。
+- **平台尚未部署這項功能前**，struNote 仍會要求病歷號：暫行做法是輸入固定代碼（預設 `APP-NP`，以平台公告為準），不要輸入真實病歷號；**不要用倉儲以病歷號查詢這類紀錄**。
+- 舊版編輯器不認得 `f_nopatient`：平台部署前在編輯器另存，選項可能遺失，部署後請再確認 Option 面板。
 
 ## 字典說明、補述與層級
 

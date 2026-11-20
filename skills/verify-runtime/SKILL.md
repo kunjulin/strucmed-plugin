@@ -18,7 +18,11 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
 
 ## 步驟
 
-1. `form_preview`（`format: "html"`；有 review.md 帶 `formulas_from_review: true`，已套用意見帶 `applied_seq`）產生預覽資料。回 `runtime_available: false` → 告知使用者需設定 `STRUCMED_RUNTIME_WEB`（平台 `web/` 的本機副本），審閱迴圈退回對話（`RuntimeVerification.md` §6）。編輯器匯出的 `.htm` 不能代替副本：引擎與函式庫都向站台載入，預覽會封鎖。
+0. **先 `runtime_status`**（唯讀）：確認 runtime 副本能用、而且與站台同版。版本漂移在預覽畫面上看不出來，但計算式與巨集的行為可能和 HIS 端不同。
+   - `W_RUNTIME_STALE`（站台比較新）→ 一句話告知使用者「本機 runtime 是 ver A、站台是 ver B」，問要不要更新；要更新就走 `runtime_fetch`（`refetch: true`，兩段式）。**不自動覆蓋**。使用者的副本是自己管理的（`source: "env"`）時只告知，不要動它。
+   - `E_RUNTIME_HASH`（抓來的快取被改過）→ 不能用，請使用者同意後 `runtime_fetch(refetch: true)` 重抓。
+   - `runtime_available: false` 且沒有副本 → 用 `runtime_fetch` 從站台抓一份：**第一次呼叫只回 plan**（站台、網址、版本戳記、幾個檔案、存到哪裡），把它給使用者確認（這是對外連線），同意後才帶 `confirm_token`。站台連不到或 flag `runtimeFetch` 關閉時，告知設定 `STRUCMED_RUNTIME_WEB` 的方法（`form_preview` 的 `notes` 已經寫出該平台的指令），審閱迴圈退回對話（`RuntimeVerification.md` §6）。
+1. `form_preview`（`format: "html"`；有 review.md 帶 `formulas_from_review: true`，已套用意見帶 `applied_seq`）產生預覽資料。回 `runtime_available: false` → 照第 0 步處理。編輯器匯出的 `.htm` 不能代替副本：引擎與函式庫都向站台載入，預覽會封鎖。回傳的 `runtime_version`、`runtime_source` 就是預覽頁橫幅會顯示的那一版。
 2. 跑一次，取回 `link`。埠號它會處理（沒開就在背景啟動，舊版占用時改下一個埠），不要自己換埠，也不要叫使用者自己啟動：
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/preview.mjs" <draft_id> --workspace <workspace>
@@ -28,10 +32,13 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
 5. 只在需要時操作瀏覽器（`RuntimeVerification.md` §4）：有片段（`form_script_preview` 的 `snippets`）時**必跑**：`guard` 輸入一組會觸發的值、再改回正常值，確認提示出現一次、`.sm-guard` 標示加上又移除；`derive`／`lookup` 輸入來源值看目標欄位（lookup 的 customfunc 要按對應的巨集按鈕）；`required` 空白失焦看提示、填上再失焦看標示移除；`autorun` 看開文件後目標欄位的「將送出 N 字」與面板「已封鎖的請求」；`table-rows` 看列數與預填（預覽頁沒有病人，開文件類片段在 1 秒後執行）；有巨集按鈕要實跑一次（`performActionByID` → 讀 `window.__simulated`、`window.__blocked`）、`formula_check` 回 `reason` 的計算式、使用者要求測某組值。動態表格按「+」加列、頁籤要切換。結果進定稿檔的「### 驗證結果」，對話中只講一句。
 6. 截圖**預設不做**：只在使用者要求、使用者開不了預覽頁、或 draft 有 `style` 片段時（樣式只能用看的；`RuntimeVerification.md` §5）。先 `resize_window`（1000×900），再 `await __snapshot('<名稱>', '<CSS 選擇器>')` → `tools/v0-harness/out/snapshots/<名稱>.png` → 改回 `desktop` → `Read` 看過 → `SendUserFile`。
 
-使用者要調整時，修改 draft 後重新 `form_preview(html)`，請使用者重新整理；連結不變。
+使用者要調整時，修改 draft 後重新 `form_preview(html)`，請使用者重新整理；連結不變（預覽伺服器重啟過時 nonce 會換，這時要重新給連結）。
 
 ## 限制
 
 - CSP 封鎖所有對外連線；LLM／HIS 查詢只顯示將送出的內容。
-- 不要在 HIS 終端機上跑；`STRUCMED_RUNTIME_WEB` 必須是本機副本。
+- 不要在 HIS 終端機上跑；runtime 必須是本機副本（`STRUCMED_RUNTIME_WEB`、本機快取，或 `runtime_fetch` 從站台抓來的那一份）。
+- 預覽伺服器只聽 `127.0.0.1`，網址帶一次性 nonce（重啟就失效），閒置超過 `STRUCMED_PREVIEW_IDLE_MS`（預設 120 分鐘）自動關。
+- 預覽頁送出的意見會先擋掉疑似病歷號與身分證字號（頁面與伺服器端同一組規則）；被擋掉的值不寫進 review JSON，`form_review_read` 也看不到，頁面會告訴使用者擋了哪幾個。
+- `runtime_fetch` 是唯一會在這個流程裡對外連線的 tool，而且兩段式：第一次只回 plan，使用者同意才抓。只抓與站台同源的網址，不碰第三方 CDN。
 - 舊版 html2canvas 不畫單選與核取的圓圈，這是截圖限制，不是表單問題。

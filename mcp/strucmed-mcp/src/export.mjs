@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { toFormJson } from './model.mjs';
+import { toFormJson, isNoPatient, NOPATIENT_CODE } from './model.mjs';
 import { preview } from './preview.mjs';
 import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
@@ -82,6 +82,19 @@ ${rows.join('\n')}
 ` : ''}`;
 }
 
+// 非病人表單（iot f_nopatient）：manifest 與交付說明要列出，並提醒平台部署前的暫行做法
+export function noPatientSection(draft) {
+  if (!isNoPatient(draft)) return '';
+  return `
+## 非病人表單
+- **非病人表單：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟**（iot \`f_nopatient: true\`）；「上次紀錄」只看自己的。
+- **平台尚未部署這項功能前**，struNote 仍會要求病歷號：暫行做法是輸入固定代碼 ${NOPATIENT_CODE}（以平台公告為準），不要輸入真實病歷號。
+- **不要用倉儲以病歷號查詢這類紀錄**：所有人的紀錄都在同一個保留代碼下，不代表任何病人。
+- 表單不得有 HIS 參照、HISQUERY、LOOKUPDW／LOOKUPDEFAULTSETTING、讀取型字典角色（fromhis／puthis）、G_CHTNO()、嵌入頁 {chtno} 參數（form_validate 的 E_NOPATIENT_*）。
+- 舊版編輯器不認得這個選項：平台部署前在編輯器另存，選項可能遺失，請部署後再確認 Option 面板。
+`;
+}
+
 // 嵌入頁面資料流（embed 區塊與 OPENPANEL）：與 AI 資料流同樣揭露目標主機、帶出的參數、送出與寫回的欄位
 export function embedSection(validation) {
   const list = validation.embeds || [];
@@ -144,7 +157,7 @@ ${preview(draft, 'tree')}
 - 綁定既有（${bound.length}）：
 ${bound.join('\n') || '- 無'}
 
-${scriptSection(draft, validation)}${embedSection(validation)}${scriptSnippetSection(draft)}
+${noPatientSection(draft)}${scriptSection(draft, validation)}${embedSection(validation)}${scriptSnippetSection(draft)}
 ## 套件內的選項（v2）
 | 項目 | 值 |
 |---|---|
@@ -152,7 +165,7 @@ ${scriptSection(draft, validation)}${embedSection(validation)}${scriptSnippetSec
 | 捷徑 | ${t.shortcut || '（空白＝不上架）'} |
 | 作業別 | ${t.groups.join('、') || '（無＝不上架）'} |
 | Info | ${t.description || '（無）'} |
-| 建議資料夾 | ${t.folder.type || '（未指定）'}${t.folder.code ? `（${t.folder.code}）` : ''} |
+| 建議資料夾 | ${t.folder.type || '（未指定）'}${t.folder.code ? `（${t.folder.code}）` : ''} |${isNoPatient(draft) ? '\n| 非病人表單 | 是（f_nopatient；struNote 不需病歷號） |' : ''}
 
 ## 匯入步驟（請本人操作）
 1. 登入編輯器；**deptno 填 ${m.dept_no}**（新字典的類別會等於此代碼），切到建議資料夾。
@@ -168,7 +181,7 @@ ${scriptSection(draft, validation)}${embedSection(validation)}${scriptSnippetSec
 - [ ] 字典顏色：綠＝寫入、藍＝讀取、橘＝讀寫、白＝無
 - [ ] 表單名稱、捷徑、作業別正確（**有捷徑＋作業別＝保存後即上架到 HIS 清單**；測試表單請清空）
 - [ ] 沒有任何病人資料
-- [ ] 有計算式或巨集時：在預覽中實際操作一次，確認結果寫入正確的欄位
+${isNoPatient(draft) ? `- [ ] 非病人表單：Option 面板的「非病人表單」已勾選（舊版編輯器沒有這一項，平台部署後再確認）；填寫時不輸入真實病歷號\n` : ''}- [ ] 有計算式或巨集時：在預覽中實際操作一次，確認結果寫入正確的欄位
 
 ## 驗證結果
 - errors：${validation.errors.length}

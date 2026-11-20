@@ -75,6 +75,8 @@ export function validatePackage(p) {
   else {
     if (p.form[p.form.length - 1].itemtype !== 'iot') e.push('form 最後一項必須是 iot');
     if (!p.form.some(x => x.itemtype === 'javascript')) e.push('form 缺少 javascript 項');
+    const iot = p.form[p.form.length - 1];
+    if (iot.itemtype === 'iot' && iot.f_nopatient !== undefined && typeof iot.f_nopatient !== 'boolean') e.push('iot.f_nopatient 必須是布林值');
   }
   if (!Array.isArray(p.presets) || p.presets.some(x => !x || !isStr(x.name) || !isStr(x.user))) e.push('presets 格式錯誤');
   if (!Array.isArray(p.dictionaries) || p.dictionaries.some(x => !x || !isStr(x.id) || !isStr(x.dicName) || !x.dicName || !isStr(x.dicType))) e.push('dictionaries 格式錯誤');

@@ -22,7 +22,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 ```
 階段 1 需求（本 skill，一次問完）
 階段 2 草案 → Task(form-planner) → Task(form-builder) → 新字典補述預填 → Task(form-reviewer)；不停下來核准
-         （小表單捷徑：本 skill 自己寫草案、建置、驗證，不啟動子代理，見 §3 開頭）
+         （小表單捷徑：本 skill 自己寫草案、以一次 form_build 建完、驗證，不啟動子代理，見 §3 開頭）
 階段 3 審閱迴圈：form_preview(html) → 使用者在預覽頁操作 → form_review_read → 改 draft → 重新 form_preview
 ▶ 階段 4 定稿 G2「## 定稿」（reviewer 最後一輪 → 字典 CSV → 上架或輸出 plan → 一次核准 → 執行）
 階段 5 交付
@@ -49,6 +49,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 表單目的 | ✓ | 臨床情境、使用者、要收集什麼、要帶回 HIS 的文字 |
 | 目標科部代碼 `dept_no` | ✓ | 線上：取自 `online_me`，科部在登入頁填，**不在對話中問**；回 `W_NO_DEPT` 時照 `connect-strucmed` 第 4 步請使用者重新登入。離線才問：使用者登入編輯器時填的 deptno |
 | 是否正式上架 | ✓ | 否 → 不設捷徑與作業別，資料夾預設 usr，**不問**這三項 |
+| 非病人表單 | 需求**明顯與病人無關**時才問（教案、備課、會議紀錄、教學評量的教師備課、行政登記等） | 提出「非病人表單」選項，選項說明寫清楚取捨（`references/FormDesignRules.md`〈非病人表單〉的表）：struNote 不需病歷號、平台以保留代碼開啟、「上次紀錄」只看自己的；**不能用** HIS 參照、`HISQUERY`、`LOOKUPDW`、`{chtno}`；寫入字典的值都在同一個保留代碼下，不要用倉儲以病歷號查詢；平台尚未部署前 struNote 仍會要求病歷號（暫行輸入固定代碼）。使用者選是 → `form_create` 帶 `options: { no_patient: true }`，交給 planner 時 `Inputs` 寫 `no_patient=true`。表單有任何一欄在記錄特定病人就不要提；需求看不出來時不問，照一般表單做 |
 | 作業別 | 上架才問 | 門／住／急／手術／檢查／助手／All；**測試表單不設**，交給 planner 時寫「不設」，不要把需求裡提到的科別或住院情境當成作業別帶進去 |
 | 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
@@ -59,7 +60,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
 
-**`AskUserQuestion` 一次最多 4 題、每題最多 4 個選項**（另有自動的「其他」可自由輸入）。缺的超過 4 項時不要拆成第二輪：依「表單目的 → 是否上架與作業別 → HIS 文字鍵 → AI／巨集 → 其他」的順序取前 4 題，其餘採選項裡的建議值往下做，在草案「### 待決」標「（預設，使用者未作答）」，第一輪審閱或 G2 時使用者看得到、可以改。性質相近的合併成一題（例如「上架與作業別」）。選項超過 4 個時合併相近的，或把最少用的留給「其他」。
+**`AskUserQuestion` 一次最多 4 題、每題最多 4 個選項**（另有自動的「其他」可自由輸入）。缺的超過 4 項時不要拆成第二輪：依「表單目的 → 是否上架與作業別（需求與病人無關時「非病人表單」併在這一題或緊接其後）→ HIS 文字鍵 → AI／巨集 → 其他」的順序取前 4 題，其餘採選項裡的建議值往下做，在草案「### 待決」標「（預設，使用者未作答）」，第一輪審閱或 G2 時使用者看得到、可以改。性質相近的合併成一題（例如「上架與作業別」）。選項超過 4 個時合併相近的，或把最少用的留給「其他」。
 
 **選項說明要把規則寫清楚**，使用者選的時候就看得到取捨，不要建好才發現。版面類的問題（規則見 `references/TablesTabsRules.md`）這樣寫：
 
@@ -75,25 +76,26 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 **小表單捷徑**：以下條件**全部**符合時，不啟動 `form-planner`、`form-builder` 與第一輪 `form-reviewer`，由本 skill 自己做（省下三次子代理各自重讀 references 的時間）；任一項不符就照下方第 1–5 步。
 - 存檔欄位 ≤ 12、區塊 ≤ 3；
-- 沒有計算式、巨集、LLM 按鈕、固定或動態表格、頁籤、表單 JS、嵌入頁面、附件容器；
+- 沒有巨集、LLM 按鈕、固定或動態表格、頁籤、表單 JS、嵌入頁面、附件容器（**計算式可以有**：`form_build` 會把它排到第二輪回填，但每一條還是要先 `formula_check`）；
 - 不需要找他科字典（已登入時本科字典索引已載入，或使用者選擇不提供索引）。
 
 做法：
-- a. **草案**：讀 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`（控制項推論、字典、必填），用 `Write` 寫草案檔，格式照 `Gates.md` §2（「### 計算式與巨集」「### AI 資料流」寫「無」，「### 表單 JS」寫「無」，沒有「### 版面配置」與「### 嵌入頁面」）。每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 直接選入，其餘列進「### 待新建字典」並寫已查候選；不找他科。
-- b. **建置**：照 `${CLAUDE_PLUGIN_ROOT}/agents/form-builder.md`〈做法〉第 2–4 步的順序與規則直接呼叫（`form_create` → `form_add_area` → `form_add_control`；**每一輪只送出一個工具呼叫**），建完回填「### 建置對照表」，核對次數＝1＋區塊數＋控制項數。
+- a. **草案**：讀 `${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`（控制項推論、字典、必填），用 `Write` 寫草案檔，格式照 `Gates.md` §2（「### AI 資料流」寫「無」，「### 表單 JS」寫「無」，沒有「### 版面配置」與「### 嵌入頁面」；有計算式就照格式寫「### 計算式與巨集」，每條要有白話）。每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 直接選入，其餘列進「### 待新建字典」並寫已查候選；不找他科。
+- b. **建置**：**一次 `form_build`**（`create` 帶 `form_create` 的參數；草案的穩定 ID 原樣當 `id`，參照寫 `{C3}`）。它內部依序跑 `form_create` → `form_add_area` → `form_add_control`，再第二輪回填 `formula`，最後 `form_validate`，行為、警告與錯誤碼和逐筆呼叫相同。把 `mapping` 回填「### 建置對照表」，核對 `calls` ≥ 1＋區塊數＋控制項數。中途失敗照 `details.build` 接著修（draft 保留），不是整張重來。規則見 `${CLAUDE_PLUGIN_ROOT}/agents/form-builder.md`〈做法〉。
 - c. **補述預填**：同第 3 步。
-- d. **驗證**：`form_validate`（error 要修，修不掉的列給使用者）＋ `form_preview`（`format: "tree"`）對照草案，結果一句話：「驗證：error 0、warning N」。不寫 review.md。
+- d. **驗證**：`form_build` 回的 `validate`（error 要修，修不掉的列給使用者）＋ `form_preview`（`format: "tree"`）對照草案，結果一句話：「驗證：error 0、warning N」。不寫 review.md。
 - e. **開預覽**：同第 5 步，但 `form_preview(html)` 不帶 `formulas_from_review`（沒有 review.md）。
 - 草案摘要照下方格式，在 AI 資料流那行寫「小表單捷徑，未啟動子代理」。
-- 審閱中加進了不符條件的東西（計算式、巨集、表格、頁籤等）時，那一次的新增改用 `Task(form-planner)` 補草案、`Task(form-builder)` 建置（沿用 `draft_id`），之後照一般流程。**G2 前的最後一輪仍是 `Task(form-reviewer)`**（§5 第 1 步不變），捷徑不省略定稿前的審查。
+- 審閱中加進了不符條件的東西（巨集、表格、頁籤、附件容器等）時，那一次的新增改用 `Task(form-planner)` 補草案、`Task(form-builder)` 建置（沿用 `draft_id`），之後照一般流程。**G2 前的最後一輪仍是 `Task(form-reviewer)`**（§5 第 1 步不變），捷徑不省略定稿前的審查。
 
-1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別（不上架或測試表單寫「不設」）、是否上架、資料夾、`his_text_keys`、字典索引是否已載入、flag `formScript` 是否開啟（工具清單有 `form_set_script` 就是開）、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
+1. **草案**：用 `Task` 啟動 `form-planner`（headless，唯讀）。給它：需求摘要、`dept_no`、作業別（不上架或測試表單寫「不設」）、是否上架、**是不是示範或測試表單**（不上架＋沒有捷徑＋沒有作業別就是；planner 的字典模式照這一項決定要不要為字典停下來問人）、資料夾、`his_text_keys`、字典索引是否已載入、flag `formScript` 是否開啟（工具清單有 `form_set_script` 就是開）、工作目錄、plugin 根目錄（`${CLAUDE_PLUGIN_ROOT}` 的絕對路徑；三個子代理都要給，規則檔不在工作目錄）。它回傳草案檔路徑（`Gates.md` §2，比舊計畫短很多：沒有試算例、字典補述與 FHIR）與 `Status`。
    - 字典**先找再建**：planner 為每個存檔欄位跑 `dictionary_suggest`，`confidence: high` 的候選直接選入，範圍內沒有候選才找他科或列待新建。使用者選擇不提供索引時，草案要標明「未比對既有字典」。
    - `Blocked`（缺必要輸入，或需求與規則衝突）→ 把它列的問題與可選方案用一次 `AskUserQuestion` 問使用者後重跑，不要先建；`NeedsRevision` → 照它的建議值往下建，「### 待決」列在草案摘要之後。
+   - 示範／測試表單（不上架＋沒有捷徑＋沒有作業別）：planner 的本科層級候選一律直接綁、不列待決（`agents/form-planner.md` 第 4 步），所以這類表單通常沒有字典要問。
    - 「### 待決」列出**他科候選字典**時，**不要停下來問**：照草案先列待新建、交 builder 建好，在草案摘要的「待決」寫一行「他科有現成字典 N 本可改綁（<名稱>）」，等使用者第一次回到對話時，和第一輪審閱的問題一起用同一次 `AskUserQuestion` 問。採用的以 `online_dictionary_search`（`scope: "all"`、`q`＝字典名稱、`update_index: true`）併入本機索引，再以 `form_update_control`（`changes.dictionary: { id }`）改綁、記進「### 審閱修改紀錄」；不採用就維持待新建。未登入時跳過，在待決註明。
    - 草案以穩定 ID（區塊 `A1…`、控制項 `C1…`）描述；此時**沒有 itemid**。
    - **問題沒有答案時採建議值，並標明是預設**：`AskUserQuestion` 被使用者用別的訊息取代、略過或沒有作答（例如 HIS 文字鍵）時，不要停住也不要當成使用者決定了，採選項裡的建議值往下做，並在草案（「### 待決」或該欄備註）與定稿檔（`publish-form` 的定稿內容）該項後面標「（預設，使用者未作答）」，G2 呈現時使用者才看得出哪些是自己沒選過的。
-2. **建置**：`Task(form-builder)`，給它草案檔路徑、`dept_no`。單一 builder、依草案順序建：`form_create` → 逐區塊 `form_add_area` → 逐欄 `form_add_control`（說明文字＋控制項＋換行）→ 計算式與巨集 `form_update_control` → 表格／頁籤的格子最後。itemid 依建立順序分配（區塊與控制項共用、從 1 起），`further`／`A<itemid>`／`action_id` 都依賴順序，所以**不平行**。builder 把每個 `C*` 對應的 itemid 回填「### 建置對照表」；草案有「### 表單 JS」時最後以 `form_set_script` 一次設定，回覆的 `Script` 列片段 id。核對回覆的 `Calls`：至少要有 `form_create`＋區塊數＋控制項數，少了就是有漏，交回 builder。
+2. **建置**：`Task(form-builder)`，給它草案檔路徑、`dept_no`。它以**一個 `form_build` 呼叫**建完整張表單（內部依序跑 `form_create` → 逐區塊 `form_add_area` → 逐欄 `form_add_control` → 第二輪回填 `formula`／`action_script` → `form_validate`，行為與警告和逐筆呼叫相同）。草案的穩定 ID 原樣當成 `form_build` 的 `id`，參照寫 `{C3}`，所以**不必**先建被引用的欄位；itemid 仍依建立順序分配（區塊與控制項共用、從 1 起）。builder 把 `mapping` 回填「### 建置對照表」；草案有「### 表單 JS」時 `form_build` 之後再以 `form_set_script` 一次設定，回覆的 `Script` 列片段 id。核對回覆的 `Calls`：至少要有 `form_create`＋區塊數＋控制項數，少了就是有漏，交回 builder。`form_build` 中途失敗時 builder 應照 `details.build` 接著修（draft 保留），不是整張重來。
 3. **補述預填**（有待新建字典時）：builder 建完、reviewer 之前，照 `dictionary-assist` 模式 2 第 1、2 步起草新字典補述（超過 5 本用 `dictionary-annotator`），以 `dictionary_plan_import`（`draft_id`、`csv_text`）寫進 draft。預覽卡片打開就有內容，使用者只改不對的地方，不用自己填。既有字典不主動起草。
 4. **審查**：`Task(form-reviewer)`，給它草案檔、`draft_id`、第幾次審查。它跑 `form_validate`、`formula_check`（`samples` 由它依白話自己出）、`form_preview(tree)`，比對草案 ↔ draft，寫 `review.md` 並回 `Status`。`NeedsRevision`：把必須修正的項目交回 builder，≤ 2 輪；仍未過就改變假設（例如換控制項型別），在草案摘要多寫一行。
 5. **開預覽**：載入 `verify-runtime` 取得連結（`form_preview` 帶 `formulas_from_review: true`，自動讀 review.md「## 試算」）。`runtime_available: false` 或開不了本機頁面 → 見 §4 最後一段。
@@ -157,6 +159,7 @@ AI 資料流：無。審查 1：error 0、warning 2（.strucmed/plans/fall_risk/
 1. 結果：templateID、資料夾（格式同 G2：個人（usr／OL5）、次專（sub／代碼）、科部（dpt／代碼））、rev、是否已上架；離線時是輸出檔（`.htm` 內含範本套件 v2、`.package.json`）與 `*.manifest.md`（含匯入步驟與保存前確認清單）的路徑。支援 v2 的編輯器匯入時會預填名稱、捷徑、作業別、Info，**有捷徑＋作業別＝保存後上架**，務必提醒使用者確認。
 2. 字典：新建與補述幾本（CSV 路徑）；未登入時告知既有字典的補述可之後補（`dictionary-assist` 模式 3，不用上架，非建立者也能補），體系升級建議請轉給體系字典管理者。
 3. `W_AI_DATAFLOW`（哪些欄位會送到 LLM／語音服務）必列；有嵌入頁面時 `W_EMBED_DATAFLOW`（目標主機、帶出的參數、寫回欄位）同樣必列，並加一行實測狀態：已上架就請使用者在站台編輯器的表單預覽照 `references/EmbedPageContract.md` §5 實測（載入、收到病人情境、寫回、高度），沒實測寫「嵌入頁未驗證」；`W_EMBED_LOCALHOST` 時寫明只有那台電腦開得到；有片段時加一行「表單 JS：N 個片段（樣式會影響列印版面；編輯器「表單選項」的 JS 區塊看得到）」；其他警告只列處理建議。
+3b. 非病人表單（`W_NOPATIENT_FORM`）必列：struNote 不需病歷號、平台以保留代碼開啟；**平台尚未部署前** struNote 仍會要求病歷號，暫行做法是輸入固定代碼（預設 `APP-NP`，以平台公告為準）、不要輸入真實病歷號；不要用倉儲以病歷號查詢這類紀錄。
 4. 提醒：先按「新增表單」並確認 sheetID 空白再匯入；有新字典時**必須**「匯入表單及字典」；匯入後不要按「重新編號」；保存前逐一檢查區塊人形圖示。
 
 ## 7. 新產生的表單不支援

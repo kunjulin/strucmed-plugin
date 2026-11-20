@@ -15,6 +15,7 @@
 
 - 範本已上架：`online_template_get(template_id)` 成功（H1 另需登入者就是要用 app 的人）。
 - `online_features`：`runtime.save` 與 `runtime.query` 代表 **登入者** 在 HIS 端存檔／查詢白名單；app 的表單頁存檔走 `records/save`；`save:false` 時存檔可能失敗，要告知使用者。
+- 非病人表單（`form_validate` 回 `no_patient: true`；`FormDesignRules.md`〈非病人表單〉）：平台部署後 struNote（H1）與 app 的表單頁不要求病歷號，由平台以保留代碼開啟；**平台尚未部署前**仍會要求病歷號，暫行做法是輸入固定代碼（預設 `APP-NP`，以平台公告為準），不要輸入真實病歷號。計畫的「範本」列標「非病人表單」，交付時告知這一點與「不要用倉儲以病歷號查詢這類紀錄」。
 - `fmapi_status`（有 `FMAPI_BASE_URL` 時）：站台健康，錯誤回報是否可用。
 - 沒有線上登入時只能產生 app（H0／H2）但不能驗證範本，交付時標示「未驗證範本 ID」。
 - H0：`docker version` 可用，且計畫的埠未被佔用（`docker ps`／`netstat -ano | findstr :<埠>`）；被佔用就改埠，計畫升 Revision 重新核准。
@@ -36,7 +37,7 @@ Revision: 1
 |---|---|
 | 主機位置 | H0 本機 Docker（埠 8080）／H1 既有 struNote／H2 站台 /strucmed/apps/<slug>/ |
 | app 名稱／slug／版本 | … |
-| 範本 | <id> <名稱>（已上架 ✓／未驗證） … |
+| 範本 | <id> <名稱>（已上架 ✓／未驗證；非病人表單時加註「非病人表單：不需病歷號」） … |
 | 使用者自訂清單 | 是／否 |
 | 錯誤回報（FMapi） | 是／否 |
 | 站台根網址（H0 代理目標） | https://<站台> |
@@ -78,4 +79,5 @@ Approved-By:
 - H0：`docker compose build && docker compose up -d` → `http://localhost:<port>/`；首次登入後實測「開啟表單 → 提交」。存檔走 `records/save`；LLM／語音需先在 LlmGateway 登記 APP（PKCE）。
 - H2：`dist/` 交平台放到 `web/apps/<slug>/`。
 - 待辦清單：存檔白名單、LlmGateway APP 登記（PKCE）、範本未驗證者。
+- 清單裡有非病人表單時：告知平台部署前的暫行做法（輸入固定代碼）、不要用倉儲以病歷號查詢這類紀錄（§2）。
 - 不交付任何含帳密或 token 的檔案；`config.json` 與 `app.config.json` 不含機敏資料（scaffold 會拒絕）。

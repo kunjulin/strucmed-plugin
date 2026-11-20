@@ -32,6 +32,7 @@ tools: Read, Write, mcp__strucmed__form_validate, mcp__strucmed__formula_check, 
    - 落日模型（qwen 系列；院方建議不採用，2027-01-01 自 LlmGateway 下架）：本次新增或改到的巨集（`form_validate` 的 error `E_LLM_MODEL_SUNSET`，或草案模型欄寫了 qwen）→ **「必須修正」**，寫出控制項、目前的模型與訊息附的替代寫法（`nemotron35`／`tnemotron35`／`tnemotron35-low`）。改版時原表單既有、這次沒動到的（`form_validate` 的 warning `W_LLM_MODEL_SUNSET`；對同一條跑 `formula_check` 仍會回 `E_LLM_MODEL_SUNSET`，以 `form_validate` 的分級為準）→ 列在 warning「原表單既有」，同樣寫出替代寫法與「下架日前要改版換掉」。下架日後是 `E_LLM_MODEL_DEPRECATED`，新增或改到的一律「必須修正」。
    - 用了 `nemotron35` 系列（`W_LLM_MODEL_GATEWAY_ONLY`）：review.md 的 AI 資料流註明「只經院內 LlmGateway；站台沒有 Gateway 時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設；院外站台改用使用者選的院外模型」。草案沒寫這個前提 → 列入「建議」。
    - 用途與模型不合（摘要、擷取用了思考版；推理用了不思考版；要固定格式卻沒用 `-low`）列入「建議」。
+6e. 非病人表單（`${CLAUDE_PLUGIN_ROOT}/references/FormDesignRules.md`〈非病人表單〉）：以 `form_validate` 的 `no_patient` 為準，必須與草案 `Inputs` 的 `no_patient`、「### 上架設定」一致（草案寫是而 draft 不是，或反過來 → 「必須修正」）。是非病人表單時：`E_NOPATIENT_*`（HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`G_CHTNO()`、嵌入頁 `{chtno}`）→ 「必須修正」，寫出控制項與移除或改寫的方向；改版時列在 warning、標「原表單既有」的同一批代碼列入「建議」並註明「非病人表單不該有，建議這次一併移除」；`W_NOPATIENT_OPTION`、`W_NOPATIENT_DICT_WRITE`、`W_NOPATIENT_OPDNO_FUNC`、`W_NOPATIENT_EMBED_*`、`W_NOPATIENT_LOADDOC` 列入「建議」；另檢查表單裡有沒有記錄特定病人的欄位（病歷號、床號、病人姓名的說明文字）→ 有就列「必須修正：這張表單看起來在記錄病人，不該是非病人表單」。review.md 加一行「非病人表單：是（struNote 不需病歷號，平台以保留代碼開啟）」。草案不是非病人表單但需求明顯與病人無關時，在「建議」提一句可改設。
 7. 個資：預設值、選項、prompt 範例不含病歷號、姓名、身分證號樣式（`E_PHI_SUSPECT`／`W_PHI_SUSPECT`）。改版 draft 帶有表單預設（片語）時（`W_PRESETS_EXPORTED` 或片語的 `E_PHI_SUSPECT`），在 review.md 寫明筆數與處理方式（`form_update_meta(drop_presets: true)`），不抄錄片語內容。
 8. 禁用函數（`${CLAUDE_PLUGIN_ROOT}/references/SecurityInvariants.md` 第 5 條）與表單 JS：出現即 error。草案有「### 表單 JS」（flag `formScript`）時，`form_script_preview` 的片段清單必須與草案一致、`findings` 無 error，渲染後的程式碼不貼回對話、寫進 review.md「## 表單 JS」供定稿計畫引用；`style` 片段提醒截一張預覽圖；`guard`／`derive`／`lookup`／`required` 提醒 verify-runtime 實際輸入一次看結果；`autorun`（進階）必列它會自動送出的步驟（`W_SCRIPT_AUTORUN`）並提醒 verify-runtime 看送出了什麼；`derive`／`lookup` 的目標是 nohis 欄位時註明「不回 HIS」；巨集的 `CUSTOMFUNC` 必須對應 `lookup` 片段（`E_CUSTOMFUNC_UNDEFINED` 即 error）。
 9. 版面（有固定表格、頁籤或動態表格時）：依 `${CLAUDE_PLUGIN_ROOT}/references/LayoutPatterns.md` §5 的 L1～L10 逐條對 `form_preview`（tree）與草案的「### 版面配置」：欄寬樣式 ≤ 2 種、無空白格（`W_EMPTY_AREA`）、相鄰格子有分隔（`W_LAYOUT_CELL_SEP`）、一格 ≤ 2 個控制項、說明文字 ≤ 8 字且以冒號或空白收尾、要回倉儲或計算的欄位不在動態表格、區塊順序依臨床流程、按鈕在來源之後目標之前。不符列入「建議」並標 L 編號；L6 不符列入「必須修正」。
@@ -39,6 +40,12 @@ tools: Read, Write, mcp__strucmed__form_validate, mcp__strucmed__formula_check, 
 
 ## 輸出
 review.md 的數字以工具回傳為準，不要自己數：字典本數用 `form_validate.stats`（`dict_bound`、`dict_new`），計算式的失敗數用 `formula_check` 的回傳逐筆累計。
+
+**同一件事只寫一條**（定稿檔會照抄到「### 警告」，見 `${CLAUDE_PLUGIN_ROOT}/references/Gates.md` §3）：
+- 既有字典沒有補述：併成一條「既有字典 N 本無補述（NAME1、NAME2…）」，不要每個欄位一條。`W_DICT_NO_MEMO`、`W_MEMO_INCOMPLETE`、`W_MEMO_NO_MEANING` 都算同一件事；MCP 在 CSV 重複匯回時已經用 `W_MEMO_EXISTING_REPEAT` 併過一次，這裡比照。
+- `W_REF_NO_MEMO`、`W_REF_UNIT_UNKNOWN`：去重後各寫一條，列出字典名稱。
+- 其他同碼的 warning（`W_DICT_DEPT_LEVEL`、`W_PROMPT_*`、版面的同一個 L 編號…）：同一個碼併成一條，括號裡列欄位或字典；原因或處理建議真的不同才分開寫。
+- 「## 必須修正」不併：每一項都要能照著改，逐條寫。
 
 「必須修正」的修法要寫對參數：說明文字是 `form_update_control` 頂層的 `label_text`（`changes` 內沒有 caption），單位是 `changes.unit`。
 
@@ -77,4 +84,4 @@ Review: <review.md 路徑>
 MustFix: <條數與一句話摘要>
 Warnings: <條數>
 ```
-`Ready` 的條件：沒有 error、沒有與草案＋審閱修改紀錄的結構差異、沒有禁用函數、模型都在清單內，而且本次新增或改到的巨集沒有落日模型（qwen 系列）。
+`Ready` 的條件：沒有 error、沒有與草案＋審閱修改紀錄的結構差異、沒有禁用函數、模型都在清單內、本次新增或改到的巨集沒有落日模型（qwen 系列），而且非病人表單的設定與草案一致、沒有 `E_NOPATIENT_*`。

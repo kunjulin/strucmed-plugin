@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.16.1）
+# strucmed-mcp（v2.18.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -17,14 +17,14 @@ MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.packag
 ```bash
 node mcp/strucmed-mcp/src/server.mjs
 ```
-環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用；沒設時依序找 `<workspace>/strucmed/web`、`<workspace>/repo/strucmed/web`、`<workspace>/../strucmed/web`）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
+環境變數 `STRUCMED_WORKSPACE` 指定工作目錄（預設為執行時的目錄；Copilot CLI、Codex 以 plugin 根目錄啟動時改用 `PWD`，即啟動 CLI 的目錄；沒有可用的 `PWD`（Codex app、Windows）時用 `~/Documents/StrucMed`，不寫進 plugin 目錄）；未展開的 `${…}` 字面值一律視為未設定；`STRUCMED_FLAGS` 指定 feature-flags.json（預設 plugin 根目錄）；`STRUCMED_PREVIEW_IDLE_MS` 預覽伺服器閒置自動關的毫秒數（預設 120 分鐘，`0`＝不自動關）；`STRUCMED_RUNTIME_WEB` 指定平台 `web/` 本機副本（HTML 預覽用）；沒設時依序找本機快取 `~/.strucmed/runtime-web.json`（`scripts/check-env.mjs` 解析出可用路徑時寫入，`STRUCMED_RUNTIME_WEB_CACHE` 可改路徑、`none` 停用）、工作目錄與它上層最多 4 層的 `strucmed/web` 與 `repo/strucmed/web`、以及 HOME 底下常見的 checkout 位置（`repo`、`source/repos`、`src`、`git`、`projects`、`Documents/StrucMed/repo`、`Documents/StrucMed`）。搭配 skill：`skills/strucmed-form/SKILL.md`（入口）。
 
 ## HTTP 模式（伺服器端 agent 平台）
 預設是 stdio（上方 `node src/server.mjs`，由 Claude Code 等本機工具以子行程啟動）。設定 `STRUCMED_HTTP_PORT` 後改以 **Streamable HTTP** 提供同一組 tool：`POST <path>` 收一則 JSON-RPC 請求（或批次）、回一則 JSON；只有通知時回 202；無 session、無 GET 串流（GET／DELETE 回 405）。給跑在伺服器上、只能連 HTTP MCP 的 agent 平台（例如 MaiAgent 的 MCP 工具）使用。
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.16.1 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.18.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -142,6 +142,7 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `dictionary_suggest` | 字典助手：依欄位事實從本機索引排出候選字典（名稱、說明與補述命中、型別、單位、選項、層級、使用表單數），附 `confidence`（high 可自動選入計畫）、`reasons`（含型別或單位不一致時為什麼降為 low）與引用方式 `cite`（綁定 id、`memo.llm`、`memo.calx`、`A<itemid>`）；預設 5 筆、memo 只回 meaning，`full_memo:true` 回完整補述；`include_other` 列出他科字典 |
 | `dictionary_memo_check` | 字典助手：檢查補述草稿（11 個欄位、Big5、FHIR、1800 字、疑似個資），帶 `dic_id` 先與既有補述合併，帶 `draft_id`＋`itemid` 比對控制項型別、單位、範圍、選項，提示缺的角度；只帶 `draft_id`＋`itemid` 時檢查 draft 內的補述；存不下的字元回 `W_NON_BIG5` 附替代建議 |
 | `dictionary_create` | 規劃新字典（不寫入）；`comment`＝desc、`memo`＝補述，建立時寫進字典 JSON（`form_add_control`／`form_update_control` 的 `dictionary.comment`／`dictionary.memo` 相同） |
+| `form_build` | **批次建置**：一次吃整份結構（`create` 或 `draft_id`、`areas`＋每個區塊的 `controls`、`updates`），內部依序呼叫 `form_create`／`form_add_area`／`form_add_control`，再第二輪回填 `formula`／`action_script`（與 embed 的 `outputs`），最後跑 `form_validate`。結果、警告與錯誤碼與逐筆呼叫完全相同（未知鍵仍回 `E_UNKNOWN_KEY`，而且在動筆之前就檢查完）。參照用穩定 ID：區塊／控制項可給 `id`（例 `A1`、`C3`），在 `reference`／`action_id`／`fur_action_id`／`further`／`formula`／`hisquery`／`action_script` 與 embed 的 `inputs`／`outputs` 內寫 `{C3}`，回傳 `mapping`。中途失敗時回原本那個 tool 的錯誤碼，`details.build` 寫出 `failed_at`、`built`、`pending_updates`（可原樣再呼叫）與 `next`，draft 保留 |
 | `form_create` / `form_search` / `form_delete` | 本機 draft 管理（刪除只刪本機 draft）；`form_create` 的名稱、捷徑、作業別、Info、`folder_type` 會寫入套件 v2；重建時帶 `from_draft_id`，舊 draft 的待新建字典（desc、memo、fhir）與既有綁定依名稱帶過來 |
 | `form_import` | **v1**：載入既有表單（套件 v2 `.htm`／`.package.json`、舊版 `.htm`、`.json`；`source_path` 或 `source_text` 擇一）為新 draft；所有區塊、計算式、巨集、JS 原封保留；輸出為新表單（不沿用 templateID，捷徑與作業別預設不沿用） |
 | `form_update_meta` / `form_update_control` | **v1**：修改名稱、捷徑、作業別、Info；修改控制項說明文字（頂層 `label_text`）、預設值、必填、選項、字典、單位（`changes.unit`，只存 draft，優先於說明文字）。`changes` 的未知鍵回 `E_UNKNOWN_KEY`，什麼都不改 |
@@ -152,12 +153,16 @@ token 過期（401）時自動以 refresh token（`POST api/v2/auth/refresh`）�
 | `form_add_control` | textbox、numberbox、textarea、calendar、selection、combobox、radiobutton、checkbox、submenu、label（defaultValue/Reference）；`after_itemid` 插在同一區塊或同一格的指定控制項之後；`control` 的未知鍵回 `E_UNKNOWN_KEY`；formula 型 label 可先留空（`form_validate` 回 `E_FORMULA_EMPTY`）；帶 `dictionary.memo` 時自動檢查補述；`attachbox`（附件容器，flag `attachBox` 預設關）：`datavalue` 是提示文字，`attach_kinds`（image／pdf／sheet／text／audio）、`attach_max`（1–30）、`attach_pages`（1–100）；內容不存檔，不能綁字典、必填或放動態表格 |
 | `form_move_control` | 搬控制項（連同說明文字與同一行的後綴文字）到別的區塊、格子或位置，itemid 不變、參照不受影響；`after_itemid` 0＝最前面；搬進動態表格的限制同 `form_add_control` |
 | `form_validate` | 遞迴檢查巢狀結構：itemid 重複、參照（further、reference、公式與巨集中的 A<n>）、dicid 存在性、區塊權限、疑似個資；**依修改類別分級**：本次改到的面向為 error，原表單既有問題為 warning；`W_DICT_DUP_WRITE`：同一字典被兩個以上 tohis／puthis 欄位寫入（存檔只留第一個有值的欄位，不阻擋） |
-| `form_preview` | tree / markdown；html 是本機離線預覽兼審閱模式（下節），另接受 `applied_seq`、`formulas`、`formulas_from_review`，回 `url`、`open`、`runtime_web`、`meta_file`、`review_dir` |
+| `form_preview` | tree / markdown；html 是本機離線預覽兼審閱模式（下節），另接受 `applied_seq`、`formulas`、`formulas_from_review`，回 `url`、`open`、`runtime_web`（依序取 `STRUCMED_RUNTIME_WEB` → 本機快取 `~/.strucmed/runtime-web.json` → 目錄搜尋；找不到時 `notes` 直接給該平台的設定指令）、`meta_file`、`review_dir` |
+| `runtime_status` | **（唯讀）** HTML 預覽用的 runtime 副本狀態：來源（`env`／`cache`／`search`／`fetched`）、版本戳記、抓來那份的雜湊驗證結果，以及（站台連得到時）站台目前的版本戳記與是否較新（`W_RUNTIME_STALE`）。結果寫進 `~/.strucmed/runtime-drift.json`，`form_preview` 只讀它（自己不連外）。`check_site: false` 完全不連外 |
+| `runtime_fetch` | **（兩段式，flag `runtimeFetch`）** 從站台抓平台前端 `web/` 副本到 `~/.strucmed/runtime`。第一次只回 plan（站台、網址、版本戳記、檔案數、目標目錄），第二次帶 `confirm_token` 才連外。只抓 https 且與站台同源、在站台路徑底下的網址（`http` 只放行 `127.0.0.1`／`localhost` 測試），**不碰第三方 CDN**；必要檔案（`TempHtml.html` 與它直接引用的 js／css）少一個就整批失敗，先寫暫存目錄再換過去。寫 `.strucmed-runtime.json`（來源、時間、版本戳記、每檔 SHA-256）。`refetch: true` 重抓 |
 | `form_review_read` | 讀回預覽頁送出的意見（離線，唯讀），見下節 |
 | `dictionary_plan_export` / `dictionary_plan_import` | 字典 CSV（離線），見下節 |
 | `form_export` | 兩段式輸出 `.htm`（舊版 tempdata＋範本套件 v2）／`.package.json`（範本套件 v2）／`.manifest.md` |
 
 `form_create`、`form_update_meta` 另接受 `his_text_keys`（HIS 接收端要的文字鍵，每個 ≤ 40 字、英數與中文）：存在 `draft.meta.hisTextKeys`，不寫進表單 JSON 與 `.htm`；`form_validate` 以 `W_HIS_TEXT_KEYS` 比對頁籤名稱與 label 文字中的 `[鍵:]`（`missing`、`case_mismatch`）。
+
+`form_create`、`form_update_meta` 的 `options`（表單選項：`f_chtno`、`f_opdno`、`f_day`、`histext`、`hide_assist`、`hide_preset`、`hide_prev_icon`、`no_patient`）：`form_update_meta` 只改有帶的鍵，改版 draft 直接改來源的 iot 選項。`no_patient: true`＝**非病人表單**（iot `f_nopatient: true`；教案、會議紀錄等與病人無關的表單）：struNote 不要求病歷號，平台以保留代碼（預設 `APP-NP`）開啟；預設一併 `f_chtno: false`、`f_opdno: false`、`hide_prev_icon: true`（明確指定時以指定值為準）；匯出、匯入、改版、上架都保留；一般表單不寫出 `f_nopatient`。`form_validate` 對非病人表單回 `no_patient: true` 與 `E_NOPATIENT_HISQUERY`、`E_NOPATIENT_LOOKUPDW`、`E_NOPATIENT_DICT_READ`、`E_NOPATIENT_CHTNO_FUNC`、`E_NOPATIENT_EMBED_CHTNO`，以及 `W_NOPATIENT_*`（`references/FormDesignRules.md`〈非病人表單〉）；`form_export`／`online_template_create`／`online_template_update` 的 plan 帶 `no_patient` 說明，manifest 多一節「## 非病人表單」。
 
 ### 預覽審閱與字典 CSV（docs/15）
 - **`form_preview(format:"html")`** 多寫 `.strucmed/preview/<draft_id>.meta.json`（`fields` 是 `form_fields` 原樣、`formulas` 是計算式與試算、`his_text_keys`、`histext`、`areas`、`applied_seq`、`pending_dictionaries`）。`applied_seq` 與 `formulas` 沒帶時沿用上一份（計算式沒變的試算才沿用），已套用的意見不會變回待處理。
@@ -187,12 +192,14 @@ cd mcp/strucmed-mcp && npm test
 - `test/formula-explain.test.mjs`：`formula_check` 的標籤化公式（`labeled`、`ref_labels`）與試算（`samples`）：運算子優先順序、百分比、常用函數、缺值與不支援時回報不猜、BMI 身高體重對調回 `E_FORMULA_SAMPLE_MISMATCH`、進位函數與 MOD 和 Calx 2.2.8 一致（BMI 160／80 → 31.2、只差最後一位的提示）、固定表格的說明格。
 - `test/e2e.test.mjs`：以真實 stdio 協定走完 create → export 兩段式流程，驗證套件 v2 與 `.htm` 內嵌套件一致，並以編輯器匯入器相同邏輯擷取 `var tempdata`。
 - `test/v1.test.mjs`：改版流程（合成的既有表單 fixture）：三種來源格式、未修改時逐位元組保真、新增／修改／移除與參照保護、嚴重度分級、`derivedFrom`。
-- `test/online.test.mjs`：線上 tool（含 `online_template_get` 摘要的 `js_chars`／`js_marker`），以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次、倉儲失敗後的 `next`；`online_folder_list` 的 `type` 預設 `usr`；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
+- `test/online.test.mjs`：線上 tool（含 `online_template_get` 摘要的 `js_chars`／`js_marker`），以 127.0.0.1 上的假 V2 伺服器（不連真站）：me／health／features／llm-config（gateway token 不外洩）／dictionaries／feature flags；範本新建（兩段式、token 綁資料夾、503／502 pending 對應、取回確認）、`E_DICT_PENDING`、更新（只允許改版 draft、If-Match 來自 ETag、409→`E_CONFLICT`）、版本、字典新增（created／reused／`E_DELETED_EXISTS` 不自動 force／force）、批次、倉儲失敗後的 `next`；`online_folder_list` 的 `type` 預設 `usr`；未設定時隱藏與 `E_ONLINE_DISABLED`、網址限制、登入本文、bearer、401→refresh→重試、refresh 失敗、轉址不跟隨、查詢必須帶病歷號與欄位過濾、存檔兩段式確認與 `iot.user`、登出；寫入確認頁（第二段只回 pending、確認一次只能用一次、取消回 `E_REJECTED`、nonce／Host／Origin 檢查；flag `browserApprove: false` 時不開頁、直接放行，plan 帶 `W_NO_BROWSER_APPROVE`，兩段式與一次性不變）；全程檢查密碼與 token 未出現在 stdout、stderr 與工作目錄。
 - `test/llmgw.test.mjs`：LlmGateway tool，以 127.0.0.1 上的假閘道：未設定時隱藏與 `E_LLMGW_DISABLED`、網址限制、bearer、快取寫入與別名對應、401／轉址／空清單、`formula_check` 對照白名單（不在清單、deprecated、視覺）、`form_validate` 的 `W_LLM_WHITELIST_STALE`、chat_test（flag、白名單、個資、標頭、思考模式、429）；金鑰不出現在 stdout、stderr、工作目錄。
 - `test/fmapi.test.mjs`：FMapi tool，以假 FMapi：未設定時隱藏、errorlog 狀態、相關站台過濾與 `W_SITE_DOWN`、uptime 被拒／停用只回 warnings；金鑰不外洩。
-- `test/review.test.mjs`：預覽審閱：serve 的 `/__review`（Host、Origin、Content-Type、大小、draft_id、seq 遞增、latest 覆寫）、`/__preview` 注入 meta、meta 內容與沿用、`form_review_read`（`suggested_calls` 保留連動、`memo_items`、`W_REVIEW_STALE`、`W_REVIEW_OPTION_REF`）、字典 CSV 往返（逗號、引號、換行、Excel 保護、有無 BOM、action 五種、`id` 被改）、`asr` 分隔符與 `W_ASR_DELIMITER`、`W_HIS_TEXT_KEYS`。
+- `test/review.test.mjs`：預覽審閱（另含三個硬化項：預覽網址的一次性 nonce 與閒置自動關的設定寫在 `server.json`、疑似病歷號／身分證字號不寫進 review JSON（伺服器端是最後一道，回 `phi_dropped`）、`/__harness/phi.js` 與 `src/phi.mjs` 同一組樣式、預覽頁橫幅寫出 runtime 版本與來源）：serve 的 `/__review`（Host、Origin、Content-Type、大小、draft_id、seq 遞增、latest 覆寫）、`/__preview` 注入 meta、meta 內容與沿用、`form_review_read`（`suggested_calls` 保留連動、`memo_items`、`W_REVIEW_STALE`、`W_REVIEW_OPTION_REF`）、字典 CSV 往返（逗號、引號、換行、Excel 保護、有無 BOM、action 五種、`id` 被改）、`asr` 分隔符與 `W_ASR_DELIMITER`、`W_HIS_TEXT_KEYS`。
 - `test/no-silent.test.mjs`：不靜默：`E_UNKNOWN_KEY`、`additionalProperties:false`、`changes.unit` 與 `unit_source`、`W_DICT_DUP_WRITE`、M14 小修、線上寫入工具的描述開頭。
-- `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、別版 plugin 的 harness 不沿用（`version`、`serve`、`W_PREVIEW_OTHER_HARNESS`）、工作目錄固定、`runtime_web` 的尋找順序。
+- `test/preview-env.test.mjs`：預覽環境：`server.json`、埠被占用時自動換埠、別版 plugin 的 harness 不沿用（`version`、`serve`、`W_PREVIEW_OTHER_HARNESS`）、工作目錄固定、`runtime_web` 的尋找順序（工作目錄往上數層＋HOME 常見位置）、本機快取（`check-env` 寫、換工作目錄仍找得到、`none` 停用）、找不到時的訊息含平台對應的設定指令與「要重開 AI 工具」。
+- `test/runtime.test.mjs`：runtime 副本從站台抓（假站台，不連真站）：`runtime_fetch` 兩段式（第一次不寫入、錯 token 不放行）、CSS 內 `url()` 的字型一起抓、manifest 的雜湊與來源、`findRuntimeWeb` 用它（`source: "fetched"`）、快取被改過或缺檔時 `form_preview` 拒絕開（`E_RUNTIME_HASH`）、必要檔案抓不到整批失敗且舊快取不動、`runtime_status` 的 `W_RUNTIME_STALE` 與不自動覆蓋、`check_site: false` 不連外、http 非本機主機不視為站台（擋掉第三方 CDN）、flag `runtimeFetch`、`STRUCMED_RUNTIME_WEB_CACHE=none`；以及 `scripts/sbom.mjs` 的三份 SBOM（plugin 零第三方執行相依、form-app 每筆 `resolved` 一個元件、runtime 用 manifest、沒有快取時是空的一份）。
+- `test/build.test.mjs`：`form_build` 批次建置：一次建完整張表單（mapping、第二輪回填、`form_validate`）、結果與逐筆呼叫的 draft 與警告一字不差、未知鍵在動筆前回 `E_UNKNOWN_KEY`、解不開的 `{C9}` 參照回 `E_INVALID_INPUT`、`create`／`draft_id` 擇一與續建、中途失敗沿用原錯誤碼並在 `details.build` 寫出建到哪裡與 `pending_updates`、embed 的 `outputs` 自動排到第二輪、`skip_validate`。
 - `test/v392.test.mjs`：3.9.1 實跑的發現：`form_update_area(titles)` 改名、增減、調換頁籤與拒絕刪除有欄位的頁籤、可見標題行被搬動後仍找得到（`W_BEFORE_TITLE`）、改名或刪頁籤後 `W_HIS_TEXT_KEYS` 指出頁籤並給改好的清單（3.9.3）、`dictionary_suggest` 預設 5 筆與 `full_memo`、型別不一致的降級理由。
 - `test/script.test.mjs`：表單 JS 白名單片段（flag `formScript`）：flag 關不列出、S1 style 的主題與規則渲染成一個 `<style>`（控制項層級加 `!important`）、CSS 屬性與值白名單、S4 guard 的事件綁定與條件 lint、訊息字元限制、禁用 token 掃描（字串與註解不算）、`form_remove_control`／`form_remove_area` 擋片段參照、flag 事後關閉時驗證與匯出拒絕、匯出計畫與 manifest 列出渲染後的 JS、改版 draft 原 JS 在前片段在後；D2：S2 derive（目標不能是 label／自己／動態表格）、S3 lookup（`sm_<name>`、`CUSTOMFUNC` 只放行片段定義的名稱、未定義可延後 `E_CUSTOMFUNC_UNDEFINED`、名稱重複）、S5 required（目標須 required）、`W_CUSTOM_JS_FINDINGS`、`verifyScriptBlock` 雜湊比對、`hide_prev_icon`；D4：flag `formScriptAdvanced` 關閉時 autorun／table-rows 拒絕、開啟後渲染（`performActionByID`、`TableRowAdd`＋預填）、事後關閉驗證與匯出拒絕。
 - `test/embed.test.mjs`：嵌入頁面（flag `embedArea`）：平台 `tests/web-js/embed-block.test.mjs` 的案例逐條搬來（主機範圍、https、params 個資、height、buildUrl、outputs 目標、fill 與重疊、結果值），12 個 `E_EMBED_*` 訊息與平台相同（`STRUCMED_RUNTIME_WEB` 有 `js/embed-block.js` 時直接載入平台檔比對）；平台與 1.10.9 DLL 共用的主機案例（`tests/fixtures/internal-hosts.json`，平台倉儲在旁邊時直接讀那份比對）；工具清單的 `type` 依 flag 才有 `embed`；flag 關時 `form_add_area` 拒絕、`OPENPANEL` 禁用；`form_add_area`／`form_update_area` 當下拒絕與延後的錯誤、GetData key 順序、預覽摘要、`W_EMBED_DATAFLOW` 與 manifest「嵌入頁面資料流」、寫回欄位不能刪、flag 事後關閉；匯入含 embed 的表單原樣保留（原表單錯誤為 warning）；`OPENPANEL` 的字串字面值、主機、巨集專用與 `formula_check`。院內 IP 在執行時組字串。

@@ -39,3 +39,4 @@
 - `W_FORMULA_FN_NEEDS_DEPLOY`：TEXT、VALUE、MEDIAN 等函數要等平台 #25 部署後才可用。
 - `W_MACRO_SPLIT_NEEDS_DEPLOY`：巨集字串內的半形逗號或括號要等平台 #264（`TempHtml.js` 20261124b）部署到 HIS 端後才能正確切分。
 - `W_PATIENT_DATA_READ`：HIS 參照與 lookup 函數會在 HIS 端讀取病人資料。
+- `W_NOPATIENT_FORM`（非病人表單，`FormDesignRules.md`〈非病人表單〉）：struNote 不需病歷號、平台以保留代碼開啟；平台部署前的暫行做法與「不要用倉儲以病歷號查詢」。非病人表單不能用 label HIS 參照、`HISQUERY`、`LOOKUPDW`／`LOOKUPDEFAULTSETTING`／`LOOKUPIOT`、`G_CHTNO()`／`GETCHTNO()`（`E_NOPATIENT_*`）。

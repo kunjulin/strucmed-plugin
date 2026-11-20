@@ -5,8 +5,11 @@
 // hook 的 cwd 是 hooks.json 所在目錄，IDE 未開資料夾時 workspacePaths 是空的，所以計畫檔所在的工作目錄依序取：
 //   STRUCMED_WORKSPACE 環境變數 → cwd 下的 mcp_config.json → ~/.gemini/config/mcp_config.json 裡 strucmed 伺服器的 STRUCMED_WORKSPACE
 //   → MCP 的預設 ~/Documents/StrucMed（以 plugin 安裝時 MCP 沒有設定 STRUCMED_WORKSPACE，用的就是這裡；資料夾存在才採用）。
-// Antigravity 不載入 publish-form skill，通常沒有 G2 定稿檔：沒有計畫檔（或找不到工作目錄）時交給 MCP 2.3.0 起強制的
-// 瀏覽器寫入確認頁把關（回 ask）；有計畫檔但未核准、核准後被改過、或檢查出錯，仍然阻擋。讀不到輸入也阻擋。
+// Antigravity 不載入 publish-form skill，通常沒有 G2 定稿檔：沒有計畫檔（或找不到工作目錄）時回 ask，把關交給
+//   (a) MCP 的瀏覽器寫入確認頁（flag browserApprove 開著時，預設），以及
+//   (b) Antigravity 自己的「要不要允許這次 tool 呼叫」提示——flag browserApprove 關閉時只剩這一道，
+//       所以 reason 會寫明；該提示也設成自動允許時，就沒有任何人在 AI 之外看過 plan（references/SecurityInvariants.md 第 2 條）。
+// 有計畫檔但未核准、核准後被改過、或檢查出錯，仍然阻擋。讀不到輸入也阻擋。
 'use strict';
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,6 +17,12 @@ const path = require('node:path');
 const { GATED, checkGate } = require('../gate-check.js');
 
 const unset = v => { const s = String(v || '').trim(); return !s || s.startsWith('${'); };
+
+// feature flag browserApprove（與 mcp/strucmed-mcp/src/flags.mjs 同一份檔案；讀不到就當預設 true）
+function browserApprove() {
+  const f = unset(process.env.STRUCMED_FLAGS) ? path.resolve(__dirname, '..', '..', 'feature-flags.json') : path.resolve(process.env.STRUCMED_FLAGS.trim());
+  try { return JSON.parse(fs.readFileSync(f, 'utf8')).browserApprove !== false; } catch { return true; }
+}
 
 function workspaceFromConfig(file) {
   let cfg;
@@ -38,7 +47,8 @@ function resolveWorkspace() {
 }
 
 function decide(raw) {
-  const input = JSON.parse(raw || '{}');
+  if (!String(raw || '').trim()) throw new Error('沒有收到輸入');   // 前一個 node 失敗後重跑時 stdin 已被讀走：阻擋，不放行
+  const input = JSON.parse(raw);
   const call = input.toolCall || {};
   if (call.name !== 'call_mcp_tool') return { decision: 'ask' };
   const a = call.args || {};
@@ -46,7 +56,9 @@ function decide(raw) {
   if (!GATED.test(tool)) return { decision: 'ask' };
   const args = typeof a.Arguments === 'string' ? JSON.parse(a.Arguments || '{}') : (a.Arguments || {});
   if (!args.confirm_token) return { decision: 'ask' };                // 第一段：只取 plan
-  const browser = { decision: 'ask', reason: 'strucmed：沒有 G2 定稿檔，寫入要由使用者在 MCP 開啟的瀏覽器確認頁按「確認寫入」' };
+  const browser = { decision: 'ask', reason: browserApprove()
+    ? 'strucmed：沒有 G2 定稿檔，寫入要由使用者在 MCP 開啟的瀏覽器確認頁按「確認寫入」'
+    : 'strucmed：沒有 G2 定稿檔，且 feature flag browserApprove 已關閉（不會開瀏覽器確認頁）。這個允許提示是唯一在 AI 之外的把關，請自己核對要寫入什麼；自動允許的話就沒有人看過這份 plan' };
   const workspace = resolveWorkspace();
   if (!workspace) return browser;
   const r = checkGate({ tool, args, workspace });

@@ -55,6 +55,7 @@
 | （更新）線上自來源後的修改 | <diff.online_since_source> |
 | 本文大小 | <body_chars> 字元 |
 | 表單 JS | <script.snippets 的清單，或「無」>（有片段時另有「### 表單 JS」段放 rendered 原樣） |
+| 非病人表單（plan 有 `no_patient` 時才有這一列） | 非病人表單：struNote 不需病歷號，平台以保留代碼開啟 |
 
 ### 警告
 - W_AI_DATAFLOW：…
@@ -84,7 +85,12 @@
 - 第二次呼叫會在瀏覽器開啟「寫入確認頁」（MCP 2.3.0 起），呼叫內最多等約 2 分鐘。**同一個 draft 已取得計畫的寫入列在同一頁**（MCP 2.14.0，回傳 `bundled` 是頁上的項數），使用者按一次就涵蓋全部，其餘幾項的第二次呼叫直接寫入、不再開頁。回 `pending`（附 `approve_url`）時**先不要問使用者**：直接帶同一個 `confirm_token` 再呼叫一次（再等約 2 分鐘）；仍是 `pending` 才請使用者在頁面核對站台、登入者、資料夾與名稱後按「確認寫入」，按完回到對話說一聲。**不要替使用者確認、不要自己開啟或操作確認頁**；回 `E_REJECTED`（使用者按取消，頁上全部都不寫）就停止，需要時重新取得計畫。
 - **確認頁被關掉**：把回傳的 `approve_url` 給使用者重開（同一份確認，仍然由使用者按）。手上沒有連結時帶同一個 `confirm_token` 再呼叫一次，會回同一個 `approve_url`，但不會自動重開瀏覽器。回 `E_CONFIRM_MISMATCH`（過期、已使用或 MCP 重啟過）就重新第一次呼叫。
 - **權限擋下第一次呼叫**：Claude Code 的 auto mode 權限分類器可能把「只產生 plan」的呼叫當成修改共用資源擋下，這不是 plugin 的 hook。不要繞過，請使用者允許後重試；要先排除見 README〈減少核准提示〉。
-- 對話中的 G2 核准與瀏覽器確認頁是兩件事：前者是 skill 流程（Claude Code、Codex），後者由 MCP 強制、任何 client 都有；兩者都通過才寫入。
+- 對話中的 G2 核准與瀏覽器確認頁是兩件事：前者是 skill 流程（Claude Code、Codex），後者由 MCP 在 flag `browserApprove` 開著（預設）時強制、任何 client 都有；兩者都通過才寫入。
+- **flag `browserApprove: false`**（遠端或手機操作用；`feature-flags.json`）：第二次呼叫**不開**確認頁，直接寫入，不會回 `pending`。兩段式 `confirm_token` 與 G2 定稿核准完全不變。這時：
+  - plan 一定帶 `W_NO_BROWSER_APPROVE`，**原樣列進定稿檔的「### 警告」**，並在對話中口頭說一次「這次寫入不會開瀏覽器確認頁」。
+  - 在 AI 之外看過 plan 的人只剩「AI 工具自己的『要不要允許這次 tool 呼叫』提示」（Claude Code、Codex、Antigravity 都有）。該提示也設成自動允許時，**沒有任何人在 AI 之外看過 plan**；請使用者自己決定是否接受（`SecurityInvariants.md` 第 2 條）。
+  - 不要改用 `AskUserQuestion` 當替代閘門：Codex 與 Antigravity 沒有這個 tool。
+  - `STRUCMED_NO_BROWSER=1` 不是這一項：它只是不自動開瀏覽器，那一頁還是要有人去開。
 - `confirm_token` 10 分鐘過期：G2 讀得久時是常態。重新做第一次呼叫取新 token；plan 與定稿檔相同就直接用，定稿檔不用改；不同才 `Revision` +1 重新呈現。
 - 成功：記下 `template_id`、`rev`、`folder`；draft 內也存了 `published`。
 - 錯誤對照：
@@ -111,4 +117,5 @@
 - `online_template_get(template_id, save:true)`（只回摘要）：確認 `summary` 的名稱、捷徑、作業別與控制項數與定稿相同（伺服器的 `sha256` 是 head 雜湊，與套件 `integrity` 不同，不能直接比對）。
 - 更新時另跑 `online_template_versions` 回報新 rev 與 `current`。
 - 交付：templateID、資料夾（格式同 §3 的表）、rev、是否已上架（捷徑＋作業別）、W_AI_DATAFLOW、W_RENUMBER_MACRO（在編輯器開啟後不要按「重新編號」）、人工確認清單（編輯器開啟檢查人形圖示與字典角色；新字典角色一律 tohis）。
+- 非病人表單（plan 有 `no_patient`、`form_validate` 回 `W_NOPATIENT_FORM`）必列三點：struNote 不需病歷號、平台以保留代碼開啟；**平台尚未部署前** struNote 仍會要求病歷號，暫行做法是輸入固定代碼（預設 `APP-NP`，以平台公告為準），不要輸入真實病歷號；**不要用倉儲以病歷號查詢這類紀錄**。離線輸出時 manifest「## 非病人表單」已寫同樣內容。
 - 字典：新建與補述的字典（id 前 8 碼）；有體系升級建議時列出字典名稱、id 前 8 碼與理由，註明「**請轉給體系字典管理者在字典頁升級**；升級不改 id，這次上架的表單不用改」。FHIR 對應中標「待人工確認」的代碼列出請使用者查核。

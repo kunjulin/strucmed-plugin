@@ -157,7 +157,11 @@ test('serve：/__preview 注入 meta 並跳脫 <，載入 review-mode.js', async
   const f = bmi();
   t.form_update_meta({ draft_id: f.draft_id, name: '</script><b>x' });
   t.form_preview({ draft_id: f.draft_id, format: 'html' });
-  const page = await raw('GET', `/__preview/${f.draft_id}`);
+  // 預覽頁要帶 serve.mjs 的一次性 nonce（server.json）
+  const nonce = JSON.parse(fs.readFileSync(path.join(ws, '.strucmed', 'preview', 'server.json'), 'utf8')).nonce;
+  assert.equal((await raw('GET', `/__preview/${f.draft_id}`)).status, 404, '沒有 nonce 不給頁面');
+  assert.equal((await raw('GET', `/__preview/${f.draft_id}?n=${'0'.repeat(32)}`)).status, 404, 'nonce 不符也不給');
+  const page = await raw('GET', `/__preview/${f.draft_id}?n=${nonce}`);
   assert.equal(page.status, 200);
   assert.match(page.text, /window\.__reviewMeta = \{"v":1/);
   assert.ok(!page.text.includes('</script><b>x'));
@@ -473,4 +477,60 @@ test('dictionary_plan_export：HTTP 模式回 csv_text', async () => {
   const r = requestContext.run({ path: '/mcp' }, () => t.dictionary_plan_export({ draft_id: f.draft_id }));
   assert.ok(r.csv_text.startsWith('﻿action,'));
   assert.equal(r.rows, 2);
+});
+
+// ── 小硬化項（第 7、8 項一起做的三個）────────────────────────────────────────
+test('硬化：預覽網址的一次性 nonce 寫在 server.json，閒置自動關的設定也在裡面', async () => {
+  const info = JSON.parse(fs.readFileSync(path.join(ws, '.strucmed', 'preview', 'server.json'), 'utf8'));
+  assert.match(info.nonce, /^[0-9a-f]{32}$/);
+  assert.equal(typeof info.idle_ms, 'number');
+  assert.ok(info.idle_ms > 0, '預設會自動關（STRUCMED_PREVIEW_IDLE_MS 可調，0 關掉這個行為）');
+  // /__health 不需要 nonce（preview.mjs 要靠它找伺服器）
+  assert.equal((await raw('GET', '/__health')).status, 200);
+});
+
+test('硬化：疑似病歷號／身分證字號不寫進 review JSON（伺服器端是最後一道）', async () => {
+  const f = bmi();
+  const id = f.draft_id;
+  const body = {
+    v: 1, draft_id: id, status: 'revise',
+    values: { 1: '170', 2: '12345678', 3: 'A123456789', 4: '60' },
+    text_output: { Report: '身高 170 cm', Impression: '病歷號：1234567 複查' },
+    items: [{ kind: 'comment', text: '這位 A223456789 的分級要改' }, { kind: 'comment', text: '分級切點改成 24' }]
+  };
+  const r = (await raw('POST', `/__review/${id}`, { headers: JSON_CT, body: JSON.stringify(body) })).json();
+  assert.equal(r.ok, true);
+  assert.ok(r.phi_dropped.length >= 4, '回報哪幾個被擋掉');
+  const saved = JSON.parse(fs.readFileSync(path.join(ws, '.strucmed', 'review', id, 'latest.json'), 'utf8'));
+  assert.deepEqual(Object.keys(saved.values).sort(), ['1', '4'], '病歷號與身分證字號的值沒有寫入');
+  assert.equal(saved.values[1], '170');
+  assert.equal(saved.text_output.Report, '身高 170 cm');
+  assert.equal(saved.text_output.Impression, undefined, '帶「病歷號：」的文字輸出不寫入');
+  assert.equal(saved.items[0].text, '（已移除：疑似個資，未寫入）');
+  assert.equal(saved.items[1].text, '分級切點改成 24', '正常的意見照常寫入');
+  assert.ok(saved.phi_dropped.every(x => x.where && x.reason && x.label));
+  assert.ok(!fs.readFileSync(path.join(ws, '.strucmed', 'review', id, 'latest.json'), 'utf8').includes('A123456789'));
+});
+
+test('硬化：/__harness/phi.js 與 MCP 的 phi.mjs 是同一組樣式；review-mode.js 送出前先用它過濾', async () => {
+  const js = (await raw('GET', '/__harness/phi.js')).text;
+  const phi = await import('../src/phi.mjs');
+  assert.ok(js.includes(phi.TW_ID.toString()), '樣式由 phi.mjs 產生，不在瀏覽器端另寫一套');
+  assert.ok(js.includes('window.__strucmedPhi'));
+  const rm = (await raw('GET', '/__harness/review-mode.js')).text;
+  assert.ok(rm.includes('__strucmedPhi'), 'review-mode.js 用同一份');
+  assert.ok(rm.includes('stripPhi(body)'), '送出前先過濾');
+  assert.deepEqual([phi.phiReason('A123456789'), phi.phiReason('1234567'), phi.phiReason('病歷號：1'), phi.phiReason('170')],
+    ['id_number', 'chart_number', 'labelled_phi', '']);
+});
+
+test('硬化：預覽頁橫幅寫出 runtime 版本與來源', async () => {
+  const f = bmi();
+  t.form_preview({ draft_id: f.draft_id, format: 'html' });
+  const nonce = JSON.parse(fs.readFileSync(path.join(ws, '.strucmed', 'preview', 'server.json'), 'utf8')).nonce;
+  const page = (await raw('GET', `/__preview/${f.draft_id}?n=${nonce}`)).text;
+  assert.match(page, /window\.__runtimeInfo=/);
+  assert.match(page, /sm-runtime-banner/);
+  assert.ok(page.includes('"source":"env"'), '這個測試用 STRUCMED_RUNTIME_WEB 指的副本');
+  assert.ok(page.indexOf('phi.js') < page.indexOf('review-mode.js'), 'phi.js 在 review-mode.js 之前載入');
 });

@@ -8,7 +8,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findRuntimeWeb } from '../src/runtime-web.mjs';
+import { findRuntimeWeb, saveRuntimeWeb, cacheFile, helpText } from '../src/runtime-web.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../../../scripts/preview.mjs');
@@ -26,6 +26,7 @@ before(async () => {
   web = runtime();
   process.env.STRUCMED_WORKSPACE = ws;
   process.env.STRUCMED_RUNTIME_WEB = web;
+  process.env.STRUCMED_RUNTIME_WEB_CACHE = 'none';   // 本機快取在這幾個測試裡停用：不讀也不寫開發者自己的 ~/.strucmed
   t = Object.fromEntries((await import('../src/tools.mjs')).TOOLS.map(x => [x.name, x.handler]));
 });
 after(() => {
@@ -56,13 +57,15 @@ test('M3／H1／H4：起始埠被舊版占用時改下一個埠，回一個 link
   assert.equal(r.json.ok, true, JSON.stringify(r.json));
   assert.notEqual(r.json.port, start);
   assert.match(r.json.server, /舊版 harness/);
-  assert.equal(r.json.link, `[開啟表單預覽](http://127.0.0.1:${r.json.port}/__preview/${id})`);
+  const n = serverInfo(ws).nonce;
+  assert.match(n, /^[0-9a-f]{32}$/, '預覽網址帶一次性 nonce');
+  assert.equal(r.json.link, `[開啟表單預覽](http://127.0.0.1:${r.json.port}/__preview/${id}?n=${n})`);
   assert.ok(!JSON.stringify(r.json).includes(`:${start}/`), '不再給第二個網址');
   const info = serverInfo(ws);
   pids.push(info.pid);
   assert.equal(info.port, r.json.port);
   assert.equal(info.workspace, ws);
-  assert.equal(t.form_preview({ draft_id: id, format: 'html' }).url, `http://127.0.0.1:${r.json.port}/__preview/${id}`);
+  assert.equal(t.form_preview({ draft_id: id, format: 'html' }).url, `http://127.0.0.1:${r.json.port}/__preview/${id}?n=${serverInfo(ws).nonce}`);
 
   // 再跑一次：沿用同一台，不多開
   const again = await node(SCRIPT, [id, String(start), '--workspace', ws]);
@@ -113,25 +116,59 @@ test('preview.mjs：draft 不在工作目錄時訊息寫出完整路徑；runtim
   assert.ok(miss.json.message.includes(empty));
   const none = await node(SCRIPT, ['d-0123456789ab', '--workspace', empty], { STRUCMED_RUNTIME_WEB: '${user_config.runtime_web}' });
   assert.equal(none.json.runtime_available, false);
-  assert.match(none.json.message, /strucmed\/web/);
+  // 訊息要能照著做：平台對應的設定指令＋要重開 AI 工具（不只列試過哪些路徑）
+  assert.match(none.json.message, process.platform === 'win32' ? /setx STRUCMED_RUNTIME_WEB/ : /export STRUCMED_RUNTIME_WEB/);
+  assert.match(none.json.message, /重新啟動 AI 工具/);
+  assert.ok(Array.isArray(none.json.tried) && none.json.tried.length > 3, '候選不只三個');
   fs.rmSync(empty, { recursive: true, force: true });
 });
 
-test('M6：runtime_web 依序找 <ws>/strucmed/web、<ws>/repo/strucmed/web、<ws>/../strucmed/web；未展開的 ${} 視為未設定', () => {
+test('M6：runtime_web 依序找 <ws>/strucmed/web、<ws>/repo/strucmed/web，再往上數層；未展開的 ${} 視為未設定', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-env-find-'));
   const root = path.join(base, 'repo');
+  const home = path.join(base, 'home');
   fs.mkdirSync(root);
+  fs.mkdirSync(home);
   const put = rel => { const d = path.join(base, rel); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'TempHtml.html'), ''); return d; };
-  const unset = { STRUCMED_RUNTIME_WEB: '${user_config.runtime_web}' };
+  const unset = { STRUCMED_RUNTIME_WEB: '${user_config.runtime_web}', STRUCMED_RUNTIME_WEB_CACHE: 'none', STRUCMED_HOME: home };
   assert.deepEqual([findRuntimeWeb(root, unset).available, findRuntimeWeb(root, unset).source], [false, 'none']);
-  assert.equal(findRuntimeWeb(root, unset).tried.length, 3);
+  assert.ok(findRuntimeWeb(root, unset).tried.length > 3, '候選不只三個：工作目錄往上數層＋HOME 底下常見的 checkout 位置');
   const up = put('strucmed/web');
   assert.equal(findRuntimeWeb(root, unset).path, up);
   const nested = put('repo/repo/strucmed/web');
   assert.equal(findRuntimeWeb(root, unset).path, nested);
   const direct = put('repo/strucmed/web');
-  assert.equal(findRuntimeWeb(root, {}).path, direct);
-  assert.deepEqual(findRuntimeWeb(root, { STRUCMED_RUNTIME_WEB: up }), { path: up, available: true, source: 'env', tried: [up] });
+  assert.equal(findRuntimeWeb(root, unset).path, direct);
+  const byEnv = findRuntimeWeb(root, { STRUCMED_RUNTIME_WEB: up, STRUCMED_RUNTIME_WEB_CACHE: 'none' });
+  assert.deepEqual([byEnv.path, byEnv.available, byEnv.source, byEnv.tried], [up, true, 'env', [up]]);
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
+test('F-01：解析出來的路徑寫回本機快取，換工作目錄也找得到（check-env 寫、findRuntimeWeb 讀）', async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-env-cache-'));
+  const home = path.join(base, 'home');
+  const near = path.join(base, 'near');                      // 有副本的工作目錄
+  const far = path.join(base, 'far', 'deep', 'elsewhere');   // 完全找不到副本的工作目錄
+  const copy = path.join(near, 'strucmed', 'web');
+  fs.mkdirSync(copy, { recursive: true });
+  fs.mkdirSync(far, { recursive: true });
+  fs.mkdirSync(home);
+  fs.writeFileSync(path.join(copy, 'TempHtml.html'), '');
+  const cache = path.join(base, 'cache', 'runtime-web.json');
+  const env = { STRUCMED_RUNTIME_WEB: '', STRUCMED_RUNTIME_WEB_CACHE: cache, STRUCMED_HOME: home, STRUCMED_SITE: 'offline' };
+
+  assert.equal(findRuntimeWeb(far, env).available, false, '一開始找不到');
+  const c = await node(CHECK, ['--workspace', near], env);
+  assert.equal(c.json.runtime_web.available, true);
+  assert.equal(c.json.runtime_web.cache_written, true, 'check-env 把路徑寫回快取');
+  assert.equal(fs.existsSync(cache), true);
+  const after = findRuntimeWeb(far, env);
+  assert.deepEqual([after.path, after.available, after.source], [copy, true, 'cache'], '換到別的工作目錄仍找得到');
+  assert.equal(saveRuntimeWeb(copy, env).written, false, '同一個路徑不重複寫');
+  assert.equal(saveRuntimeWeb(path.join(base, 'nope'), env).ok, false, '沒有 TempHtml.html 不寫入快取');
+  assert.equal(cacheFile({ STRUCMED_RUNTIME_WEB_CACHE: 'none' }), null, "'none' 停用快取");
+  assert.equal(findRuntimeWeb(far, { ...env, STRUCMED_RUNTIME_WEB_CACHE: 'none' }).available, false);
+  assert.match(helpText(findRuntimeWeb(far, env)), /TempHtml\.html/);
   fs.rmSync(base, { recursive: true, force: true });
 });
 
@@ -141,7 +178,8 @@ test('M6：form_preview 回實際的 runtime_web 並寫進 notes；check-env 用
   assert.equal(r.runtime_web, web);
   assert.ok(r.notes.some(n => n.includes(web)));
   const c = await node(CHECK, ['--workspace', ws], { STRUCMED_SITE: 'offline' });
-  assert.deepEqual(c.json.runtime_web, { path: web, available: true, note: '以 MCP form_preview 的 runtime_available 為準' });
+  assert.deepEqual([c.json.runtime_web.path, c.json.runtime_web.available, c.json.runtime_web.source, c.json.runtime_web.note],
+    [web, true, 'env', '以 MCP form_preview 的 runtime_available 為準']);
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'strucmed-env-chk-'));
   const root = path.join(base, 'repo');
   fs.mkdirSync(path.join(base, 'strucmed', 'web'), { recursive: true });
@@ -190,7 +228,7 @@ http.createServer((q, r) => { r.writeHead(200, { 'Content-Type': 'application/js
   const health = await (await fetch(`http://127.0.0.1:${r.json.port}/__health`)).json();
   assert.equal(health.version, own);
   assert.equal(health.serve, info.serve);
-  assert.equal(t.form_preview({ draft_id: id, format: 'html' }).url, `http://127.0.0.1:${r.json.port}/__preview/${id}`);
+  assert.equal(t.form_preview({ draft_id: id, format: 'html' }).url, `http://127.0.0.1:${r.json.port}/__preview/${id}?n=${serverInfo(ws).nonce}`);
 
   // 再跑一次：沿用這一版的，舊的照樣略過
   const again = await node(SCRIPT, [id, String(start), '--workspace', ws]);

@@ -1,16 +1,21 @@
 // 線上寫入的瀏覽器確認（MCP 2.3.0）：第二段呼叫（帶 confirm_token）時，在 127.0.0.1 開一頁顯示 plan，
-// 由使用者本人按「確認」才寫入。確認不經過 AI 工具與對話，所以不論 client 是否載入 skill、hooks 或處於自動執行模式，
-// 寫入都一定有人看過 plan。做法同 online_login：第一次開頁並等待，還沒按就回 pending，再呼叫一次接著等同一頁。
+// 由使用者本人按「確認」才寫入。確認不經過 AI 工具與對話，所以 flag browserApprove 開著（預設）時，不論 client 是否載入 skill、hooks
+// 或處於自動執行模式，寫入都一定有人看過 plan。做法同 online_login：第一次開頁並等待，還沒按就回 pending，再呼叫一次接著等同一頁。
 //   - plan 在第一段呼叫時記下（offer），第二段只顯示記下的那份，與 confirm_token 綁同一個 payload 雜湊
 //   - 每次確認只能用一次（consume）；按取消、逾時或 MCP 重啟都要重新取得計畫
 //   - 只聽 127.0.0.1；網址含一次性 nonce，POST 另檢查 Host／Origin；頁面內容一律跳脫，不載入外部資源
 //   - 合併確認（3.11.2）：offer 帶 group（draft_id）時，第一次開頁會把同 group、還沒開過頁的計畫一起列在同一頁，
 //     按一次「確認寫入」就涵蓋頁上每一份（各自仍綁自己的 payload 雜湊與 confirm_token）；之後才記下的計畫不在頁上，要另開一頁
 //   - 已確認但還沒寫入的計畫，以同一份 payload（同雜湊）重新 offer 時沿用確認並延長效期：token 過期重取計畫不必再按一次
+// feature flag browserApprove（預設 true）設成 false 時不開這一頁，第二段呼叫直接寫入：遠端或手機操作碰不到 127.0.0.1。
+// 兩段式 confirm_token 與 G2 核准不變，可攜的第二道把關改成 AI 工具自己的「要不要允許這次 tool 呼叫」提示
+// （Claude Code、Codex、Antigravity 都有；AskUserQuestion 只有 Claude Code 有，不能當唯一閘門）。
+// 關閉時每份 plan 都會多一條 W_NO_BROWSER_APPROVE，所以它一定出現在定稿檔的「### 警告」。
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { E, fail } from './errors.mjs';
+import { enabled } from './flags.mjs';
 
 const TTL_MS = 10 * 60_000;   // 與 confirm_token 相同
 const waitMs = () => { const n = Number(process.env.STRUCMED_APPROVE_WAIT_MS); return Number.isFinite(n) && n >= 0 ? Math.min(n, 300_000) : 120_000; };
@@ -25,9 +30,20 @@ function sweep() {
   for (const [k, o] of offers) if (now > o.expires) { offers.delete(k); closeFlow(o); }
 }
 
-// 第一段呼叫：記下要給使用者確認的 plan。group＝draft_id（同一次定稿的寫入），沒有就不合併
+// flag browserApprove：true（預設）＝第二段呼叫要在瀏覽器確認頁按「確認寫入」；false＝直接寫入
+export const browserApprove = () => enabled('browserApprove');
+export const NO_BROWSER_APPROVE = 'W_NO_BROWSER_APPROVE：feature flag browserApprove 已關閉，這次寫入不會開啟瀏覽器確認頁，' +
+  '帶 confirm_token 的第二次呼叫直接寫入。兩段式與 G2 定稿核准仍然有效，但在 AI 之外看過這份 plan 的人只剩「AI 工具自己的工具呼叫核准提示」；' +
+  '若該提示也設成自動允許，就沒有任何人在 AI 之外看過這份 plan。';
+
+// 第一段呼叫：記下要給使用者確認的 plan。group＝draft_id（同一次定稿的寫入），沒有就不合併。
+// flag browserApprove 關閉時把警告併進 plan.warnings（定稿檔的「### 警告」照 plan 寫，所以一定會出現）
 export function offer(action, hash, title, plan, group = '') {
   sweep();
+  if (!browserApprove() && plan && typeof plan === 'object') {
+    const w = Array.isArray(plan.warnings) ? plan.warnings : [];
+    if (!w.some(x => String(x).startsWith('W_NO_BROWSER_APPROVE'))) plan.warnings = [...w, NO_BROWSER_APPROVE];
+  }
   const k = key(action, hash);
   const old = offers.get(k);
   if (old && old.flow && old.flow.result === 'approved') { old.expires = Date.now() + TTL_MS; return; }   // 同內容已確認：沿用
@@ -151,6 +167,12 @@ export async function awaitApproval(action, hash) {
   const k = key(action, hash);
   const o = offers.get(k);
   if (!o) fail(E.CONFIRM_MISMATCH, '找不到這份計畫的確認（已過期、已使用，或 MCP 重新啟動過），請重新取得計畫');
+  // flag 關閉：不開確認頁，直接放行（計畫仍必須是第一段記下的那一份，且只能用一次）
+  if (!browserApprove()) {
+    offers.delete(k);
+    closeFlow(o);
+    return { approved: true, browser_approve: false, warnings: [NO_BROWSER_APPROVE] };
+  }
   let opened = null;
   if (!o.flow) {
     // 同一次定稿（同 group）還沒開過頁的計畫一起列在這一頁

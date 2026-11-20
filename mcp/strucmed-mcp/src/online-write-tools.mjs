@@ -18,6 +18,7 @@ import { walk, isControl } from './formtree.mjs';
 import { digestForm, diffDigest, describeDiff } from './formdiff.mjs';
 import * as dc from './dictcomment.mjs';
 import { scriptPlan } from './script-snippets.mjs';
+import { NOPATIENT_CODE } from './model.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 // 白名單片段（docs/13）：計畫原樣列出渲染後的 JS（閘門 G2 的審閱對象）
@@ -116,6 +117,7 @@ function planCommon(d, v, built, user, base) {
     publish_on_save: !!(t.shortcut && t.groups.length),
     areas: d.areas.length, controls: v.stats && v.stats.controls,
     dictionaries: built.pkg.dictionaries.map(x => ({ id: x.id, name: x.dicName })),
+    ...(v.no_patient && { no_patient: `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；平台尚未部署前 struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄` }),
     draft_sha256: draftHash(d), body_chars: built.size, warnings: v.warnings,
     ...scriptPlan(d)
   };
@@ -124,7 +126,8 @@ function planCommon(d, v, built, user, base) {
 // 寫入性質放在描述最前面（M15）：Claude Code auto mode 的分類器看描述判斷，第一次呼叫只產生計畫不該被當成寫入（F-42）
 const TWO_STEP = '（只產生計畫，不寫入）第一次呼叫不帶 confirm_token，只回 plan。（寫入，需 confirm_token 與瀏覽器確認）第二次帶 confirm_token 才寫入。';
 // 範本與字典都走同一段確認（approve.mjs）：等 STRUCMED_APPROVE_WAIT_MS（預設 2 分鐘），使用者按得快就在這次呼叫內完成，來不及才回 pending（F-44）
-const SECOND_CALL = '第二次呼叫會在瀏覽器開啟寫入確認頁，並在呼叫內等候最多約 2 分鐘：使用者按「確認寫入」就直接寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次（確認頁被關掉可重開 approve_url）。同一個 draft 已取得計畫、還沒開過頁的寫入（字典、補述、範本）會列在同一頁，按一次確認涵蓋全部，其餘幾項的第二次呼叫直接寫入；開頁後才取得的計畫另開一頁。已確認的內容重新取得計畫（例如 token 過期）時沿用確認。';
+const SECOND_CALL = '第二次呼叫會在瀏覽器開啟寫入確認頁，並在呼叫內等候最多約 2 分鐘：使用者按「確認寫入」就直接寫入；還沒按時回 pending（附 approve_url），請使用者在頁面確認後帶同一個 confirm_token 再呼叫一次（確認頁被關掉可重開 approve_url）。同一個 draft 已取得計畫、還沒開過頁的寫入（字典、補述、範本）會列在同一頁，按一次確認涵蓋全部，其餘幾項的第二次呼叫直接寫入；開頁後才取得的計畫另開一頁。已確認的內容重新取得計畫（例如 token 過期）時沿用確認。' +
+  'feature flag browserApprove 關閉時不開那一頁、第二次呼叫直接寫入（遠端或手機操作用），plan 會多一條 W_NO_BROWSER_APPROVE，把關改由 AI 工具自己的工具呼叫核准提示負責。';
 
 export const ONLINE_WRITE_TOOLS = [
   {

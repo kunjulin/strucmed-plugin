@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-11-20T13:16:41.554Z",
+  "plugin_version": "3.15.0",
+  "mcp_version": "2.18.0",
+  "files": [
+    {
+      "file": "sbom-plugin.json",
+      "components": 3
+    },
+    {
+      "file": "sbom-form-app.json",
+      "components": 533
+    },
+    {
+      "file": "sbom-runtime.json",
+      "components": 0
+    }
+  ],
+  "reading_order": [
+    "sbom-plugin.json：plugin 本身。資安審查要看的主要就是這一份（執行期零第三方相依）。",
+    "sbom-form-app.json：表單 APP 範本的產出物相依（員工自己 npm install 時才會裝），不是 plugin 的執行相依。",
+    "sbom-runtime.json：HTML 預覽用的平台前端快取（站台提供，附版本戳記與每檔雜湊），不隨 plugin 發佈。"
+  ]
+}

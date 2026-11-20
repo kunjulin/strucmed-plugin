@@ -14,9 +14,136 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.15.0（MCP 2.18.0）— 2026-11-20：非病人表單（`no_patient` → iot `f_nopatient`）；Antigravity hook 支援 Windows
+
+發佈：見本節最後。3.14.0 未單獨發佈，與本版一起發佈。
+
+**Antigravity：G2 定稿 hook 支援 Windows**
+- `hooks.json` 的 `strucmed-gate` 原本用 sh 的 `for … do … done` 找 node，Windows 由 cmd.exe 執行時出現「n was unexpected at this time.」，所有 `call_mcp_tool` 都被擋下。改成 cmd.exe 與 sh 都懂的 `agy-node … || "$HOME/Library/Application Support/Antigravity/bin/agy-node" … || node …`；三個都找不到時指令以非 0 結束，仍然阻擋。`validate-gate.js` 收到空輸入時改為阻擋（前一個 node 失敗後重跑時 stdin 已讀完，不能放行）。實測：本機 cmd.exe 與 sh 都回 `{"decision":"ask"}`；Antigravity 2.0 app 在 Windows 上未實測。
+
+依據：院方決定——醫學教育等與病人無關的表單（例「教案一頁通」：教師備課、上傳參考資料、院內 LLM Gateway 產生教案）由平台自動帶固定保留代碼開啟，struNote 不再要求病歷號。平台端在 `kunjulin/strucmed` 另行實作，介面約定：範本 tempdata 的 iot 項目新增布林 `f_nopatient`（預設 false）；平台以保留代碼（預設 `APP-NP`）開啟非病人表單，「上次紀錄」只看自己的。**平台尚未部署前**，struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄。
+
+**MCP：選項**
+- `form_create` 的 `options` 新增 `no_patient`（→ iot `f_nopatient: true`）。true 時預設一併 `f_chtno: false`、`f_opdno: false`、`hide_prev_icon: true`；使用者明確指定時以指定值為準（`W_NOPATIENT_OPTION` 提醒）。一般表單**不寫出** `f_nopatient`，輸出與 3.13.0 逐位元相同。
+- `form_update_meta` 新增 `options`（同一組選項，只改有帶的鍵）。新 draft 改 `meta.options`；改版 draft 直接改來源的 iot 選項，回 `options_changed` 與 `iot_options`。`no_patient: true` 一併套用上述三個預設；`no_patient: false` 只移除 `f_nopatient`，不自動改回其他選項。
+- `options` 現在會檢查：不認得的鍵回 `E_UNKNOWN_KEY`、型別不對回 `E_INVALID_INPUT`；空字串與 null 視同沒給。**會受影響的既有用法**：以前 `form_create` 的 `options` 帶錯鍵或錯型別會被靜默忽略，現在會被拒絕。
+- 匯出 `.htm`（舊版 tempdata 與套件）、`.package.json`、`form_import`（三種來源）、改版、`online_template_create`／`online_template_update` 都保留 `f_nopatient`。`form_create`／`form_import`／`form_update_meta`／`form_validate` 回 `no_patient: true`。
+- 範本套件 v2：`schemas/strucmed-template-v2.schema.json` 新增 `$defs/iotOptions`（`f_nopatient` 布林，預設 false）；套件驗證拒絕非布林的 `f_nopatient`。套件的 `template` 沒有對應欄位，選項只在 `form` 的 iot。
+
+**MCP：`form_validate`（非病人表單才檢查）**
+- error：`E_NOPATIENT_HISQUERY`（label HIS 參照、巨集 `HISQUERY`）、`E_NOPATIENT_LOOKUPDW`（`LOOKUPDW`、`DWLOOKUP`、`LOOKUPDEFAULTSETTING`、`SETLOOKUPDEFAULT`、`LOOKUPIOT`）、`E_NOPATIENT_DICT_READ`（字典角色 `fromhis`／`puthis`：開表單時以病歷號從倉儲帶值，等同宣告式的 LOOKUPDW）、`E_NOPATIENT_CHTNO_FUNC`（`G_CHTNO()`、`GETCHTNO()`：讀到的是保留代碼）、`E_NOPATIENT_EMBED_CHTNO`（嵌入頁 `params` 用 `{chtno}`）。
+- warning：`W_NOPATIENT_OPDNO_FUNC`（`G_OPDNO()`、`GETOPDNO()`、`GETPACSNO()`）、`W_NOPATIENT_EMBED_OPDNO`（`{opdno}`）、`W_NOPATIENT_EMBED_CONTEXT`（embed 仍以 `strucmed.context` 送出保留代碼）、`W_NOPATIENT_LOADDOC`（`LOADDOC`、`LOADXML`）、`W_NOPATIENT_OPTION`、`W_NOPATIENT_DICT_WRITE`（寫入字典的值都在同一個保留代碼下）、`W_NOPATIENT_FORM`（每張都有；交付時必須告知平台部署前的暫行做法與「不要用倉儲以病歷號查詢」）。
+- 嚴重度：本工具新建的表單、或這次以 `form_update_meta` 才設成非病人的，違規一律 error（不能輸出、不能上架）；改版時原表單本來就是非病人表單、這次沒動到的部分照既有慣例列 warning（原表單既有），改到就是 error。
+- 函數名稱只比對字串以外的部分（提示詞文字提到函數名或 `{chtno}` 不算）；舊式整段以引號包住的步驟也會檢查。`{user}`、`{deptNo}`、`G_USERNM()`、`G_DEPTNO()`、LLM 巨集、附件容器不受影響。
+- 評估後**沒有**列為 error 的：`{opdno}` 與讀就醫號的函數（介面約定沒有定義非病人表單的就醫號，只警告）；`LOADDOC`／`LOADXML`（平台只給看自己的紀錄，只警告）。
+
+**manifest 與定稿檔**
+- manifest 多一節「## 非病人表單」（struNote 不需病歷號、平台以保留代碼開啟；平台部署前的暫行做法；不要用倉儲以病歷號查詢；舊版編輯器另存可能遺失選項），「套件內的選項」與「保存前確認清單」各加一列。
+- `form_export`、`online_template_create`、`online_template_update` 的 plan 新增 `no_patient` 說明；`Gates.md` §2、§3 與 `PublishWorkflow.md` §3、§5 規定定稿檔「### 上架」列出並在交付時告知。
+
+**skills／agents／references**
+- `FormDesignRules.md` 新增〈非病人表單〉：何時提出、取捨表、檢查代碼、交付必須告知。`FormulaMacroRules.md`、`RevisionWorkflow.md`、`AppBuildWorkflow.md` 同步。
+- `create-form`：需求明顯與病人無關（教案、備課、會議紀錄、教學評量的教師備課、行政登記）時在需求階段提出「非病人表單」選項並寫清楚取捨；交付新增第 3b 點。`edit-form`：`form_update_meta` 的 `options`、把既有表單改成非病人表單的做法。`publish-form`：定稿檔與交付。`build-form-app`：B1 檢核表新增「非病人表單」一列與第 4c 步，B2／H1 struNote 的計畫與交付。
+- `form-planner`（第 8b 步：草案不得有病人資料讀取，需求衝突回 `Blocked`；沒被告知時只列待決、不自行設定）、`form-builder`（`form_create` 帶 `options.no_patient`；遇 `E_NOPATIENT_*` 不自行刪改）、`form-reviewer`（檢查 6e；`Ready` 條件加上設定與草案一致、沒有 `E_NOPATIENT_*`）。
+
+**待平台確認**
+- `f_nopatient` 以外的行為都依介面約定推定：保留代碼實際值、非病人表單的 `opdno`、`strucmed.context` 的內容、舊版編輯器另存是否保留未知的 iot 鍵、`api/v2` 寫入時是否保留。平台部署後請以真實站台實測一張非病人表單（建立、上架、struNote 開啟、存檔、上次紀錄），再決定 `{opdno}` 等是否升為 error。
+- 本機預覽頁（`form_preview(html)`）沒有改：預覽本來就不需要病歷號。
+
+**測試**：`mcp/strucmed-mcp` `node --test`（Linux，Node 22；合併 main 的批次建置 `form_build` 之後重跑）333 項：332 過、0 失敗、1 略過（`catalog: builtin list matches the vendored Calx`，需要平台 repo 副本，環境性）。新增 `test/nopatient.test.mjs` 13 項（含 `form_build` 的 `create.options.no_patient`）（選項寫入與預設、一般表單輸出不變、選項檢查、乾淨表單通過、各 `E_NOPATIENT_*` 觸發與不觸發、`.htm`／`.package.json`／manifest 匯出與兩種來源重新匯入保留、改版的 warning／error 分級、`form_update_meta`）與 `online.test.mjs` 1 項（上架 plan 列出、POST 的 iot 帶 `f_nopatient`）。
+
+---
+
+## 3.14.0（MCP 2.17.0）— 2026-11-20：示範後的摩擦點修正八項（runtime 副本尋找與**從站台抓＋雜湊驗證**、批次建置 `form_build`、小表單快速路徑、定稿檔瘦身、示範表單字典模式、flag `browserApprove`、**SBOM**）
+
+未單獨發佈，與 3.15.0 一起發佈。
+
+來源：2026-11-10 在嘉義長庚用 3.11.1 做示範（只有身高、體重、BMI、體重分級四欄的表單），實際遇到的摩擦點。三種工具（Claude app、Codex、Antigravity）的相容性不變：沒有引入只有某一個 client 有的 tool 或行為。
+
+**1. runtime web 副本的尋找與錯誤訊息（影響最大）**
+- `src/runtime-web.mjs` 的 `findRuntimeWeb(root)` 原本只試三個相對於工作目錄的位置（`<ws>/strucmed/web`、`<ws>/repo/strucmed/web`、`<ws>/../strucmed/web`）。示範時工作目錄是 app 產生的暫存資料夾，離平台 repo 很遠，所以 `form_preview(format:"html")` 回 `runtime_available: false`，整個審閱迴圈退回對話。預覽功能本身沒壞，壞的是「找路徑」與「找不到時的訊息」。
+- 順序改為：`STRUCMED_RUNTIME_WEB` → **本機快取 `<HOME>/.strucmed/runtime-web.json`** → 目錄搜尋。任何來源解析出可用路徑時，`scripts/check-env.mjs` 就把它寫回快取（`saveRuntimeWeb`），之後換工作目錄也找得到（不能設環境變數的工具，例如以 plugin 安裝的 Antigravity，跑一次 `check-env.mjs` 就好）。快取路徑可用 `STRUCMED_RUNTIME_WEB_CACHE` 改，`none` 停用。
+- 候選從 3 個擴充為：工作目錄本身與**往上最多 4 層**的 `strucmed/web` 與 `repo/strucmed/web`，再加 HOME 底下常見的 checkout 位置（`~/repo`、`~/source/repos`、`~/src`、`~/git`、`~/projects`、`~/Documents/StrucMed/repo`、`~/Documents/StrucMed`、`~`）。沒有寫死任何一台機器的路徑。
+- 找不到時的訊息改成能照著做：直接給該平台的設定指令（Windows `setx STRUCMED_RUNTIME_WEB "<路徑>"`、其他 `export STRUCMED_RUNTIME_WEB=<路徑>`）、說明**要重開 AI 工具**、指出設定好後跑一次 `check-env.mjs` 會寫進快取，最後才列試過的位置（只列前 6 個）。訊息由 `runtime-web.mjs` 的 `helpText()` 單一實作，`form_preview` 的 `notes`、`scripts/preview.mjs`、`scripts/check-env.mjs` 三處一致。
+- `form_preview` 的 `notes` 另寫出副本來源是 `env`、`cache` 還是目錄搜尋；`check-env.mjs` 的 `runtime_web` 多回 `source`、`cache_file`、`cache_written`、`tried`。
+
+**2. 新增批次建置 tool `form_build`**
+- 示範時三個子代理建一張四欄表單，加上 `agents/form-builder.md` 的「每一輪只送出一個工具呼叫」，八次以上的循序來回。`form_build` 把它壓成一次呼叫。
+- 吃整份結構：`create`（`form_create` 的參數）或 `draft_id`、`areas`（每個區塊是 `form_add_area` 的參數，另有 `id` 與 `controls`）、`controls`（`form_add_control` 的參數，另有 `id`）、`updates`（第二輪的 `form_update_control`）。
+- 內部**重用現有單筆呼叫的程式路徑**（直接呼叫那些 tool 的 handler）：先建區塊、再建控制項（說明文字＋控制項＋換行），最後第二輪回填 `formula`／`action_script`（與 embed 的 `outputs`），再跑一次 `form_validate`。行為、警告與錯誤碼（`E_UNKNOWN_KEY`、`E_EMBED_*`、`W_DICT_PREFER_SYSTEM`、`W_NEW_DICTIONARY`…）與逐筆呼叫完全相同；測試逐一比對同一張表單批次建與逐筆建的 draft 內容與警告，一字不差。
+- 參照用穩定 ID：`form_add_area` 與 `form_add_control` 各占用剛好 1 個 itemid、依呼叫順序，所以 `form_build` 先**唯讀**算出每個 `id` 的 itemid，再把 `reference`／`action_id`／`fur_action_id`／`further`／`formula`／`hisquery`／`action_script` 與 embed 的 `inputs`／`outputs` 裡的 `{C3}` 換成實際值（`formula` 與 `action_script` 換成 `A<itemid>`），回傳 `mapping`。所以可以引用之後才建的欄位，`A<itemid>` 與 `action_id` 都解得開。每一步另核對實際 itemid 與預測相同，不同就停止（`E_DUP_ITEMID`），不會默默綁錯。
+- **所有能先檢查的都在動筆之前檢查完**（未知鍵、`id` 格式與重複、`create`／`draft_id` 擇一、占位符解不開、`updates` 的 `id`／`itemid`），失敗時一個區塊也沒建。
+- 中途失敗：錯誤碼與訊息**沿用原本那個 tool**，訊息後面附「失敗在哪一步、draft 保留、已建幾個區塊幾個控制項」，`details.build` 寫出 `failed_at`、`steps`、`mapping`、`built`、`pending_updates`（args 可原樣再呼叫）與 `next`。draft 留在明確狀態，呼叫端接著修而不是整張重來。非 `ToolError` 的意外錯誤才回新錯誤碼 `E_BUILD_FAILED`。
+- `agents/form-builder.md` 改用 `form_build`（tools 清單加上兩種前綴的 `form_build`）；`skills/create-form/SKILL.md` §3、`skills/edit-form/SKILL.md` §3 跟著改。**「一輪一個工具呼叫」的規則只留給建完之後的修補**與 `form_build` 不適用的情況（插在既有欄位中間、只改一兩個欄位）。表單 JS 不在 `form_build` 內，仍由 `form_set_script` 在建完後一次設定。
+- MCP 伺服器的 `instructions` 與離線 tool 清單（25 → 26）跟著更新。
+
+**3. 小表單快速路徑**
+- `skills/create-form/SKILL.md` §3 與 `skills/edit-form/SKILL.md` §3 寫明門檻，不留給臨場判斷：1 個區塊、控制項 ≤ 6、沒有巨集／LLM／表單 JS／嵌入頁面、沒有待新建字典 → skill 直接用 `form_build` 建，**略過 `form-planner`**，`form-reviewer` 只跑一輪（最後一輪）。超過門檻才走三代理流程。
+- 快速路徑仍然要做：每個存檔欄位的 `dictionary_suggest`、每條計算式的 `formula_check`、`form_validate`、預覽頁審閱、G2。省掉的只有草案檔與 reviewer 的中間輪次。沒有草案檔時「審閱修改紀錄」改記在 `.strucmed/plans/<draft_id>/changes.md`。
+
+**4. 定稿檔瘦身**
+- `references/Gates.md` §3 與 `skills/publish-form/SKILL.md`：「### 驗證結果」**每條計算式只留一列**（`labeled`、白話、「通過幾／共幾」），試算細節指向 `review.md` 的「## 試算」；只有不符或無法離線試算的樣本才在該列下面逐列展開。warning 的本文只寫在「### 警告」，不在驗證結果重複。
+- 「### 警告」**同一件事只寫一行**：既有字典沒有補述併成「既有字典 N 本無補述（名稱…）」一行（`W_DICT_NO_MEMO`、`W_MEMO_INCOMPLETE`、`W_MEMO_NO_MEANING`、`W_MEMO_EXISTING_REPEAT` 算同一件事），`W_REF_NO_MEMO` 去重後也只寫一行，其他同碼的警告併成一行。比照 MCP 在 CSV 重複匯回時用 `W_MEMO_EXISTING_REPEAT` 併過一次的做法。
+- `agents/form-reviewer.md` 的輸出同樣去重（「## 必須修正」不併：每一項都要能照著改）。
+
+**5. 示範表單的字典模式**
+- `agents/form-planner.md`：呼叫端標示是示範或測試表單時（判斷依據：不上架、沒有捷徑也沒有作業別），`confidence: high` 的候選直接綁定；同層級的近似候選（`HEIGHT` vs `HEIGHT2`、`WEIGHT` vs `WEIGHT2`）與信心較低的替代字典只記成該欄的備註，**不列會停下來問人的「### 待決」**。本科層級（體系／本科／次專／科部）的候選一律不問；他科候選維持原本要問的規則。memo 與需求衝突仍列「### 待決」（那是臨床定義問題）。
+- `skills/create-form/SKILL.md` §3 第 1 步把「是不是示範或測試表單」傳給 planner。
+
+**6. feature flag `browserApprove`（預設 `true`）**
+- `feature-flags.json`、`src/flags.mjs`、`src/approve.mjs`：預設 `true`，行為與 2.3.0 起完全相同。設成 `false` 時第二段呼叫（帶 `confirm_token`）直接寫入，不開 127.0.0.1 那一頁——遠端或用手機操作這個工具時碰不到它。
+- 兩段式 `confirm_token`（含「只能用一次」與「必須是第一段記下的同一份 plan」）與 G2 在對話中的核准都照舊，沒有放寬。`STRUCMED_NO_BROWSER=1` 的語意不變（只是不自動開瀏覽器）。
+- **取捨誠實寫出來**：`references/SecurityInvariants.md` 第 2 條、`references/PublishWorkflow.md` §4、`skills/publish-form/SKILL.md`、README〈遠端操作：關掉瀏覽器確認頁〉都寫明「`browserApprove: false` 再加上 AI 工具處於自動核准模式時，就沒有任何在 AI 之外的人看過 plan」。
+- flag 關閉時每份 plan 都會多一條 `W_NO_BROWSER_APPROVE`（`approve.offer()` 併進 `plan.warnings`），所以它一定出現在定稿檔的「### 警告」；skill 不得省略或改寫，並要在對話中口頭說一次。`awaitApproval` 的回傳也帶 `browser_approve: false` 與同一條警告。
+- 可攜的第二道把關寫成「**AI 工具自己的「要不要允許這次 tool 呼叫」提示**」（Claude Code、Codex、Antigravity 都有）；文件明確寫出**不要**把 `AskUserQuestion` 當成唯一閘門（Codex 與 Antigravity 沒有這個 tool）。
+- `hooks/antigravity/validate-gate.js`：沒有 G2 定稿檔時仍回 `ask`，但 flag 關閉時 `reason` 改寫成「這個允許提示是唯一在 AI 之外的把關…自動允許的話就沒有人看過這份 plan」。它以 CommonJS 直接讀同一份 `feature-flags.json`（讀不到當 `true`）。`mcp_config.json`（Antigravity manifest）結構不變：MCP 與 hook 都落在 plugin 根目錄的同一份 flags 檔。
+
+**7. runtime 副本改成從站台抓，並做雜湊驗證**（第 1 項的延伸）
+
+來源：醫院資安審查要 SBOM 表，且不得使用中國來源不合規元件，所以「把平台前端內附進 plugin」正式排除——`TempHtml.html` 引用約 25 個第三方元件（jQuery、Bootstrap、moment、numeral、jstat、fancytree、html2canvas…），內附會把它們全部拉進 plugin 的合規與 SBOM 範圍。另外使用者本機那份是 `ver 20261018b`、站台已經是 `ver 20261108`，**版本漂移是現況，而且預覽畫面完全看不出來**。
+
+- `src/runtime-fetch.mjs`（新）、`src/runtime-tools.mjs`（新，兩個 tool）。`findRuntimeWeb` 的順序變成：`STRUCMED_RUNTIME_WEB` → 本機快取 → 目錄搜尋 → **站台抓來的 `<HOME>/.strucmed/runtime`**（`source: "fetched"`）。`STRUCMED_RUNTIME_WEB_CACHE=none` 同時停用後兩者（都在 HOME 底下）。
+- `runtime_fetch`（flag `runtimeFetch`，預設開）**兩段式**：第一次只回 plan（站台、網址、版本戳記、要抓幾個檔案、目標目錄、「這是對外連線」），同意後第二次帶 `confirm_token` 才連外；已有通過驗證的快取時第一次就回 `already`，要重抓才帶 `refetch: true`。
+  - 只抓 **https 且與站台同源、在站台路徑底下**的網址（`http` 只放行 `127.0.0.1`／`localhost` 測試），轉址後的位置也檢查。**絕不從任何第三方 CDN 抓**。
+  - 要抓哪些：`TempHtml.html` ＋ 它直接引用的 js／css（必要，少一個就整批失敗）＋ 這些 CSS 內 `url()` 的字型與圖片（選用，抓不到只記 `skipped`／`W_RUNTIME_SKIPPED`）。先寫暫存目錄再 rename 換過去，中途失敗舊快取不動、不留半套。單檔 8 MB、整批 48 MB 上限。
+  - manifest `.strucmed-runtime.json`：來源網址與站台、抓取時間、版本戳記（從 `<!-- ver … -->` 解析）、每個檔案的 bytes 與 SHA-256。
+- **開預覽前驗雜湊**：`form_preview` 與 `scripts/preview.mjs` 在 `source: "fetched"` 時重算每個檔案的 SHA-256，不符或缺檔就回 `E_RUNTIME_HASH`、`runtime_available: false`，**拒絕開**，不默默使用。
+- **版本漂移主動講**：`runtime_status`（唯讀）比對站台目前的版本戳記，較新時回 `W_RUNTIME_STALE` 並請使用者決定，**不自動覆蓋**；使用者自己管理的副本（`source: "env"`）一律不動。結果寫 `runtime-drift.json`，`form_preview` 只讀它（**MCP 維持「預設離線」**，比對站台這件事只在 `runtime_status` 裡做）。站台連得到但超過 24 小時沒比對時 `form_preview` 回 `W_RUNTIME_UNCHECKED`；離線時不提醒（比不出來，提醒只是雜訊）。
+- `form_preview` 新增回傳 `runtime_source`、`runtime_version`、`runtime_verified`；**預覽頁底部橫幅**寫出目前跑的 runtime 版本與來源（站台快取另標雜湊是否通過，失敗時整條變紅）。
+- 文件：`skills/verify-runtime/SKILL.md` 多了第 0 步（開預覽前先 `runtime_status`）、`references/RuntimeVerification.md` §1、`references/SecurityInvariants.md` 第 10 條、README〈網頁預覽〉與〈runtime 副本從站台抓〉。
+
+**8. SBOM 自動產生**
+
+- `scripts/sbom.mjs`（新）產三份 CycloneDX 1.5 JSON ＋ `sbom-index.json`（列出三份與閱讀順序），**分開不混**：
+  1. `sbom-plugin.json`（3 個元件）：自有程式（plugin 與 MCP 版本，標 `strucmed:runtime-dependencies: 0`）、改寫自 jQuery Calx 2.2.8 的計算式語法檢查（MIT，供應者 Xsanisty／Ikhsan Agustian，來源國 ID）、宿主提供的 Node.js ≥20（標 `strucmed:shipped-with-plugin: false`）。metadata 寫明對外連線、病人資料 403、以及「表單 APP 的相依不在這一份」。
+  2. `sbom-form-app.json`（533 個元件）：從 `templates/form-app/package-lock.json` 產，含遞移相依、`purl`、`integrity` 轉成的 SHA-512 雜湊、`resolved` 來源網址；`dev` 的標 `scope: "excluded"`。metadata 明說這是**產出物相依，不是 plugin 的執行相依**，並記錄所有 `resolved` 都是 `registry.npmjs.org`（沒有鏡像或私有來源）。
+  3. `sbom-runtime.json`：第 7 項那份 manifest 轉成 SBOM／provenance（站台版本戳記、每檔 SHA-256）。沒有快取時是空的一份並寫明原因，不是錯誤。
+- 每一筆都有 `supplier` 與來源國（`strucmed:country`）；判斷不出來的標 `unknown`，**不猜**。
+- 根目錄新增 `package.json`（只有 scripts、零相依，發佈時排除）：`npm run sbom`、`npm test`、`npm run check-env`。**不加 `type: "module"`**：`hooks/*.js` 是 CommonJS。
+- `tools/release/release-plugin.mjs` 在複製之後產一份到 `<out>/sbom/` 並納入掃描（`--no-sbom` 可略過），summary 多一個 `sbom` 欄位；`sbom/` 進 `.gitignore`（發佈時重新產）。
+- 文件：README〈SBOM〉一節（三份各是什麼、給誰看）。
+
+**順手的三個硬化項**
+
+- `tools/v0-harness/serve.mjs`：預覽網址加**一次性 nonce**（做法同 `src/approve.mjs`，伺服器啟動時產生、寫進 `server.json`，重啟就失效；`form_preview` 與 `scripts/preview.mjs` 從那裡讀來組網址），**閒置自動關**（`STRUCMED_PREVIEW_IDLE_MS`，預設 120 分鐘，`0`＝不關）。只聽 `127.0.0.1` 與 `Host`／`Origin` 檢查不動；`/__review` 帶了 nonce 就必須正確（沒帶仍照舊，交給 `Host`／`Origin`）。
+- **審閱意見擋掉疑似個資**：規則集中到 `src/phi.mjs`（`validate.mjs` 改用它，行為不變），預覽頁載入 `/__harness/phi.js`（由 `phi.mjs` 產生，不在瀏覽器另寫一套），`serve.mjs` 在寫檔前再擋一次（**伺服器端是最後一道**：頁面端可被繞過）。被擋掉的 `values`／`text_output`／意見文字不寫進 review JSON，只留 `phi_dropped`（位置與原因），頁面也告訴使用者擋了哪幾個。
+- **可驗證的範圍**寫進 `references/SecurityInvariants.md` 開頭與 README 顯眼處：`strucmed-mcp` 的 token 只能使用範本、字典與登入者自己的 struNote，平台對病人資料 API 一律回 403；對外連線四處一覽表。
+
+**測試**（`node --test test/*.test.mjs`）
+- `test/build.test.mjs`（新，9 項）：一次建完整張表單（`mapping`、第二輪回填、`form_validate`）、批次與逐筆的 draft 內容與警告一字不差、未知鍵在動筆前回 `E_UNKNOWN_KEY` 且沒有建出 draft、解不開的 `{C9}` 回 `E_INVALID_INPUT` 並列出已知 id、`create`／`draft_id` 擇一與續建時 itemid 接續、中途失敗沿用原錯誤碼並照 `pending_updates` 補完後通過、建區塊失敗時的階段與 `built`、embed 的 `outputs` 自動排到第二輪、`skip_validate`。
+- `test/approve.test.mjs`：新增 `browserApprove` 兩種狀態（開著時仍要在確認頁按、plan 不加警告；關閉時不開頁直接放行、plan 帶 `W_NO_BROWSER_APPROVE` 且不重複加、仍只能用一次、仍要有第一段的同一份 plan）。
+- `test/preview-env.test.mjs`：`runtime_web` 的新尋找順序（往上數層＋HOME 常見位置）、本機快取（`check-env` 寫、換工作目錄仍找得到、同路徑不重寫、沒有 `TempHtml.html` 不寫、`none` 停用）、找不到時的訊息含該平台的設定指令與「要重新啟動 AI 工具」。
+- `test/runtime.test.mjs`（新，9 項，127.0.0.1 上的假站台，不連真站）：`runtime_fetch` 兩段式與錯 token、CSS 內 `url()` 的字型一起抓、manifest 的雜湊與來源、`findRuntimeWeb` 的 `source: "fetched"`、快取被改過或缺檔時 `form_preview` 拒絕開、必要檔案抓不到整批失敗且舊快取不動、`runtime_status` 的 `W_RUNTIME_STALE` 與不自動覆蓋、`check_site: false` 不連外、http 非本機主機不視為站台、flag `runtimeFetch`、`STRUCMED_RUNTIME_WEB_CACHE=none`；以及 `scripts/sbom.mjs` 的三份 SBOM。
+- `test/review.test.mjs` 加 4 項硬化：`server.json` 的 nonce 與 `idle_ms`、疑似個資不寫進 review JSON（含 `phi_dropped`）、`/__harness/phi.js` 與 `src/phi.mjs` 同一組樣式、預覽頁橫幅。`preview-env`／`review` 的預覽網址斷言改帶 nonce。
+- `test/no-silent.test.mjs` 的「所有工具 `additionalProperties:false`」涵蓋 `form_build`（它的 `inputSchema` 是 getter，所以 `additionalProperties` 寫在 getter 內）。
+- 合併 `origin/main`（3.11.1 → 3.12.3）之後：**311 項、305 通過**。Windows 上剩 4 項既有失敗與本次無關：符號連結需要管理者權限（`http.test.mjs`）、預覽 harness 的換埠與 pid 偵測需 `lsof`／`ps`（`preview-env.test.mjs` 2 項）、`scripts/preview.mjs` 在 Windows 起不了背景 harness（`v02.test.mjs`）。
+- 順手修掉三個環境相依的測試問題（與本次功能無關，但會干擾驗證）：`preview.mjs` 訊息的路徑分隔符斷言、`cards.test.mjs` 的匯出路徑分隔符、以及 `cards.test.mjs` 要卡片的測試沒有關掉 runtime 尋找（開發機常設 `STRUCMED_RUNTIME_WEB`，`cardsEnabled` 會因此翻掉）。
+
+---
+
 ## 3.13.1（MCP 2.16.1）— 2026-11-20：移除已下架的 QWEN 語音服務
 
-發佈（2026-11-20）：strucmed-plugin tag `v3.13.1`。
+發佈（2026-11-20）：strucmed-plugin `babb666`（已推送 main；發佈樹由本 repo `d7af12e` 產生）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Linux）294 項：293 過、0 失敗、1 略過（需要平台 repo 副本）。tag：strucmed-plugin `v3.13.1`（→ `babb666`）、本 repo `v3.13.1-src`（`d7af12e`）；GitHub Release「strucmed 3.13.1（MCP 2.16.1）：移除已下架的 QWEN 語音服務」。tag 與 Release 於 2026-11-20 由維護者在本機補上。尚未：從市集更新後的對話實測。
 
 院內 QWEN 語音服務已於 2026-10 底下架（3.13.0 把它列為「待院方確認」，此版處理）。
 - `VOICETOTEXT(id, 'QWEN')` 不再接受：回 `E_ASR_PROVIDER`，訊息寫明「已於 2026-10 底下架，請改用 'ASUS'」。語音服務只剩 `'ASUS'`。
@@ -28,7 +155,7 @@ claude plugin update strucmed@strucmed-marketplace
 
 ## 3.13.0（MCP 2.16.0）— 2026-11-20：qwen 系列列為落日模型，建議與範例改用 `nemotron35`／`tnemotron35`；院外站台的 LLM／語音敘述更正
 
-發佈（2026-11-20）：strucmed-plugin `96644ca`（已推送 main）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Linux）294 項：293 過、0 失敗、1 略過（需要平台 repo 副本）。尚未：strucmed-plugin 的 tag `v3.13.0` 與 GitHub Release、本 repo tag `v3.13.0-src`（雲端工作階段的 git 代理不允許推送 tag，需由維護者在本機補上）；從市集更新後的對話實測。
+發佈（2026-11-20）：strucmed-plugin `96644ca`（已推送 main）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Linux）294 項：293 過、0 失敗、1 略過（需要平台 repo 副本）。tag：strucmed-plugin `v3.13.0`（→ `96644ca`）、本 repo `v3.13.0-src`（`9357086`）；GitHub Release「strucmed 3.13.0（MCP 2.16.0）：qwen 系列列為落日模型，改用 nemotron35／tnemotron35」。tag 與 Release 於 2026-11-20 由維護者在本機補上。尚未：從市集更新後的對話實測。
 
 依據：院方決定（2026-11-19）——qwen 系列（`qwen3627b`、`tqwen3627b` 與 `-low`／`-medium`／`-high`、`qwen332b`、`tqwen332b`；閘道模型 `Qwen3.6:27B`、`qwen3:32b`）屬中國開源模型，**建議不採用**，LlmGateway 設落日條款，**2027-01-01 下架**。取代：Nemotron 3.5 Super VL（`nemotron35` 不思考、`tnemotron35` 思考，另有 `-low`／`-medium`／`-high`；只經院內 LlmGateway）。模型說明依 StrucMed GitBook「生成式 AI 巨集函數」。
 

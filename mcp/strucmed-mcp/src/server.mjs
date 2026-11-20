@@ -15,6 +15,7 @@ import { httpConfig, startHttp } from './http.mjs';
 import { CARD_TOOLS, cardsEnabled, uiMeta, listResources, readResource } from './cards.mjs';
 import * as files from './files.mjs';
 import { TOOLS } from './tools.mjs';
+import { RUNTIME_TOOLS } from './runtime-tools.mjs';
 import { ONLINE_TOOLS as ONLINE_READ_TOOLS } from './online-tools.mjs';
 import { ONLINE_WRITE_TOOLS } from './online-write-tools.mjs';
 import { LLMGW_TOOLS } from './llmgw-tools.mjs';
@@ -32,8 +33,9 @@ import { workspaceRoot } from './store.mjs';
 const SERVER_INFO = { name: 'strucmed-mcp', version: VERSION };
 const INSTRUCTIONS =
   '產生長庚結構化病歷 2.0（StrucMed）可匯入的表單定義檔。預設離線：不連線、不處理帳密、不寫入編輯器或倉儲。' +
-  '流程：dictionary_load（選用）→ form_create → form_add_area → form_add_control… → form_validate → form_preview → ' +
-  'form_export（兩段式確認，plan 必須先給使用者看）。產出的 .htm 由使用者本人在編輯器匯入並保存。' +
+  '流程：dictionary_load（選用）→ form_build（批次：一次建完區塊、控制項、計算式與巨集，參照用穩定 ID {C3}，內部就是依序呼叫 form_create／form_add_area／form_add_control 再第二輪回填，' +
+  '行為與警告和逐筆呼叫相同）→ form_preview → form_export（兩段式確認，plan 必須先給使用者看）。要逐筆建或建完後修補時才用 form_create／form_add_area／form_add_control／form_update_control，一輪一個呼叫。' +
+  '產出的 .htm 由使用者本人在編輯器匯入並保存。' +
   '改版面不必重建：form_move_control（搬欄位，itemid 不變）、form_update_area（區塊標題；titles 改頁籤名稱＝HIS 文字鍵、增減頁籤）、form_remove_area（空區塊）、form_add_area(after_itemid)；要重建時 form_create 帶 from_draft_id，字典補述會帶過去。' +
   '未知參數一律回錯誤：說明文字用頂層 label_text、單位用 changes.unit。有預覽頁時所有審閱都在預覽頁；form_preview(html) 的 url 是 null 時執行 open 欄位的指令取得 link。';
 const ONLINE_INSTRUCTIONS =
@@ -45,7 +47,9 @@ const LLMGW_INSTRUCTIONS =
 const onlineNames = new Set(ONLINE_TOOLS.map(t => t.name));
 const llmgwNames = new Set(LLMGW_TOOLS.map(t => t.name));
 const fmapiNames = new Set(FMAPI_TOOLS.map(t => t.name));
-const byName = new Map([...TOOLS, ...ONLINE_TOOLS, ...LLMGW_TOOLS, ...FMAPI_TOOLS].map(t => [t.name, t]));
+// runtime_fetch／runtime_status 會連站台（只 GET 靜態檔，不帶憑證），所以呼叫前也要先等站台偵測
+const runtimeNames = new Set(RUNTIME_TOOLS.map(t => t.name));
+const byName = new Map([...TOOLS, ...RUNTIME_TOOLS, ...ONLINE_TOOLS, ...LLMGW_TOOLS, ...FMAPI_TOOLS].map(t => [t.name, t]));
 for (const t of byName.values()) t.inputSchema.additionalProperties = false;
 // schema 外的頂層鍵回錯誤，不靜默忽略（F-39、F-02）：模型以為參數生效，工具卻什麼都沒做
 function checkArgs(tool, args) {
@@ -59,7 +63,7 @@ function checkArgs(tool, args) {
 // flag 關閉（feature-flags.json）時回 E_FEATURE_DISABLED。個別 tool 可再帶 flag（例如 templateUpdate）。
 function listed() {
   const f = loadFlags();
-  const out = TOOLS.filter(t => !t.flag || enabled(t.flag, f));
+  const out = [...TOOLS, ...RUNTIME_TOOLS].filter(t => !t.flag || enabled(t.flag, f));
   if (online.configured() && enabled('online', f)) out.push(...ONLINE_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
   if (llmgw.configured() && enabled('llmgateway', f)) out.push(...LLMGW_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
   if (fmapi.configured() && enabled('fmapi', f)) out.push(...FMAPI_TOOLS.filter(t => !t.flag || enabled(t.flag, f)));
@@ -72,7 +76,7 @@ async function callTool(name, args) {
   const tool = byName.get(name);
   if (!tool) return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error: { code: 'E_NOT_FOUND', message: `未知的 tool：${name}` } }) }], isError: true };
   try {
-    if (onlineNames.has(name) || llmgwNames.has(name) || fmapiNames.has(name)) await site.ready();
+    if (onlineNames.has(name) || llmgwNames.has(name) || fmapiNames.has(name) || runtimeNames.has(name)) await site.ready();
     if (onlineNames.has(name)) {
       online.baseUrl();
       const f = loadFlags();

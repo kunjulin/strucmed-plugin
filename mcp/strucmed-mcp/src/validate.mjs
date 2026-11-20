@@ -3,7 +3,7 @@
 // actionID / furActionID / 計算式與巨集中的 A<n>。
 // 嚴重度：本工具新增或修改的部分 → error；既有表單原封保留的部分 → warning（標示「原表單既有」）。
 // v0.2：計算式、巨集、HIS 參照的檢查（scriptlint）也依同一套分級；修改類別為 formula。
-import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind } from './model.mjs';
+import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind, isNoPatient, iotOptionFields, NOPATIENT_CODE } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import * as dc from './dictcomment.mjs';
@@ -12,6 +12,7 @@ import { suggest, unitOf } from './dictsuggest.mjs';
 import { checkSnippets, renderSnippets, scanCustomJs, scriptFunctions } from './script-snippets.mjs';
 import { enabled } from './flags.mjs';
 import * as embed from './embed.mjs';
+import * as PHI from './phi.mjs';
 
 // 整張 draft 的 embed 檢查（平台 StrucEmbed.validateForm）：以輸出時的 GetData 形狀走訪，回 [{ itemid, code, message }]
 export function embedFindings(draft) {
@@ -92,9 +93,11 @@ export function hisTextKeyFindings(draft, want) {
   return { missing: absent.filter(k => !lower.has(k.toLowerCase())), case_mismatch: absent.filter(k => lower.has(k.toLowerCase())).map(k => ({ want: k, found: lower.get(k.toLowerCase()) })) };
 }
 
-const TW_ID = /[A-Z][12]\d{8}/;               // 身分證字號樣式
-const LONG_DIGITS = /\b\d{7,10}\b/;            // 可能是病歷號（僅警告）
-const PHI_WORDS = /(病歷號|身分證|姓名)\s*[:：]\s*\S/;
+// 疑似個資的樣式集中在 phi.mjs（預覽頁的審閱意見用同一組）；這裡的行為不變：
+// TW_ID 沿用原本較嚴的 [A-Z][12]（TW_ID_STRICT），PHI_WORDS 多認「身份證」的異體字
+const TW_ID = PHI.TW_ID_STRICT;
+const LONG_DIGITS = PHI.LONG_DIGITS;
+const PHI_WORDS = PHI.PHI_WORDS;
 
 // 表單預設（片語）的疑似個資：每筆最多回一則，訊息只寫第幾筆與命中類型，不帶任何內容（名稱本身也可能是病人姓名）。
 // 身分證字號或「姓名／病歷號／身分證：」樣式 → error；只有 7–10 位數字 → warning（日期、itemid 也可能命中）
@@ -108,6 +111,48 @@ export function presetPhiFindings(presets) {
     if (hits.length) out.push({ level: 'error', code: 'E_PHI_SUSPECT', message: `${where}疑似含病人資料（${hits.join('、')}），會被 form_export 寫進套件；請 form_update_meta(drop_presets: true) 移除` });
     else if (LONG_DIGITS.test(text)) out.push({ level: 'warning', code: 'W_PHI_SUSPECT', message: `${where}含 7–10 位數字，請確認不是病歷號；不需要這些預設請 form_update_meta(drop_presets: true)` });
   });
+  return out;
+}
+
+// ── 非病人表單（iot f_nopatient）──────────────────────────────────────────
+// 平台以保留代碼開啟，沒有病人：讀病人資料或以病歷號查詢的寫法都不成立，而且保留代碼是所有人共用的，
+// 以它查 HIS／倉儲會拿到別人的紀錄或空值。函數名稱以字串以外的部分比對（提示詞文字裡提到函數名不算）。
+export const NOPATIENT_FUNCS = {
+  HISQUERY: 'E_NOPATIENT_HISQUERY',
+  LOOKUPDW: 'E_NOPATIENT_LOOKUPDW', DWLOOKUP: 'E_NOPATIENT_LOOKUPDW', LOOKUPDEFAULTSETTING: 'E_NOPATIENT_LOOKUPDW',
+  SETLOOKUPDEFAULT: 'E_NOPATIENT_LOOKUPDW', LOOKUPIOT: 'E_NOPATIENT_LOOKUPDW',
+  G_CHTNO: 'E_NOPATIENT_CHTNO_FUNC', GETCHTNO: 'E_NOPATIENT_CHTNO_FUNC',
+  G_OPDNO: 'W_NOPATIENT_OPDNO_FUNC', GETOPDNO: 'W_NOPATIENT_OPDNO_FUNC', GETPACSNO: 'W_NOPATIENT_OPDNO_FUNC',
+  LOADDOC: 'W_NOPATIENT_LOADDOC', LOADXML: 'W_NOPATIENT_LOADDOC'
+};
+const NOPATIENT_WHY = {
+  E_NOPATIENT_HISQUERY: '會在 HIS 端以病歷號讀取病人資料；非病人表單沒有病人，請移除',
+  E_NOPATIENT_LOOKUPDW: `會以病歷號查倉儲；非病人表單的病歷號是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），會查到別人的紀錄，請移除`,
+  E_NOPATIENT_CHTNO_FUNC: `讀到的是保留代碼（預設 ${NOPATIENT_CODE}），不是病歷號，請移除`,
+  W_NOPATIENT_OPDNO_FUNC: '非病人表單沒有就醫／檢查號，多半是空值；請確認是否需要',
+  W_NOPATIENT_LOADDOC: '以保留代碼取回最近的存檔；平台只給看自己的紀錄，平台尚未部署前可能取到別人的，請確認是否需要'
+};
+const stripStrings = s => String(s || '').replace(/"[^"]*"|'[^']*'/g, '""');
+export function noPatientFindings(c) {
+  const out = [];
+  const push = (code, what) => out.push({ code, level: code.startsWith('E_') ? 'error' : 'warn', message: `非病人表單：${what}${NOPATIENT_WHY[code]}` });
+  if (c.datatype === 'label' && c.format === 'hisquery') push('E_NOPATIENT_HISQUERY', 'label 的 HIS 參照');
+  const texts = [];
+  if (c.formula && (c.datatype === 'label' || c.datatype === 'imgbox')) texts.push(c.formula);
+  if ((c.datatype === 'action' || c.datatype === 'action2') && c.actionScript) {
+    // 舊式整段以引號包住的步驟（W_MACRO_QUOTED_STEP）：先去掉步驟外層的引號再比對
+    texts.push(String(c.actionScript).replace(/(^|,)\s*(["'])([A-Za-z_]+\s*\([\s\S]*?\))\2\s*(?=,|$)/g, '$1$3'));
+  }
+  const seen = new Set();
+  for (const t of texts) {
+    for (const m of stripStrings(t).matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+      const name = m[1].toUpperCase();
+      const code = NOPATIENT_FUNCS[name];
+      if (!code || seen.has(name)) continue;
+      seen.add(name);
+      push(code, `${name}() `);
+    }
+  }
   return out;
 }
 
@@ -125,6 +170,10 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   };
   const warn = (code, message, itemid) => warnings.push({ code, message, ...(itemid !== undefined && { itemid: Number(itemid) }) });
   const m = draft.meta;
+  // 非病人表單：本工具新建、或這次才設成非病人的（noPatientSet）→ 違規一律 error；
+  // 原表單本來就是非病人表單的改版 → 原封保留的部分照慣例列 warning（原表單既有）
+  const noPatient = isNoPatient(draft);
+  const npAll = noPatient && (!draft.source || draft.noPatientSet === true);
 
   if (!m.name || !m.name.trim()) report(true, 'E_INVALID_INPUT', '表單名稱不可空白');
   if ((m.name || '').length > 36) report(true, 'E_INVALID_INPUT', '表單名稱超過 36 字（平台 web/editor.html:463）');
@@ -282,6 +331,16 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       else if (f.code === 'E_LLM_MODEL_SUNSET' && !sFresh) warn('W_LLM_MODEL_SUNSET', `#${c.itemid}：${f.message}（原表單既有：這次沒有改到這個巨集所以只提醒，下架日前請改版換掉）`, c.itemid);
       else report(sFresh, f.code, `#${c.itemid}：${f.message}`, c.itemid);
     }
+    if (noPatient) {
+      for (const f of noPatientFindings(c)) {
+        if (f.level === 'warn') warn(f.code, `#${c.itemid}：${f.message}`, c.itemid);
+        else report(npAll || sFresh, f.code, `#${c.itemid}：${f.message}`, c.itemid);
+      }
+      // 字典角色「讀取／讀寫」＝開表單時以病歷號從倉儲帶值，與 LOOKUPDW 同一件事
+      if (['fromhis', 'puthis'].includes(c.dicrole) && (c.dicid || c.dictionary)) {
+        report(npAll || freshFor(c, area, 'dict'), 'E_NOPATIENT_DICT_READ', `#${c.itemid}：非病人表單：字典「${c.dictionary}」的角色是 ${c.dicrole}（開表單時以病歷號從倉儲帶值）；病歷號是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），會帶到別人存的值，請改 tohis 或 nohis`, c.itemid);
+      }
+    }
   }
   // 計算式循環參照（只看 label 計算式之間）
   const state = new Map();
@@ -338,10 +397,26 @@ export function validateDraft(draft, dictIndex, policy = {}) {
         }
         if (s.params.length) warn('W_EMBED_BRIDGE_APP', `${who}的網址是啟動橋接頁卻另外帶了網址參數（${s.params.map(p => p.key).join('、')}）：橋接頁只讀 app，病歷號等由 strucmed.context 取得，請移除 params`, s.itemid);
       }
+      if (noPatient) {
+        const keysOf = ph => s.params.filter(p => String(p.value).trim() === ph).map(p => p.key);
+        const cht = keysOf('{chtno}'), opd = keysOf('{opdno}');
+        if (cht.length) report(npAll || freshEmbed.get(String(s.itemid)), 'E_NOPATIENT_EMBED_CHTNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${cht.join('、')} 用了 {chtno}；帶出去的是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），不是病歷號，嵌入頁會拿它去查病人，請移除這個參數`, s.itemid);
+        if (opd.length) warn('W_NOPATIENT_EMBED_OPDNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${opd.join('、')} 用了 {opdno}；非病人表單沒有門診序號，多半是空值，請確認是否需要`, s.itemid);
+        warn('W_NOPATIENT_EMBED_CONTEXT', `嵌入頁面 #${s.itemid}：非病人表單：runtime 仍會以 strucmed.context 送出病歷號欄位，內容是保留代碼（預設 ${NOPATIENT_CODE}）；嵌入頁不可用它查病人資料，請與嵌入頁的維護者確認`, s.itemid);
+      }
       embeds.push({ kind: 'embed', ...s, itemid: Number(s.itemid), source: a.imported ? 'imported' : 'new' });
       if (embed.isLocalHost(s.host)) warn('W_EMBED_LOCALHOST', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}的網址是本機（${s.host}）：只有執行該服務的電腦開得到，其他工作站開這張表單時嵌入頁空白；只用於示範與測試，部署到院內主機後請改網址再更新範本`, s.itemid);
       warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);
     }
+  }
+
+  if (noPatient) {
+    const iot = draft.source ? draft.source.iot : iotOptionFields(m.options);
+    const on = [iot.f_chtno === true && '依病歷號查近期紀錄（f_chtno）', iot.f_opdno === true && '依就醫號查當次（f_opdno）', iot.f_hideprevicon !== true && '顯示「上次紀錄」圖示'].filter(Boolean);
+    if (on.length) warn('W_NOPATIENT_OPTION', `非病人表單卻開啟了${on.join('、')}：病歷號是保留代碼，平台的「上次紀錄」只看自己的；沒有特別理由請用 form_update_meta 的 options 關閉（f_chtno:false、f_opdno:false、hide_prev_icon:true）`);
+    const writers = controls.map(x => x.node).filter(c => ['tohis', 'puthis'].includes(c.dicrole) && (c.dicid || c.dictionary));
+    if (writers.length) warn('W_NOPATIENT_DICT_WRITE', `非病人表單有 ${writers.length} 個欄位寫入字典（${writers.slice(0, 8).map(c => '#' + c.itemid).join('、')}${writers.length > 8 ? '…' : ''}）：值會以保留代碼（預設 ${NOPATIENT_CODE}）存進倉儲，所有人的紀錄都在同一個代碼下；不要用倉儲以病歷號查詢這類紀錄，不需要統計的欄位請不要綁字典`);
+    warn('W_NOPATIENT_FORM', `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。平台尚未部署這項功能前，struNote 仍會要求病歷號，暫行做法是輸入固定代碼 ${NOPATIENT_CODE}（以平台公告為準）；不要用倉儲以病歷號查詢這類紀錄（交付時必須告知使用者）`);
   }
 
   const pending = draft.pendingDictionaries || [];
@@ -407,6 +482,7 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   }
   return {
     valid: errors.length === 0,
+    ...(noPatient && { no_patient: true }),
     errors, warnings, ai, embeds,
     stats: {
       areas: draft.areas.length, controls: nodes.length,

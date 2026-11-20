@@ -57,8 +57,10 @@
       "items": {
         "type": "object",
         "required": ["itemtype"],
-        "if": { "properties": { "itemtype": { "const": "embed" } }, "required": ["itemtype"] },
-        "then": { "$ref": "#/$defs/embedArea" }
+        "allOf": [
+          { "if": { "properties": { "itemtype": { "const": "embed" } }, "required": ["itemtype"] }, "then": { "$ref": "#/$defs/embedArea" } },
+          { "if": { "properties": { "itemtype": { "const": "iot" } }, "required": ["itemtype"] }, "then": { "$ref": "#/$defs/iotOptions" } }
+        ]
       }
     },
     "presets": {
@@ -100,6 +102,18 @@
     }
   },
   "$defs": {
+    "iotOptions": {
+      "title": "表單選項（itemtype iot，form 的最後一項）",
+      "description": "編輯器 Option 面板的選項；這裡只列出跨工具約定的欄位，其餘欄位編輯器原樣保留。",
+      "type": "object",
+      "properties": {
+        "itemtype": { "const": "iot" },
+        "f_chtno": { "type": "boolean", "description": "依病歷號查近期紀錄" },
+        "f_opdno": { "type": "boolean", "description": "依就醫號只查當次" },
+        "f_hideprevicon": { "type": "boolean", "description": "隱藏「上次紀錄」圖示" },
+        "f_nopatient": { "type": "boolean", "default": false, "description": "非病人表單：struNote 不要求病歷號，平台以保留代碼（預設 APP-NP）開啟；「上次紀錄」只看自己的。true 時不得有 HIS 參照、HISQUERY、LOOKUPDW、讀取型字典角色、G_CHTNO()、嵌入頁 {chtno} 參數（form_validate 的 E_NOPATIENT_*）。未出現視同 false" }
+      }
+    },
     "embedArea": {
       "title": "嵌入頁面區塊（itemtype embed）",
       "description": "表單內以 sandbox iframe 顯示院內頁面，postMessage 交換 strucmed.context／strucmed.result。url 只接受 https＋院內主機（*.cgmh.org.tw、*.cgmf.org.tw、*.cgmh.me、10/8、172.16/12、192.168/16、localhost）；params 值只能是 {chtno}、{deptNo}、{user}、{opdno} 或常數；未列出的欄位編輯器原樣保留。",

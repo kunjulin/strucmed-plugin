@@ -459,7 +459,7 @@ test('online_template_get：舊版站台的 integrity 原本就不符時不重�
 // 3.10.2 F-07：javascript 區塊只有產生器標記註解時，js_chars 回 0、另給 js_marker
 test('online_template_get summary：只有標記註解的 javascript 區塊 js_chars 0＋js_marker；有程式碼照算', async () => {
   await browserLogin(mcp, {});
-  const marker = '// generated-by: strucmed-skill 3.13.1 (mcp 2.16.1)';
+  const marker = '// generated-by: strucmed-skill 3.15.0 (mcp 2.18.0)';
   const withJs = js => ONLINE_FORM.map(x => x.itemtype === 'javascript' ? { ...x, content: js } : structuredClone(x));
   const get = async (id, js) => {
     templates.set(id, { sha256: 'x'.repeat(8), template: { name: id }, form: withJs(js) });
@@ -698,6 +698,26 @@ async function makeDraft(m, { withPendingDict = false, name = '上架測試' } =
   assert.equal(x.ok, true, JSON.stringify(x));
   return c.data.draft_id;
 }
+
+test('online_template_create：非病人表單的 plan 列出 no_patient，POST 的 iot 帶 f_nopatient', async () => {
+  await browserLogin(mcp, {});
+  const c = await mcp.call('form_create', { name: '教案上架', dept_no: 'APP', options: { no_patient: true } });
+  const id = c.data.draft_id;
+  const a = await mcp.call('form_add_area', { draft_id: id, type: 'form', title: '教案' });
+  await mcp.call('form_add_control', { draft_id: id, area_itemid: a.data.area_itemid, label_text: '主題', control: { datatype: 'textbox' } });
+  const plan = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  assert.match(plan.data.plan.no_patient, /非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼/);
+  assert.ok(plan.data.plan.warnings.some(w => w.code === 'W_NOPATIENT_FORM'));
+  const done = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token });
+  assert.equal(done.ok, true, JSON.stringify(done));
+  const post = reqs.filter(x => x.method === 'POST' && x.path.endsWith('/api/v2/folders/usr/templates')).pop();
+  const iot = post.body.form[post.body.form.length - 1];
+  assert.deepEqual([iot.f_nopatient, iot.f_chtno, iot.f_opdno, iot.f_hideprevicon], [true, false, false, true]);
+  // 一般表單的 plan 沒有這一項
+  const plain = await mcp.call('online_template_create', { draft_id: await makeDraft(mcp, { name: '一般上架' }), folder_type: 'usr' });
+  assert.equal(plain.data.plan.no_patient, undefined);
+});
 
 test('online_template_create: two-step plan → POST, published recorded, errors mapped', async () => {
   await browserLogin(mcp, {});

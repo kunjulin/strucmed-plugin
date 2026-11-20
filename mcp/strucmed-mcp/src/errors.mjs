@@ -36,7 +36,7 @@ export const E = {
   NOT_WHITELISTED: 'E_NOT_WHITELISTED',
   FMAPI_DISABLED: 'E_FMAPI_DISABLED',
   INVALID_FHIR: 'E_INVALID_FHIR',
-  INVALID_FHIR: 'E_INVALID_FHIR'
+  BUILD_FAILED: 'E_BUILD_FAILED'
 };
 
 export const fail = (code, message, details) => {
