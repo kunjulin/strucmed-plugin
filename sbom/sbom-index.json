@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-11-20T13:16:41.554Z",
-  "plugin_version": "3.15.0",
-  "mcp_version": "2.18.0",
+  "generated_at": "2026-11-20T14:38:40.077Z",
+  "plugin_version": "3.15.1",
+  "mcp_version": "2.18.1",
   "files": [
     {
       "file": "sbom-plugin.json",

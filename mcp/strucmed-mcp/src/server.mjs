@@ -28,7 +28,8 @@ import * as site from './site.mjs';
 import { ToolError, E } from './errors.mjs';
 import { loadFlags, enabled } from './flags.mjs';
 import { VERSION } from './export.mjs';
-import { workspaceRoot } from './store.mjs';
+import { workspace, workspaceRoot } from './store.mjs';
+import { ensurePreviewServer, stopPreviewServers } from './preview-server.mjs';
 
 const SERVER_INFO = { name: 'strucmed-mcp', version: VERSION };
 const INSTRUCTIONS =
@@ -37,7 +38,7 @@ const INSTRUCTIONS =
   '行為與警告和逐筆呼叫相同）→ form_preview → form_export（兩段式確認，plan 必須先給使用者看）。要逐筆建或建完後修補時才用 form_create／form_add_area／form_add_control／form_update_control，一輪一個呼叫。' +
   '產出的 .htm 由使用者本人在編輯器匯入並保存。' +
   '改版面不必重建：form_move_control（搬欄位，itemid 不變）、form_update_area（區塊標題；titles 改頁籤名稱＝HIS 文字鍵、增減頁籤）、form_remove_area（空區塊）、form_add_area(after_itemid)；要重建時 form_create 帶 from_draft_id，字典補述會帶過去。' +
-  '未知參數一律回錯誤：說明文字用頂層 label_text、單位用 changes.unit。有預覽頁時所有審閱都在預覽頁；form_preview(html) 的 url 是 null 時執行 open 欄位的指令取得 link。';
+  '未知參數一律回錯誤：說明文字用頂層 label_text、單位用 changes.unit。有預覽頁時所有審閱都在預覽頁；form_preview(html) 會自動由 MCP 啟動本機預覽伺服器並直接回傳 url 與 link（僅在 url 為 null 時才執行 open 欄位的指令）。';
 const ONLINE_INSTRUCTIONS =
   ' 線上模式可用（站台自動判斷院內／院外，online_login 回應的 site 標明）：online_login（開啟瀏覽器登入頁，使用者在頁面輸入 HIS 帳密，絕不在對話中索取密碼；' +
   '回 pending 時請使用者在瀏覽器完成登入後再呼叫一次）→ online_me／online_features／online_dictionary_search／online_folder_list／online_template_get（唯讀）、' +
@@ -96,6 +97,21 @@ async function callTool(name, args) {
     if (tool.flag && !onlineNames.has(name) && !llmgwNames.has(name) && !enabled(tool.flag, loadFlags())) throw new ToolError(E.FEATURE_DISABLED, `feature flag ${tool.flag} 未開啟（feature-flags.json）`);
     checkArgs(tool, args);
     const data = await tool.handler(args || {});
+    if (name === 'form_preview' && args && args.format === 'html' && data && data.runtime_available && process.env.STRUCMED_NO_PREVIEW_SERVER !== '1') {
+      try {
+        const srv = await ensurePreviewServer({ workspace: workspace().root, web: data.runtime_web, log });
+        const url = `http://127.0.0.1:${srv.port}/__preview/${args.draft_id}?n=${encodeURIComponent(srv.nonce)}`;
+        data.url = url;
+        data.link = `[開啟表單預覽](${url})`;
+        data.port = srv.port;
+        data.server = srv.reused ? '沿用已在執行的伺服器' : `MCP 內建預覽伺服器（埠 ${srv.port}）`;
+        if (Array.isArray(data.warnings)) {
+          data.warnings = data.warnings.filter(w => !String(w).startsWith('W_PREVIEW_OTHER_HARNESS'));
+        }
+      } catch (e) {
+        log('preview server start failed:', String(e && e.message || e));
+      }
+    }
     const warnings = Array.isArray(data && data.warnings) ? data.warnings : [];
     // __content：tool 要附在文字結果之後的其他 content 區塊（例如 form_export include_content 的內嵌資源），不進文字 JSON
     const extra = Array.isArray(data && data.__content) ? data.__content.filter(Boolean) : [];
@@ -170,7 +186,10 @@ function startStdio() {
     }
     (Array.isArray(msg) ? msg : [msg]).forEach(m => track(respond(m).then(r => { if (r !== undefined) send(r); })));
   });
-  rl.on('close', () => Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0)));   // 結束前作廢 refresh token
+  const stop = () => Promise.allSettled([...inflight]).then(() => { stopPreviewServers(); return online.shutdown(); }).then(() => process.exit(0));
+  rl.on('close', stop);   // 結束前關閉內建預覽伺服器並作廢 refresh token
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
   site.ready().then(() => log(banner()));
 }
 
@@ -179,6 +198,7 @@ async function startHttpMode(config) {
   const { server, url } = await startHttp(config, respond, { log, onRequest: track });
   const stop = () => {
     server.close();
+    stopPreviewServers();
     Promise.allSettled([...inflight]).then(() => online.shutdown()).then(() => process.exit(0));
   };
   process.once('SIGINT', stop);

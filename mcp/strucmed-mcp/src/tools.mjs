@@ -1545,7 +1545,7 @@ export const TOOLS = [
     description: '呈現表單結構供使用者確認。tree / markdown：文字結構。html（v0.2，Claude 內部驗證用，見 SKILL §2c）：以 HIS 端 runtime（TempHtml）在本機離線呈現，' +
       '由 Claude 在內建瀏覽器設值、看計算式結果、執行巨集（LLM、語音、HIS 查詢改為顯示將送出的內容，不實際呼叫；網路由 CSP 封鎖），再把結果交給使用者檢查。' +
       'html 需要平台前端的本機副本與 harness 伺服器。副本位置依序取 STRUCMED_RUNTIME_WEB → 本機快取（<HOME>/.strucmed/runtime-web.json，由 scripts/check-env.mjs 寫入）→ 工作目錄與它上層數層的 strucmed/web、repo/strucmed/web 與 HOME 底下常見的 checkout 位置；回傳的 runtime_web 是實際結果，runtime_available:false 時 notes 寫出設定指令。' +
-      'url 取自 harness 寫的 .strucmed/preview/server.json（實際的埠）；伺服器還沒開、或是別份 plugin 的伺服器（W_PREVIEW_OTHER_HARNESS）時 url 是 null，執行 open 欄位的指令（會自動啟動、避開被占用的埠）取得 link。' +
+      'MCP 會在常駐行程內自動啟動或沿用本機預覽伺服器（只聽 127.0.0.1、不連外），直接回傳 url 與 link；僅在 url 是 null（或 W_PREVIEW_OTHER_HARNESS 未自動啟動）時才執行 open 欄位的指令取得 link。' +
       'html 同時是審閱模式：多寫 <draft_id>.meta.json（欄位事實、計算式試算、HIS 文字鍵），回傳 meta_file、review_dir；使用者在預覽頁改說明文字、選項、字典補述、留意見，按「送出意見」或「定稿」寫到 review_dir，以 form_review_read 讀回。套用第 N 次意見後帶 applied_seq 重新呼叫，再請使用者重新整理。' +
       'applied_seq 超過這個 draft 實際有過的意見（例如重建後的新 draft）時不採用，回 W_APPLIED_SEQ_RESET。formulas_from_review:true 自動讀 reviewer 的 review.md「## 試算」，不必逐字謄寫 formulas。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {

@@ -100,7 +100,9 @@ test('antigravity manifest: plugin root files, same version, relative paths from
   // Windows 由 cmd.exe 執行、macOS／Linux 由 sh 執行：只用兩邊都懂的 ||，不用 for／exec／command -v／單引號 echo。
   // 三個 node 都找不到時指令以非 0 結束，Antigravity 擋下 tool 呼叫（一律阻擋）。
   assert.doesNotMatch(cmd, /\bfor\b|\bdo\b|\bexec\b|command -v|'/, 'hook 指令要能在 cmd.exe 與 sh 執行');
-  assert.deepEqual(cmd.split(' || ').map(s => s.trim().endsWith(script)), [true, true, true]);
+  assert.deepEqual(cmd.split(' || ').map(s => s.trim().replace(/[)]$/, '').endsWith(script)), [true, true, true, true]);
+  // Windows 的 Antigravity 沒有 agy-node 指令：最後用 Antigravity.exe（Electron）當 Node 跑
+  assert.match(cmd, /[(]set ELECTRON_RUN_AS_NODE=1&& "%LOCALAPPDATA%.Programs.Antigravity.Antigravity[.]exe" /);
   assert.match(cmd, /\|\| node hooks\/antigravity\//);
   assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, 'rules', 'AGENTS.md')));
 });

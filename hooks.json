@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agy-node hooks/antigravity/validate-gate.js || \"$HOME/Library/Application Support/Antigravity/bin/agy-node\" hooks/antigravity/validate-gate.js || node hooks/antigravity/validate-gate.js",
+            "command": "agy-node hooks/antigravity/validate-gate.js || \"$HOME/Library/Application Support/Antigravity/bin/agy-node\" hooks/antigravity/validate-gate.js || node hooks/antigravity/validate-gate.js || (set ELECTRON_RUN_AS_NODE=1&& \"%LOCALAPPDATA%\\Programs\\Antigravity\\Antigravity.exe\" hooks/antigravity/validate-gate.js)",
             "timeout": 20
           }
         ]

@@ -14,9 +14,26 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.15.1（MCP 2.18.1）— 2026-11-20：預覽伺服器改由 MCP 常駐承載（修復 Antigravity 預覽連線被拒）；Antigravity Windows hook 免裝 Node.js
+
+**預覽伺服器改由 MCP 行程常駐承載（`form_preview(format: "html")`）**
+- **問題**：Antigravity（Windows）的 `run_command` 在指令結束時會回收整個子行程樹，`scripts/preview.mjs` 以 `detached: true` 背景啟動的 `serve.mjs` 在印出連結後立刻被結束，使用者點開預覽連結出現 `ERR_CONNECTION_REFUSED`。
+- **修正**：
+  - `tools/v0-harness/serve.mjs` 抽出 `startPreviewServer()`，同時保留獨立 CLI 執行模式。
+  - 新增 `mcp/strucmed-mcp/src/preview-server.mjs`，由常駐的 `strucmed-mcp` 行程直接啟動／沿用只聽 `127.0.0.1` 的本機預覽伺服器（遇到被占用的埠自動跳下一個、runtime 變更時自動重啟、MCP 結束或閒置超時時自動關閉並清理 `server.json`，不留孤兒行程）。
+  - `server.mjs` 在 `form_preview(format: "html")` 且 runtime 可用時自動確保預覽伺服器啟動，直接回傳 `url`、`link`、`port`、`server`；舊版或獨立執行 `scripts/preview.mjs` 時也會自動沿用同一台伺服器。
+  - 更新 `skills/verify-runtime/SKILL.md`、`rules/AGENTS.md`、`tools.mjs` 說明。
+  - 新增 `mcp/strucmed-mcp/test/preview-server.test.mjs`（涵蓋 MCP stdio 端到端預覽、審閱送出與讀回、`preview.mjs` 沿用、埠衝突跳埠、runtime 切換重啟、MCP 關閉自動清理）。
+
+**Antigravity：Windows 不用另外安裝 Node.js 也能跑 G2 定稿 hook**
+- Windows 版 Antigravity 沒有 `agy-node` 指令：MCP 的 `agy-node` 由 Antigravity 內部對應到內建 Node（log：「Using bundled agy-node」），hook 在 cmd.exe 執行，看不到這個對應。沒有裝 Node.js 的電腦，3.15.0 的 hook 仍會擋下所有 `call_mcp_tool`。
+- `hooks.json` 的指令最後加一個選擇：`(set ELECTRON_RUN_AS_NODE=1&& "%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe" hooks/antigravity/validate-gate.js)`，以 Electron 的 `ELECTRON_RUN_AS_NODE` 讓 `Antigravity.exe` 當 Node（v24）執行。macOS／Linux 的 sh 遇到這段會失敗、照舊阻擋。全部找不到時仍以非 0 結束、阻擋。
+- `test/host.test.mjs` 檢查四個選擇與這一段。README 支援表改寫。
+- 實測（本機 Windows、Antigravity 2.0 app 內建 Electron 44.9.1）：cmd.exe 在 PATH 沒有 node 時走 `Antigravity.exe`，回 `{"decision":"ask"}`；空輸入回 deny；sh 完全沒有 node 時 exit 1。未在 Antigravity 對話中實際觸發 hook；Antigravity 裝在預設位置以外時不適用。
+
 ## 3.15.0（MCP 2.18.0）— 2026-11-20：非病人表單（`no_patient` → iot `f_nopatient`）；Antigravity hook 支援 Windows
 
-發佈：見本節最後。3.14.0 未單獨發佈，與本版一起發佈。
+發佈（2026-11-20）：strucmed-plugin `b1f87ed`（已推送 main；發佈樹由本 repo `6663319` 產生）。發佈時：`release-plugin.mjs` ok、246 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）333 項：327 過、4 失敗、2 略過，失敗的 4 項是預覽頁的埠與 symlink 測試（Windows 環境問題，main 上相同）。tag：strucmed-plugin `v3.15.0`（→ `b1f87ed`）、本 repo `v3.15.0-src`（`6663319`）；GitHub Release「strucmed 3.15.0（MCP 2.18.0）：非病人表單、批次建置 form_build；Antigravity hook 支援 Windows」。尚未：從市集更新後的對話實測、Windows 上的 Antigravity 實測、平台端 `f_nopatient` 實測。 3.14.0 未單獨發佈，與本版一起發佈。
 
 **Antigravity：G2 定稿 hook 支援 Windows**
 - `hooks.json` 的 `strucmed-gate` 原本用 sh 的 `for … do … done` 找 node，Windows 由 cmd.exe 執行時出現「n was unexpected at this time.」，所有 `call_mcp_tool` 都被擋下。改成 cmd.exe 與 sh 都懂的 `agy-node … || "$HOME/Library/Application Support/Antigravity/bin/agy-node" … || node …`；三個都找不到時指令以非 0 結束，仍然阻擋。`validate-gate.js` 收到空輸入時改為阻擋（前一個 node 失敗後重跑時 stdin 已讀完，不能放行）。實測：本機 cmd.exe 與 sh 都回 `{"decision":"ask"}`；Antigravity 2.0 app 在 Windows 上未實測。

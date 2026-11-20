@@ -22,8 +22,8 @@ allowed-tools: Read, Bash(node *), mcp__Claude_Browser__*, SendUserFile
    - `W_RUNTIME_STALE`（站台比較新）→ 一句話告知使用者「本機 runtime 是 ver A、站台是 ver B」，問要不要更新；要更新就走 `runtime_fetch`（`refetch: true`，兩段式）。**不自動覆蓋**。使用者的副本是自己管理的（`source: "env"`）時只告知，不要動它。
    - `E_RUNTIME_HASH`（抓來的快取被改過）→ 不能用，請使用者同意後 `runtime_fetch(refetch: true)` 重抓。
    - `runtime_available: false` 且沒有副本 → 用 `runtime_fetch` 從站台抓一份：**第一次呼叫只回 plan**（站台、網址、版本戳記、幾個檔案、存到哪裡），把它給使用者確認（這是對外連線），同意後才帶 `confirm_token`。站台連不到或 flag `runtimeFetch` 關閉時，告知設定 `STRUCMED_RUNTIME_WEB` 的方法（`form_preview` 的 `notes` 已經寫出該平台的指令），審閱迴圈退回對話（`RuntimeVerification.md` §6）。
-1. `form_preview`（`format: "html"`；有 review.md 帶 `formulas_from_review: true`，已套用意見帶 `applied_seq`）產生預覽資料。回 `runtime_available: false` → 照第 0 步處理。編輯器匯出的 `.htm` 不能代替副本：引擎與函式庫都向站台載入，預覽會封鎖。回傳的 `runtime_version`、`runtime_source` 就是預覽頁橫幅會顯示的那一版。
-2. 跑一次，取回 `link`。埠號它會處理（沒開就在背景啟動，舊版占用時改下一個埠），不要自己換埠，也不要叫使用者自己啟動：
+1. `form_preview`（`format: "html"`；有 review.md 帶 `formulas_from_review: true`，已套用意見帶 `applied_seq`）產生預覽資料，並由常駐的 MCP 行程自動啟動（或沿用）本機預覽伺服器，直接回傳 `url` 與 `link`。回 `runtime_available: false` → 照第 0 步處理。編輯器匯出的 `.htm` 不能代替副本：引擎與函式庫都向站台載入，預覽會封鎖。回傳的 `runtime_version`、`runtime_source` 就是預覽頁橫幅會顯示的那一版。
+2. 只有在 `form_preview` 回傳的 `url` 是 `null` 時才需要跑一次取回 `link`（埠號它會處理，不要自己換埠，也不要叫使用者自己啟動）：
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/preview.mjs" <draft_id> --workspace <workspace>
    ```
