@@ -381,7 +381,7 @@ test('D4 flag formScriptAdvanced 關閉：autorun／table-rows 回 E_FEATURE_DIS
   const { draft_id, a2, h, bmi } = form();
   const note = t.form_add_control({ draft_id, area_itemid: a2, label_text: '摘要：', control: { datatype: 'textarea' } }).itemid;
   const btn = t.form_add_control({ draft_id, area_itemid: a2, control: { datatype: 'action', action_name: '產生摘要', action_id: note,
-    action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "qwen332b")` } }).itemid;
+    action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "nemotron35")` } }).itemid;
   setFlags({ formScript: true });
   const e = errOf(() => t.form_set_script({ draft_id, snippets: [{ template: 'autorun', params: { action: btn } }] }));
   assert.equal(e.code, 'E_INVALID_INPUT');

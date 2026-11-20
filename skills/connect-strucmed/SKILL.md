@@ -13,7 +13,7 @@ allowed-tools: Read, Bash(node *)
 > **不要 `cd`**：工作區＝工作目錄，`.strucmed/`、hooks、`preview.mjs` 都靠它找檔案。Bash 一律寫絕對路徑（`<workspace>/.strucmed/…`），`cd` 之後 hook 會找不到定稿檔。
 
 目的：讓後續流程知道「現在能用什麼」。全部只讀；strucmed 以瀏覽器登入（HIS 密碼只在站台登入頁輸入），選用的 token 由使用者自己以 `/plugin configure` 或環境變數提供，本 skill 只檢查有沒有，不設定、不索取。
-站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 內建的院外站台 `https://cgmh.ddns.net`（沒有 LlmGateway 與 FMapi；`/plugin configure` 的「院外站台網址」只在資訊室公告新網址時才需要填，填 `none` 則不探測院外）；兩邊都連不到 → 離線。
+站台**自動判斷**，不問使用者：院內網路 → 院內 LVAIW（`/strucmed`、`/llmgw`、`/FM`）；院外 → 內建的院外站台 `https://cgmh.ddns.net`（沒有 LlmGateway 與 FMapi，表單的 LLM／語音改走院外服務，見第 4 步；`/plugin configure` 的「院外站台網址」只在資訊室公告新網址時才需要填，填 `none` 則不探測院外）；兩邊都連不到 → 離線。
 
 ## 步驟
 
@@ -33,7 +33,7 @@ allowed-tools: Read, Bash(node *)
 3. 選填設定（LlmGateway）：LlmGateway token 未設定時，指引使用者在 Claude Code 內執行 `/plugin configure strucmed@strucmed-marketplace` 填寫後 `/reload-plugins`（Copilot CLI、Codex 改以啟動 shell 的環境變數 `LLMGW_API_KEY` 提供）。院外站台網址不需要設定（內建 `https://cgmh.ddns.net`），只有資訊室公告新網址時才以「院外站台網址」或 `STRUCMED_EXTERNAL_URL` 覆寫。四個設定項都是選填，`plugin configure` 列在 unconfigured 不代表要填，留空時預覽與線上照常可用。**不要**請使用者把密碼或 token 貼到對話；本 skill 也不代替使用者執行 configure。`STRUCMED_SITE=internal|external|offline` 可強制站台。
 4. 登入後：
    - `online_me`：記下 `user_id`、`dept_no`、`folders`（usr／sub／dpt 代碼）；之後建表的預設 `dept_no` 就用它。回 `W_NO_DEPT`（科部空白）：科部取自登入頁填的科部代碼，不是由 HIS 帳號推得；`online_logout` 後重新 `online_login`，請使用者在登入頁填科部代碼。字典比對、科部資料夾與 `form_create` 都需要科部，不要略過。
-   - `online_features`：回報三項狀態；`W_SITE_EXTERNAL`（院外站台）時告知：上架、`If-Match` 更新、字典與範本讀取都和院內相同，但沒有 LlmGateway、LLM 與語音，AI 巨集回院內再實測。`llm_gateway.enabled: false` 時告知「表單內的 LLM 按鈕仍走院內舊端點，不經閘道」；`runtime.save/query: false` 表示登入者不在 HIS 端存檔／查詢白名單（只影響 B1，不影響設計表單）。
+   - `online_features`：回報三項狀態；`W_SITE_EXTERNAL`（院外站台）時告知：上架、`If-Match` 更新、字典與範本讀取都和院內相同，但沒有 LlmGateway 與 FMapi（模型白名單用內建靜態表）。表單的 LLM 控制項、`LLMQUERY`、`LLMvision` 在院外改走站台允許的院外 LLM 服務（目前 OpenAI），`VOICETOTEXT` 與語音小助手改走院外語音服務（OpenAI、Groq）：使用者自備 API 金鑰（只存在瀏覽器，**不要請使用者貼到對話**），巨集指定的院內模型代號會被忽略、改用設定畫面選的模型，第一次使用會出現「院外 LLM／語音轉錄使用注意事項」。所以院外可以操作 AI 巨集，但院內模型（含只經 Gateway 的 `nemotron35` 系列）的回覆要回院內實測；資料會送到院外服務，測試只用去識別化內容。IE 舊版 temp.html 在院外不提供。`llm_gateway.enabled: false` 時告知「表單內的 LLM 按鈕仍走院內舊端點，不經閘道」；`runtime.save/query: false` 表示登入者不在 HIS 端存檔／查詢白名單（只影響 B1，不影響設計表單）。
    - 字典來源改用 `online_dictionary_search`（`update_index: true`、不帶 `q`）建立本機索引，取代請使用者匯出 CSV。
 5. LlmGateway（只有院內）：`llmgateway_models` 有列出時呼叫，回報模型數、別名對應與 deprecated 的模型（`references/ModelWhitelist.md`）；否則提醒「模型白名單使用內建靜態表，表單有 AI 巨集時會標 `W_LLM_WHITELIST_STALE`」，並指引：在 LlmGateway「我的帳號」核發伺服器型 token（標籤 strucmed-skill）→ `/plugin configure strucmed@strucmed-marketplace` 填「LlmGateway token」→ `/reload-plugins`。
 6. FMapi（只有院內）：`fmapi_status` 有列出時呼叫，回報錯誤紀錄狀態與相關站台可用率（`W_SITE_DOWN` 要特別點出）；未設定時略過（選用）。

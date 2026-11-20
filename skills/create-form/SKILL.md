@@ -52,10 +52,10 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 | 作業別 | 上架才問 | 門／住／急／手術／檢查／助手／All；**測試表單不設**，交給 planner 時寫「不設」，不要把需求裡提到的科別或住院情境當成作業別帶進去 |
 | 字典來源 | **必要** | 比對既有字典的依據。已登入時**自動**執行 `online_dictionary_search`（`update_index: true`，不帶 `q`）與 `online_dictionary_usage`（不帶 `dic_id`），不用問；索引帶層級、desc、memo、fhir。未登入時請使用者登入，或用字典頁選單「Export」匯出的 CSV → `dictionary_load`（「批次匯出所選」沒有 id；CSV 讀不到完整的 memo，回 `W_DICT_CSV_JSON_BROKEN` 時改用線上） |
 | HIS 文字輸出的鍵名 | 有頁籤或要回 HIS 時**必問** | 表單文字回 HIS 時分段用的鍵（例 `report`、`impression`）。**建議鍵名＝頁籤名稱**：報告文字以「[頁籤名稱:]」分段，選項說明寫「頁籤名稱就是鍵；頁籤後面的區塊文字會併入最後一個鍵」。接收端有固定鍵時照它取，帶進 `form_create` 的 `his_text_keys`，`form_validate` 會以 `W_HIS_TEXT_KEYS` 檢查，預覽頁的文字輸出面板也會比對。事後要改鍵用 `form_update_area`（`titles`），不必重建 |
-| AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2 |
+| AI／巨集需求 | 有才問 | 觸發（按鈕、輸入後自動、開表單帶入）、輸入來源（欄位、HIS 天數、影像、錄音）、輸出欄位與是否回 HIS；配方見 `references/MacroRecipes.md` §2。模型依 `references/ModelWhitelist.md` §3：整理、摘要、擷取、長文件 `nemotron35`，推理 `tnemotron35`（固定格式 `tnemotron35-low`），並告知使用者這個系列**只經院內 LlmGateway**（`W_LLM_MODEL_GATEWAY_ONLY`）。**不建議、不使用 qwen 系列**（落日模型：院方建議不採用，2027-01-01 自 LlmGateway 下架；工具會以 `E_LLM_MODEL_SUNSET` 拒絕）：使用者指定時說明原因與替代寫法 |
 | 樣式與即時提示 | 工具清單有 `form_set_script`（flag `formScript`）時才問一句 | 要不要強調欄位、區塊底色或表格格線（樣式）、值不合理時立即提示（guard）、輸入後自動帶出判讀或分類（derive／lookup）、必填離開即提醒（required）；開文件自動跑巨集、表格預設列數是進階（另需 `formScriptAdvanced`）。規則與替代做法見 `references/ScriptAddonRules.md` §1。flag 關閉時不問，需求提到就告知需開 flag |
 | 嵌入院內頁面 | 工具清單的 `form_add_area` type 有 `embed`（flag `embedArea`）且需求提到時才問 | 頁面網址（使用者提供，https 院內主機；不要猜）、表單一載入就顯示（embed 區塊）還是按鈕才開（`OPENPANEL`）、要帶哪些參數（只有病歷號、科別、使用者、門診序號與常數）、要送出與寫回哪些欄位、寫回欄位要不要進倉儲、頁面是整頁型 APP 還是小工具（決定 `height`：整頁型用 `"fill"`，小工具給像素；iframe 不會隨內容長高，沒問到就在草案「### 待決」標預設）。選項說明寫明「嵌入頁面會收到病歷號、科別、使用者、門診序號，交付時列在嵌入頁面資料流」。規則見 `references/FormDesignRules.md`〈嵌入頁面〉。flag 關閉時不問，需求提到就告知需開 `embedArea`（站台編輯器實測後） |
-| 附件交給 LLM | 工具清單的 `form_add_control` datatype 有 `attachbox`（flag `attachBox`）且需求提到影像、PDF、Excel、錄音檔時才問 | 要放入哪些類型、結果寫到哪個欄位與是否回 HIS、模型（留空用預設，或 `llmgateway_models` 查到的 id）；附件不存檔要先講明。flag 沒開時說明要開 flag、站台也要啟用附件容器 |
+| 附件交給 LLM | 工具清單的 `form_add_control` datatype 有 `attachbox`（flag `attachBox`）且需求提到影像、PDF、Excel、錄音檔時才問 | 要放入哪些類型、結果寫到哪個欄位與是否回 HIS、模型（留空用預設；一次看多張影像、讀影像上的文字建議 `nemotron35`，只經院內 LlmGateway、一次最多 8 MB；或 `llmgateway_models` 查到的 id，qwen 系列除外）；附件不存檔要先講明。flag 沒開時說明要開 flag、站台也要啟用附件容器 |
 
 能從需求推得的不問。一次用 `AskUserQuestion` 問完缺的項目，不要分多輪。
 

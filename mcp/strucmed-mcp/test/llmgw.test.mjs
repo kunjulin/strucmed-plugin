@@ -18,6 +18,7 @@ const behavior = {};
 const MODELS = [
   { id: 'Qwen3.6:27B', owned_by: 'llm_test', context_length: 262144, vision: false, thinking: 'enable_thinking', status: '', description: '預設' },
   { id: 'qwen3:32b', owned_by: 'llama31', context_length: 40960, vision: false, thinking: 'think', status: '', description: '' },
+  { id: 'Nemotron-3.5-Super-VL', owned_by: 'nemotron', context_length: 262144, vision: true, thinking: null, status: '', description: '只經 Gateway' },
   { id: 'gemma3:12b', owned_by: 'gemma2_9b', context_length: 16000, vision: true, thinking: null, status: '', description: '影像' },
   { id: 'gemma2:latest', owned_by: 'gemma2_9b', context_length: 8192, vision: false, thinking: null, status: 'deprecated', description: '即將停用' },
   { id: 'llama3.1:8b-instruct-q8_0', owned_by: 'llama3-1q8', context_length: 32000, vision: false, thinking: null, status: '', description: '' }
@@ -119,14 +120,16 @@ test('llmgateway_models fetches with the bearer key, writes the cache and maps a
   assert.ok(!names.includes('llmgateway_chat_test'), 'chat test hidden by default flag');
   const r = await mcp.call('llmgateway_models', {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.data.count, 5);
+  assert.equal(r.data.count, 6);
   assert.equal(r.data.fetched, true);
   assert.equal(reqs[0].headers.authorization, `Bearer ${KEY}`);
-  assert.match(r.data.aliases.qwen3627b, /^Qwen3\.6:27B/);
+  assert.match(r.data.aliases.nemotron35, /^Nemotron-3\.5-Super-VL$/);
+  assert.match(r.data.aliases.qwen3627b, /^Qwen3\.6:27B（落日：2027-01-01 下架，不要新用，改 nemotron35）/);
+  assert.ok(r.data.warnings.some(w => /^W_LLM_MODEL_SUNSET：/.test(w) && /Qwen3\.6:27B、qwen3:32b/.test(w)), JSON.stringify(r.data.warnings));
   assert.match(r.data.aliases.tw, /gemma2:latest（deprecated）/);
   assert.match(r.data.aliases.ph4, /不在清單/);
   const cache = JSON.parse(fs.readFileSync(path.join(mcp.ws, '.strucmed', 'llm-models.json'), 'utf8'));
-  assert.equal(cache.models.length, 5);
+  assert.equal(cache.models.length, 6);
   assert.ok(!JSON.stringify(cache).includes(KEY));
   const again = await mcp.call('llmgateway_models', { refresh: false });
   assert.equal(again.data.fetched, false, 'fresh cache reused');
@@ -144,8 +147,12 @@ test('wrong key → E_AUTH; redirects not followed; empty list → E_UPSTREAM', 
 test('formula_check uses the gateway whitelist: missing, deprecated and no-vision models are reported', async () => {
   await mcp.call('llmgateway_models', {});
   const check = async text => (await mcp.call('formula_check', { kind: 'macro', text })).data;
-  const ok = await check('LLMQUERY(A3, "摘要", "qwen3627b")');
+  const ok = await check('LLMQUERY(A3, "摘要", "nemotron35")');
   assert.ok(!JSON.stringify(ok).includes('E_LLM_MODEL'), JSON.stringify(ok));
+  assert.match(JSON.stringify(ok), /W_LLM_MODEL_GATEWAY_ONLY/);
+  // 落日模型：還在閘道上也回 E_LLM_MODEL_SUNSET，並附替代寫法
+  const sunset = await check('LLMQUERY(A3, "摘要", "tqwen3627b-low")');
+  assert.ok(sunset.errors.some(e => e.code === 'E_LLM_MODEL_SUNSET' && e.replacement === 'tnemotron35-low'), JSON.stringify(sunset));
   const missing = await check('LLMQUERY(A3, "摘要", "ph4")');
   assert.match(JSON.stringify(missing), /E_LLM_MODEL_NOT_ON_GATEWAY/);
   const deprecated = await check('LLMQUERY(A3, "摘要", "tw")');
@@ -160,7 +167,7 @@ test('form_validate warns W_LLM_WHITELIST_STALE when AI steps exist without a ca
     const c = await m.call('form_create', { name: 'AI 表單', dept_no: 'APP' });
     const a = await m.call('form_add_area', { draft_id: c.data.draft_id, type: 'form', title: 'x' });
     const ta = await m.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '回覆', control: { datatype: 'textarea' } });
-    const btn = await m.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '問 AI', control: { datatype: 'action', action_name: '摘要', action_script: `LLMQUERY(A${ta.data.itemid}, "請摘要", "qwen3627b")`, action_id: ta.data.itemid } });
+    const btn = await m.call('form_add_control', { draft_id: c.data.draft_id, area_itemid: a.data.area_itemid, label_text: '問 AI', control: { datatype: 'action', action_name: '摘要', action_script: `LLMQUERY(A${ta.data.itemid}, "請摘要", "nemotron35")`, action_id: ta.data.itemid } });
     assert.equal(btn.ok, true, JSON.stringify(btn));
     const v = await m.call('form_validate', { draft_id: c.data.draft_id });
     assert.ok(v.data.warnings.some(w => String(w.code || w).includes('W_LLM_WHITELIST_STALE')), JSON.stringify(v.data.warnings));
@@ -184,6 +191,7 @@ test('llmgateway_chat_test (flag on): whitelist, PHI guard, headers, thinking fl
     const r = await m.call('llmgateway_chat_test', { model: 'qwen3627b', prompt: '請摘要：病人主訴頭痛三天', system: '你是助理', thinking: true, max_tokens: 5000 });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.equal(r.data.model, 'Qwen3.6:27B');
+    assert.ok(r.data.warnings.some(w => /^W_LLM_MODEL_SUNSET：.*改用 nemotron35/.test(w)), '落日模型仍可試跑（比對既有表單），但要提醒');
     assert.match(r.data.content, /^echo:/);
     assert.equal(r.data.reasoning, 'thought');
     assert.equal(r.data.usage.total_tokens, 8);
@@ -193,6 +201,10 @@ test('llmgateway_chat_test (flag on): whitelist, PHI guard, headers, thinking fl
     assert.equal(chat.body.max_tokens, 1024, 'capped');
     assert.deepEqual(chat.body.chat_template_kwargs, { enable_thinking: true });
     assert.equal(chat.body.messages[0].role, 'system');
+    const nemo = await m.call('llmgateway_chat_test', { model: 'tnemotron35', prompt: 'x', thinking: true });
+    assert.equal(nemo.data.model, 'Nemotron-3.5-Super-VL');
+    assert.deepEqual(nemo.data.warnings, [], 'nemotron35 沒有落日提醒');
+    assert.equal(reqs.filter(x => x.path.endsWith('/v1/chat/completions')).at(-1).body.chat_template_kwargs, undefined);
     const byId = await m.call('llmgateway_chat_test', { model: 'gemma3:12b', prompt: 'x' });
     assert.equal(byId.data.model, 'gemma3:12b', 'gateway id accepted directly');
     behavior.rate = true;

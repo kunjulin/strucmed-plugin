@@ -278,6 +278,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
           ...(lb && { bridge: embed.resolveBridge(lb, policy.embed_apps) }) });
       }
       if (f.level === 'warn') warn(f.code, `#${c.itemid}：${f.message}`, c.itemid);
+      // 落日模型：原表單既有、這次沒動到的巨集只提醒（改版不擋）；新增或改到的照 error
+      else if (f.code === 'E_LLM_MODEL_SUNSET' && !sFresh) warn('W_LLM_MODEL_SUNSET', `#${c.itemid}：${f.message}（原表單既有：這次沒有改到這個巨集所以只提醒，下架日前請改版換掉）`, c.itemid);
       else report(sFresh, f.code, `#${c.itemid}：${f.message}`, c.itemid);
     }
   }
@@ -301,8 +303,8 @@ export function validateDraft(draft, dictIndex, policy = {}) {
   }
   if (macroIds) warn('W_RENUMBER_MACRO', '表單有巨集或 LLM 按鈕：編輯器「重新編號」不會更新巨集內容中的 A<n>、目標 id 與附件容器 id（計算式裡的 ATTACHCOUNT 也是），匯入後請勿按「重新編號」');
   if (ai.length) {
-    warn('W_AI_DATAFLOW', `有 ${ai.length} 個 AI 步驟會把表單內容送到院內 LLM／語音服務（清單見 manifest「AI 資料流」；交付時必須告知使用者）`);
-    if (!Array.isArray(policy.gateway_models) && policy.site_external) warnings.push({ code: 'W_LLM_WHITELIST_STALE', expected: true, message: '院外預期：院外站台沒有 LlmGateway，模型名稱只以內建靜態表檢查；回院內後以 llmgateway_models 更新並實測 AI 巨集' });
+    warn('W_AI_DATAFLOW', `有 ${ai.length} 個 AI 步驟會把表單內容送到院內 LLM／語音服務；在院外站台（cgmh.ddns.net、struNote）開啟時改送站台允許的院外 LLM 服務（目前 OpenAI）與院外語音服務（OpenAI、Groq），使用者自備 API 金鑰、第一次使用會出現注意事項，巨集指定的院內模型代號會被忽略（清單見 manifest「AI 資料流」；交付時必須告知使用者）`);
+    if (!Array.isArray(policy.gateway_models) && policy.site_external) warnings.push({ code: 'W_LLM_WHITELIST_STALE', expected: true, message: '院外預期：院外站台沒有 LlmGateway，模型名稱只以內建靜態表檢查；院外站台的 AI 巨集改用使用者在設定畫面選的院外模型（巨集指定的院內模型代號會被忽略），院內模型的行為請回院內以 llmgateway_models 更新後實測' });
     else if (!Array.isArray(policy.gateway_models)) warn('W_LLM_WHITELIST_STALE', '模型白名單尚未從 LlmGateway 取得（llmgateway_models），只以內建靜態表檢查模型名稱');
     else if (policy.gateway_stale) warn('W_LLM_WHITELIST_STALE', `LlmGateway 白名單快取已 ${policy.gateway_age_days} 天，建議重新 llmgateway_models`);
   }

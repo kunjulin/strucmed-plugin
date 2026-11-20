@@ -27,6 +27,8 @@
 
 ## 3. 配方
 
+模型：配方一律用 `nemotron35`（整理、摘要、擷取、長文件）與 `tnemotron35`（推理；固定格式 `tnemotron35-low`）。**前提是站台經院內 LlmGateway**（`W_LLM_MODEL_GATEWAY_ONLY`；沒有 Gateway 時 `LLMQUERY` 不送出），計畫的 AI 資料流要寫明。qwen 系列是落日模型（2027-01-01 下架，院方建議不採用），不得寫進新的或改到的巨集（`E_LLM_MODEL_SUNSET`，`ModelWhitelist.md` §5）。院外站台忽略模型代號，改用使用者選的院外模型（`ModelWhitelist.md` §6）。
+
 每個配方：觸發 → 步驟 → 需要的控制項 → 注意。`<id>` 一律以計畫的 `C*` 表示，建置後由 builder 換成 itemid。
 
 ### R1 一鍵病歷摘要（HIS 資料 → LLM）
@@ -34,7 +36,7 @@
 - 控制項：`C_src` label `format=hisquery`（例 `OPDDATA.InDays(180).GetLatestString()`，開表單時帶入，勾參與計算）；`C_out` textarea。
 - 步驟：
   ```
-  LLMQUERY(<C_out>, IF(LEN(A<C_src>) < 10, "not available", CONCATENATE("…摘要 prompt…", A<C_src>)), "qwen3627b")
+  LLMQUERY(<C_out>, IF(LEN(A<C_src>) < 10, "not available", CONCATENATE("…摘要 prompt…", A<C_src>)), "nemotron35")
   ```
 - 注意：HIS 參照用 label 在開表單時帶入最穩；`HISQUERY("id,查詢")` 當巨集步驟後接 LLMQUERY 是否等待**未經實測**，不要依賴。`W_PATIENT_DATA_READ` 與 `W_AI_DATAFLOW` 必列。
 
@@ -43,10 +45,10 @@
 - 控制項：`C_src`（同 R1）、`C_sum` textarea、`C_q` textarea。
 - 步驟：
   ```
-  LLMQUERY(<C_sum>, IF(LEN(A<C_src>) < 10, "not available", CONCATENATE("…摘要…", A<C_src>)), "qwen3627b"),
-  LLMQUERY(<C_q>, IF(LEN(A<C_sum>) < 10, "not available", CONCATENATE("…依摘要列問題與鑑別…", A<C_sum>)), "tqwen3627b")
+  LLMQUERY(<C_sum>, IF(LEN(A<C_src>) < 10, "not available", CONCATENATE("…摘要…", A<C_src>)), "nemotron35"),
+  LLMQUERY(<C_q>, IF(LEN(A<C_sum>) < 10, "not available", CONCATENATE("…依摘要列問題與鑑別…", A<C_sum>)), "tnemotron35")
   ```
-- 注意：第二步讀第一步的欄位，所以 `C_sum` 要勾參與計算；兩步都要防呆。
+- 注意：第二步讀第一步的欄位，所以 `C_sum` 要勾參與計算；兩步都要防呆。第二步要每次輸出一致（固定格式）改 `"tnemotron35-low"`。
 
 ### R3 影像／圖表 → 文字（LLMvision → LLMQUERY）
 - 觸發：按鈕「讀取報告影像」；影像由使用者在 HIS 端選取。
@@ -54,9 +56,9 @@
 - 步驟：
   ```
   LLMvision(<C_desc>, "只描述影像內容，表格逐列轉錄，看不清用 ? 代替，不要推測，不要下診斷", "gemma3_12b"),
-  LLMQUERY(<C_out>, IF(LEN(A<C_desc>) < 10, "not available", CONCATENATE("…整理成格式…", A<C_desc>)), "qwen332b")
+  LLMQUERY(<C_out>, IF(LEN(A<C_desc>) < 10, "not available", CONCATENATE("…整理成格式…", A<C_desc>)), "nemotron35")
   ```
-- 注意：只有 `gemma3`、`gemma3_12b`、`medgemma` 能看圖，其餘會編造；沒有第二步時 lint 出 `W_VISION_NO_FOLLOWUP`（只要描述可忽略）。
+- 注意：LLMvision 只有 `gemma3`、`gemma3_12b`（預設）、`medgemma`、`nemotron35` 能看圖，其餘會編造；一次看多張影像、讀影像上的文字建議 `nemotron35`（只經 Gateway，沒有 Gateway 時改用預設 `gemma3:12b`）；沒有第二步時 lint 出 `W_VISION_NO_FOLLOWUP`（只要描述可忽略）。
 
 ### R4 口述 → 紀錄（VOICETOTEXT → LLMQUERY）
 - 觸發：按鈕「口述」；按下即錄音，結束後寫入逐字稿欄位再接 LLM。
@@ -64,9 +66,9 @@
 - 步驟：
   ```
   VOICETOTEXT(<C_raw>, 'ASUS'),
-  LLMQUERY(<C_note>, IF(LEN(A<C_raw>) < 10, "not available", CONCATENATE("…整理口述…", A<C_raw>)), "qwen3627b")
+  LLMQUERY(<C_note>, IF(LEN(A<C_raw>) < 10, "not available", CONCATENATE("…整理口述…", A<C_raw>)), "nemotron35")
   ```
-- 注意：服務只能 `'ASUS'` 或 `'QWEN'`（`E_ASR_PROVIDER`）；同時只能開一個錄音視窗；音量太小會被判為結束；逐字稿欄位保留給使用者核對。
+- 注意：服務用 `'ASUS'`（平台另接受 `'QWEN'`，其餘 `E_ASR_PROVIDER`；`'QWEN'` 是否隨 qwen 系列落日尚待院方確認，新案不要用）；院外站台改走使用者選的院外語音服務（OpenAI、Groq）；同時只能開一個錄音視窗；音量太小會被判為結束；逐字稿欄位保留給使用者核對。
 
 ### R5 輸入後自動判讀（fur_action_id → 隱藏按鈕）
 - 觸發：使用者在 `C_in` textbox 輸入完成。
@@ -100,7 +102,7 @@
 - 觸發：按鈕。
 - 步驟：
   ```
-  LLMQUERY(<C_out>, IF(A<C_flag> = "是", CONCATENATE("…", A<C_src>), "do not respond, answer: not applicable"), "qwen3627b")
+  LLMQUERY(<C_out>, IF(A<C_flag> = "是", CONCATENATE("…", A<C_src>), "do not respond, answer: not applicable"), "nemotron35")
   ```
 - 注意：不要寫 `IF(A<C_flag> = "是", LLMQUERY(...), "")`，那樣 LLMQUERY 仍會執行且不等待。
 
@@ -134,7 +136,7 @@
   - 容器 id：直接寫 itemid 數字，多個寫 `"2,5"`；省略＝表單上所有容器。不能寫 `A2`（`E_ATTACH_SOURCE`）。
 - 容器會送影像而模型沒有視覺能力時 `E_LLM_MODEL_NO_VISION`；容器只收 Excel／CSV、文字、音檔時文字模型也能用（只提醒）。
 - 音檔：`LLMATTACH` 送出前會自動把還沒轉寫的音檔轉成逐字稿。要讓使用者先看、先改逐字稿，就另放一顆按鈕 `ATTACHTRANSCRIBE(<C_box>)`（使用者也可以按卡片上的「轉逐字稿」）。
-- 只要文字、不送影像時：`LLMQUERY(<C_out>, CONCAT("只根據下列內容回答，無資料時回答 not available：", ATTACHTEXT(<C_box>, "", 8000)), "qwen332b")`。`ATTACHTEXT(容器id, 篩選字, 字數上限)` 的篩選字只留含該字的列（查 ICD-10 對照表這類大表時用），字數上限 0 或省略＝不限。
+- 只要文字、不送影像時：`LLMQUERY(<C_out>, CONCAT("只根據下列內容回答，無資料時回答 not available：", ATTACHTEXT(<C_box>, "", 8000)), "nemotron35")`。`ATTACHTEXT(容器id, 篩選字, 字數上限)` 的篩選字只留含該字的列（查 ICD-10 對照表這類大表時用），字數上限 0 或省略＝不限。
 - 計算式可用 `ATTACHCOUNT(<C_box>)`（項目數）做提示，例 `IF(ATTACHCOUNT(<C_box>) > 0, "", "尚未放入附件")`。
 - 揭露：`W_AI_DATAFLOW` 列出每一步送出的容器、可放入的類型與模型；`ATTACHTRANSCRIBE` 列為送語音服務。
 - 限制：附件與逐字稿不存檔；一次送出的請求上限約 19 MB（影像多時減少張數或 PDF 頁面影像）；flag 關閉時 `LLMATTACH`、`ATTACHTRANSCRIBE`、`ATTACHTEXT`、`ATTACHCOUNT` 回 `E_FEATURE_DISABLED`，改版表單裡既有的原封保留、以 warning 列出。

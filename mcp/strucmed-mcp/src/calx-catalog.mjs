@@ -94,20 +94,49 @@ export function classify(name) {
 // 模型名稱先 toLowerCase；拼錯或已移除的名稱會「靜默」改用預設模型。
 export const LLM_MODELS = {
   '': 'llama3.1:8b（預設）', tw: 'gemma2', math: 'gemma2', phi4: 'phi4', ph4: 'phi4', gemma3: 'gemma3',
-  gemma3_12b: 'gemma3:12b', medgemma: 'medgemma', qwen332b: 'qwen3:32b', tqwen332b: 'qwen3:32b（思考）',
-  qwen3627b: 'Qwen3.6:27B', tqwen3627b: 'Qwen3.6:27B（思考）', 'tqwen3627b-low': 'Qwen3.6:27B（思考 low）',
-  'tqwen3627b-medium': 'Qwen3.6:27B（思考 medium）', 'tqwen3627b-high': 'Qwen3.6:27B（思考 high）',
+  gemma3_12b: 'gemma3:12b', medgemma: 'medgemma',
   // 只經院內 LlmGateway（平台 20261124）：沒有直連端點，站台沒啟用 Gateway 時 LLMQUERY 顯示提示、不送出
   nemotron35: 'Nemotron-3.5-Super-VL（只經 Gateway）', tnemotron35: 'Nemotron-3.5-Super-VL（思考，只經 Gateway）',
   'tnemotron35-low': 'Nemotron-3.5-Super-VL（思考 low，只經 Gateway）', 'tnemotron35-medium': 'Nemotron-3.5-Super-VL（思考 medium，只經 Gateway）',
-  'tnemotron35-high': 'Nemotron-3.5-Super-VL（思考 high，只經 Gateway）'
+  'tnemotron35-high': 'Nemotron-3.5-Super-VL（思考 high，只經 Gateway）',
+  // 落日模型（LLM_SUNSET）：仍認得，只為了既有表單改版時不變成未知模型；新寫的巨集不得使用
+  qwen332b: 'qwen3:32b（落日）', tqwen332b: 'qwen3:32b（思考，落日）',
+  qwen3627b: 'Qwen3.6:27B（落日）', tqwen3627b: 'Qwen3.6:27B（思考，落日）', 'tqwen3627b-low': 'Qwen3.6:27B（思考 low，落日）',
+  'tqwen3627b-medium': 'Qwen3.6:27B（思考 medium，落日）', 'tqwen3627b-high': 'Qwen3.6:27B（思考 high，落日）'
 };
+// 落日模型（院方決定 2026-11-19）：qwen 系列院方建議不採用，LlmGateway 於 SUNSET_DATE 下架。
+//   - 下架日之前：本次新增／修改的巨集 → E_LLM_MODEL_SUNSET；原表單既有、沒動到的 → W_LLM_MODEL_SUNSET（validate.mjs）
+//   - 下架日（台灣時間 00:00）起：一律視為已下架 → E_LLM_MODEL_DEPRECATED
+// 要調整日期或替代寫法只改這裡。replace：別名 → 建議的替代別名
+export const LLM_SUNSET = {
+  date: '2027-01-01',
+  family: 'qwen 系列',
+  gateway_models: ['Qwen3.6:27B', 'qwen3:32b'],
+  replace: {
+    qwen3627b: 'nemotron35', qwen332b: 'nemotron35',
+    tqwen3627b: 'tnemotron35', 'tqwen3627b-low': 'tnemotron35-low', 'tqwen3627b-medium': 'tnemotron35-medium', 'tqwen3627b-high': 'tnemotron35-high',
+    tqwen332b: 'tnemotron35'
+  }
+};
+// 下架日是否已到（now 可由 policy.now 帶入，測試用；預設現在時間）
+export function sunsetPassed(now) {
+  const t = now ? new Date(now).getTime() : Date.now();
+  return t >= Date.parse(`${LLM_SUNSET.date}T00:00:00+08:00`);
+}
+// 別名（已套用 LLM_ALIASES）或閘道模型 id 是否為落日模型；回 { replacement } 或 null
+export function sunsetModel(name) {
+  const m = String(name || '').toLowerCase();
+  if (!m) return null;
+  if (LLM_SUNSET.replace[m]) return { replacement: LLM_SUNSET.replace[m] };
+  if (LLM_SUNSET.gateway_models.some(g => g.toLowerCase() === m)) return { replacement: 'nemotron35' };
+  return null;
+}
 // 只掛在 LlmGateway 的模型代號（平台 TempHtml.js LLM_GATEWAY_ONLY_MODELS、attachbox.js GATEWAY_VISION_MODELS）：
 // 沒有 Gateway 的站台 LLMQUERY 不送出，LLMvision／LLMATTACH 改用預設 gemma3:12b；請求上限見 GATEWAY_MODEL_MAX_BYTES
 export const GATEWAY_ONLY_MODELS = ['nemotron35', 'tnemotron35', 'tnemotron35-low', 'tnemotron35-medium', 'tnemotron35-high'];
 // Gateway 模型的請求本體上限（平台 attachbox.js GATEWAY_MODEL_TRAITS；Nemotron 上游 8 MiB，2026-11-17 實測）
 export const GATEWAY_MODEL_MAX_BYTES = { 'Nemotron-3.5-Super-VL': 8 * 1024 * 1024 };
-// 仍可用但只是別名（20260103 收斂政策後導向 qwen3:32b）
+// 舊別名（20260103 收斂政策後導向 qwen3:32b；qwen 系列已列落日 → 同樣回報 LLM_SUNSET）
 export const LLM_ALIASES = {
   '70b': 'qwen332b', qwen3a3b: 'qwen332b', tqwen3a3b: 'tqwen332b',
   ...Object.fromEntries(['gpt-oss-120b', 'gpt-oss-20b'].flatMap(b => ['', '-low', '-medium', '-high'].map(s => [b + s, 'tqwen332b'])))

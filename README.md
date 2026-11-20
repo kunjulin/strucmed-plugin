@@ -367,7 +367,7 @@ git -C ~/strucmed-plugin pull
 請用 strucmed plugin（skill 與 MCP）幫我製作「MMSE／CDR 語音訪談評估表」：
 
 1. 先連線並用瀏覽器登入 strucmed（密碼我自己在登入頁輸入，不要在對話中問）。
-2. 規劃一張失智症門診用的表單：MMSE 11 題問病人、CDR 6 項問家屬；提問卡逐題提示，一鍵錄音轉文字（院內 ASUS），逐字稿標上【題名】；AI 先整理證據、再逐題給分（qwen332b），不確定就留給人；MMSE 總分、教育程度切點、CDR 總評（Morris 規則）、SOB、報告結果句用計算式完成；最後由醫師確認。不要產生 CUSTOMFUNC 或表單 JS，不把病人識別資料送給 AI。
+2. 規劃一張失智症門診用的表單：MMSE 11 題問病人、CDR 6 項問家屬；提問卡逐題提示，一鍵錄音轉文字（院內 ASUS），逐字稿標上【題名】；AI 先整理證據、再逐題給分（tnemotron35-low，只經院內 LlmGateway），不確定就留給人；MMSE 總分、教育程度切點、CDR 總評（Morris 規則）、SOB、報告結果句用計算式完成；最後由醫師確認。不要產生 CUSTOMFUNC 或表單 JS，不把病人識別資料送給 AI。
 3. 缺的資訊（分數放哪裡、要不要設捷徑與作業別）一次問我。
 4. 草案直接建成 draft，把 runtime 預覽連結給我；我在預覽頁填值、看計算結果與 HIS 文字輸出、留意見，你照意見修改。
 5. 我按定稿後，把驗證結果、字典與上架設定一次給我核准，上架到我的個人資料夾（usr），由我在瀏覽器確認頁按「確認寫入」；完成後取回範本，核對名稱與控制項數。
@@ -505,6 +505,9 @@ MCP tool 在 hook 裡一律是 `call_mcp_tool`，伺服器與 tool 名稱在 `to
 | 上架（`publish-form`）、`If-Match` 更新原範本 | ✅ | ✅ |
 | LlmGateway 模型白名單、`llmgateway_chat_test` | ✅ | ❌（白名單用內建靜態表） |
 | FMapi 站台狀態 | ✅ | ❌ |
+| 表單內的 AI（LLM 控制項、`LLMQUERY`、`LLMvision`、`VOICETOTEXT`、語音小助手） | 院內模型與院內語音；建議模型 `nemotron35`（整理、摘要、擷取）／`tnemotron35`（推理），只經院內 LlmGateway | 改走站台允許的院外 LLM 服務（目前 OpenAI）與院外語音服務（OpenAI、Groq）：自備 API 金鑰（只存在瀏覽器），巨集指定的院內模型代號會被忽略、改用設定畫面選的模型，第一次使用會出現注意事項；IE 舊版 temp.html 不提供 |
+
+qwen 系列模型（`qwen3627b`、`qwen332b` 與思考版）院方建議不採用，2027-01-01 自 LlmGateway 下架：plugin 不再建議，新寫或改到的巨集會被 `E_LLM_MODEL_SUNSET` 擋下並附替代寫法；既有表單沒動到的巨集只提醒（`W_LLM_MODEL_SUNSET`）。
 
 院外上架的範本院內立即看得到，版本號（rev）與 `If-Match` 衝突偵測跨站有效。
 

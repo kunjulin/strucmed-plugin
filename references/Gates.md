@@ -58,7 +58,7 @@ Inputs: dept_no=33F00; groups=; publish=false; folder=usr; his_text_keys=Report,
 | ID | 類型 | 內容 | 白話 | 模型 | 寫入 |
 |---|---|---|---|---|---|
 | C9 | formula | `ROUND(C4 / ((C3 / 100) * (C3 / 100)), 1)` | 體重 ÷（身高 m）^2 | — | — |
-| C12 | action LLMQUERY | prompt 摘要… | | qwen332b | → C13 |
+| C12 | action LLMQUERY | prompt 摘要… | | nemotron35（只經 Gateway） | → C13 |
 
 - formula 型 label 在「### 結構」的 datatype 寫 `label`，公式寫在這裡；builder 全部欄位建好後才補。
 - 計算式依賴以「### 建置對照表」為準：草案裡 `A<n>` 形式的 itemid 是建置前的預測，builder 建完會把它們改成實際 itemid（與對照表一致）；兩者不同時信對照表。

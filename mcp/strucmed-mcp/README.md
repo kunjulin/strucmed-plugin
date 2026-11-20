@@ -1,4 +1,4 @@
-# strucmed-mcp（v2.15.6）
+# strucmed-mcp（v2.16.0）
 
 MCP server：產生 StrucMed 2.0 可匯入的表單定義檔（`.htm` / `.package.json`〔範本套件 v2〕 / `.manifest.md`），由使用者本人在編輯器「匯入表單（及字典）」後檢視保存。離線 tool 不連線；另自動判斷院內（LVAIW）或院外（使用者設定的網址）站台，多出呼叫 strucmed V2 API 的線上 tool，以瀏覽器登入（見下方〈線上 tool〉）。
 
@@ -24,7 +24,7 @@ node mcp/strucmed-mcp/src/server.mjs
 
 ```bash
 STRUCMED_HTTP_PORT=8765 STRUCMED_HTTP_TOKEN="$(openssl rand -hex 24)" STRUCMED_WORKSPACE=/srv/strucmed node src/server.mjs
-# [strucmed-mcp] v2.15.6 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
+# [strucmed-mcp] v2.16.0 ready (...); http: http://127.0.0.1:8765/mcp (bearer)
 ```
 
 | 變數 | 說明 |
@@ -68,7 +68,7 @@ MCP 在回應 `initialize`／`tools/list` 前並行探測兩個站台的 `api/he
 | 只有院外可連 | 院外站台 `https://cgmh.ddns.net`（內建；`STRUCMED_EXTERNAL_URL` 可覆寫，`none` 停用） | 不提供（院外連不到）；模型白名單用內建靜態表 |
 | 都連不到 | 離線（線上 tool 不列出；30 秒後再探測，例如接上 VPN） | — |
 
-`online_template_get`、`online_dictionary_search`、上架與 `If-Match` 更新在兩邊行為相同（ETag 是倉儲 head 的 sha256，rev 取倉儲最大值＋1）。`online_login`／`online_features` 回應的 `site` 標明目前站台；院外時 `online_features` 回 `W_SITE_EXTERNAL`。
+`online_template_get`、`online_dictionary_search`、上架與 `If-Match` 更新在兩邊行為相同（ETag 是倉儲 head 的 sha256，rev 取倉儲最大值＋1）。`online_login`／`online_features` 回應的 `site` 標明目前站台；院外時 `online_features` 回 `W_SITE_EXTERNAL`（院外沒有 LlmGateway 與 FMapi；表單的 LLM／語音改走院外服務，使用者自備金鑰，巨集指定的院內模型代號會被忽略）。
 
 ### 瀏覽器登入（`online_login`）
 平台契約見 `kunjulin/strucmed` 的 `docs/API-V2.md`「瀏覽器登入」（docs/13 第 2 期）。

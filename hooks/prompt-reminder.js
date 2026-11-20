@@ -20,8 +20,8 @@ process.stdin.on('end', () => {
     notes.push('上架：載入 publish-form；第一次呼叫只取 plan，寫 .strucmed/plans/<draft_id>/publish-plan.md，閘門 G2 定稿核准並 verify-plan.mjs prepare 後才帶 confirm_token；hooks 會阻擋未核准的第二段呼叫。');
   if (/刪除|覆寫|trash|delete|還原字典/i.test(prompt))
     notes.push('刪除與覆寫：沒有也不提供刪除線上範本、字典或紀錄的 tool；更新範本只限以該範本 import 改版的 draft（If-Match）。');
-  if (/模型|LLM|llmquery|llmvision|gemma|qwen|llama|閘道|gateway/i.test(prompt))
-    notes.push('模型名稱不得憑記憶：以 llmgateway_models 的白名單快取為準（references/ModelWhitelist.md）；沒有快取時以靜態表檢查並標 W_LLM_WHITELIST_STALE。');
+  if (/模型|LLM|llmquery|llmvision|llmattach|gemma|qwen|nemotron|llama|閘道|gateway/i.test(prompt))
+    notes.push('模型名稱不得憑記憶：以 llmgateway_models 的白名單快取為準（references/ModelWhitelist.md）；沒有快取時以靜態表檢查並標 W_LLM_WHITELIST_STALE。qwen 系列是落日模型（2027-01-01 自 LlmGateway 下架，院方建議不採用）：不建議、不新用，改 nemotron35／tnemotron35（只經院內 LlmGateway）。');
   if (!notes.length) return process.exit(0);
   process.stdout.write('【strucmed plugin 提醒（references/SecurityInvariants.md）】\n- ' + notes.join('\n- ') + '\n');
   process.exit(0);

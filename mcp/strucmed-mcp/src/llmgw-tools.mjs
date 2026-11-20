@@ -4,6 +4,7 @@ import * as store from './store.mjs';
 import * as llmgw from './llmgw.mjs';
 import * as online from './online.mjs';
 import * as policy from './policy.mjs';
+import { LLM_ALIASES, LLM_SUNSET, sunsetModel, sunsetPassed } from './calx-catalog.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const TW_ID = /[A-Z][12]\d{8}/;
@@ -38,11 +39,11 @@ export const LLMGW_TOOLS = [
     group: 'llmgw',
     flag: 'llmChatTest',
     description: '（LlmGateway，flag llmChatTest）用白名單內的模型試跑一段 prompt（POST /v1/chat/completions，stream:false，max_tokens ≤ 1024），回答與 usage 供設計 LLM 巨集時參考。' +
-      '模型以 TempHtml 別名（tw、gemma3、qwen332b…）或閘道 id 指定；不在快取白名單或 deprecated／maintenance 一律拒絕；prompt 先做個資偵測（身分證、病歷號樣式→拒絕）；不送影像。會計入金鑰配額。',
+      '模型以 TempHtml 別名（gemma3、nemotron35、tnemotron35…）或閘道 id 指定；不在快取白名單或 deprecated／maintenance 一律拒絕；prompt 先做個資偵測（身分證、病歷號樣式→拒絕）；不送影像。會計入金鑰配額。',
     inputSchema: { type: 'object', required: ['model', 'prompt'], properties: {
-      model: str('TempHtml 別名（例如 qwen3627b）或閘道模型 id'), prompt: str('使用者訊息（≤ 8000 字；不要放真實病人資料）'),
+      model: str('TempHtml 別名（例如 nemotron35）或閘道模型 id；qwen 系列已列落日，只供既有表單比對用（W_LLM_MODEL_SUNSET）'), prompt: str('使用者訊息（≤ 8000 字；不要放真實病人資料）'),
       system: str('system 訊息（選填）'), max_tokens: { type: 'number', description: '回答上限（預設 512，最多 1024）' },
-      temperature: { type: 'number', description: '預設 0.2' }, thinking: { type: 'boolean', description: 'Qwen3.6 思考模式（預設 false）' } } },
+      temperature: { type: 'number', description: '預設 0.2' }, thinking: { type: 'boolean', description: '思考模式（預設 false）：只對以 enable_thinking 切換的 Qwen3.6 有效（落日模型）；其他模型忽略這個參數' } } },
     async handler({ model, prompt, system, max_tokens, temperature, thinking }) {
       const ws = store.workspace();
       const cache = policy.loadCache(ws);
@@ -61,6 +62,8 @@ export const LLMGW_TOOLS = [
       if (!hit) { hit = cache.models.find(x => x.id.toLowerCase() === alias.toLowerCase()); gm = hit ? hit.id : gm; }
       if (!hit) fail(E.NOT_WHITELISTED, `模型「${alias}」不在白名單快取（${cache.models.map(x => x.id).join('、')}）`, { gateway_model: gm });
       if (/^(deprecated|maintenance)$/i.test(hit.status)) fail(E.NOT_WHITELISTED, `模型「${hit.id}」狀態為 ${hit.status}，不可使用`);
+      const sunset = sunsetModel(LLM_ALIASES[alias.toLowerCase()] || alias) || sunsetModel(hit.id);
+      if (sunset) warnings.push(`W_LLM_MODEL_SUNSET：模型「${hit.id}」屬 ${LLM_SUNSET.family}，${sunsetPassed() ? '已' : '將'}於 ${LLM_SUNSET.date} 自 LlmGateway 下架，院方建議不採用；只供既有表單比對，新的巨集請改用 ${sunset.replacement}`);
       if (cache.stale) warnings.push(`W_LLM_WHITELIST_STALE：白名單快取已 ${cache.age_days} 天，建議重新 llmgateway_models`);
       const messages = [];
       if (system) messages.push({ role: 'system', content: String(system) });
@@ -82,9 +85,11 @@ export const LLMGW_TOOLS = [
 function summary(cache, fetched) {
   return { fetched: fetched, fetched_at: cache.fetched_at, stale: !!cache.stale, age_days: cache.age_days, count: cache.models.length,
     models: cache.models.map(x => ({ id: x.id, status: x.status || 'ok', vision: x.vision, thinking: x.thinking, context_length: x.context_length })),
-    aliases: Object.fromEntries(['', 'tw', 'gemma3', 'gemma3_12b', 'medgemma', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b', 'nemotron35', 'tnemotron35'].map(a => {
+    aliases: Object.fromEntries(['', 'nemotron35', 'tnemotron35', 'gemma3', 'gemma3_12b', 'medgemma', 'tw', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b'].map(a => {
       const c = policy.checkAlias(a, 'LLMQUERY', cache.models);
-      return [a || '(預設)', c && c.found ? `${c.gateway_model}${c.status ? `（${c.status}）` : ''}` : `${c && c.gateway_model || '?'}（不在清單）`];
+      const note = sunsetModel(a) ? `（落日：${LLM_SUNSET.date} 下架，不要新用，改 ${sunsetModel(a).replacement}）` : '';
+      return [a || '(預設)', (c && c.found ? `${c.gateway_model}${c.status ? `（${c.status}）` : ''}` : `${c && c.gateway_model || '?'}（不在清單）`) + note];
     })),
-    warnings: cache.stale ? [`W_LLM_WHITELIST_STALE：快取已 ${cache.age_days} 天`] : [] };
+    warnings: [...(cache.stale ? [`W_LLM_WHITELIST_STALE：快取已 ${cache.age_days} 天`] : []),
+      ...(cache.models.some(x => sunsetModel(x.id)) ? [`W_LLM_MODEL_SUNSET：清單中的 ${cache.models.filter(x => sunsetModel(x.id)).map(x => x.id).join('、')} 屬 ${LLM_SUNSET.family}，${LLM_SUNSET.date} 自 LlmGateway 下架，院方建議不採用；不要建議或新用，改用 nemotron35／tnemotron35`] : [])] };
 }

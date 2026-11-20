@@ -1,5 +1,5 @@
 // 模型白名單（references/ModelWhitelist.md）：
-//   - 表單巨集寫的是 TempHtml 別名（tw、gemma3、qwen332b…），runtime 依別名送出實際模型名；Gateway 模式再把 Ollama 名稱加標籤
+//   - 表單巨集寫的是 TempHtml 別名（tw、gemma3、nemotron35…），runtime 依別名送出實際模型名；Gateway 模式再把 Ollama 名稱加標籤
 //   - llmgateway_models 把 GET /v1/models 的結果寫成 <workspace>/.strucmed/llm-models.json，這裡提供「別名 → 閘道模型」對應與檢查
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,6 +12,7 @@ export const STALE_DAYS = 7;
 const LLMQUERY_SENT = {
   '': 'llama3.1:8b-instruct-q8_0', tw: 'gemma2:latest', math: 'gemma2:latest',
   ph4: 'phi4', phi4: 'phi4', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma',
+  // 落日模型（calx-catalog.mjs LLM_SUNSET，2027-01-01 下架）：保留對應，既有表單才查得到閘道狀態
   qwen332b: 'qwen3:32b', tqwen332b: 'qwen3:32b',
   qwen3627b: 'Qwen3.6:27B', tqwen3627b: 'Qwen3.6:27B', 'tqwen3627b-low': 'Qwen3.6:27B', 'tqwen3627b-medium': 'Qwen3.6:27B', 'tqwen3627b-high': 'Qwen3.6:27B',
   // 只經 Gateway（TempHtml.js LLM_GATEWAY_ONLY_MODELS，20261124）

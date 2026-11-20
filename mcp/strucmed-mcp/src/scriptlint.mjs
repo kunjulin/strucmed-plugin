@@ -3,7 +3,7 @@
 // finding：{ code, level:'error'|'warn', message }。level=error 的項目由 validate 依「是否本次新增／修改」
 // 決定要當 error 還是 warning（原表單既有）；level=warn 一律是 warning。
 import { check } from './calx.mjs';
-import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
+import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, LLM_SUNSET, sunsetModel, sunsetPassed, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
 import { checkAlias } from './policy.mjs';
 import { checkUrl, launchBridge, BRIDGE_PAGE } from './embed.mjs';
 import { enabled } from './flags.mjs';
@@ -273,11 +273,13 @@ function checkModel(modelText, ctx, out, fn) {
   if (fn === 'LLMQUERY' && LLM_ALIASES[m]) out.push(warn('W_LLM_MODEL_ALIAS', `模型「${lit}」是舊別名，實際使用 ${LLM_ALIASES[m]}`));
   else if (!(m in table)) {
     const removed = LLM_REMOVED.includes(m) ? '（已於 20260905 移除）' : '';
-    out.push(err('E_LLM_MODEL_UNKNOWN', `${fn} 的模型「${lit}」不在清單${removed}：runtime 會靜默改用預設模型。可用：${Object.keys(table).filter(Boolean).join('、')}`));
+    out.push(err('E_LLM_MODEL_UNKNOWN', `${fn} 的模型「${lit}」不在清單${removed}：runtime 會靜默改用預設模型。可用：${Object.keys(table).filter(k => k && !sunsetModel(k)).join('、')}`));
   }
   else if (GATEWAY_ONLY_MODELS.includes(m)) out.push(gatewayOnlyWarn(fn, lit));
   const allowed = ctx.policy && Array.isArray(ctx.policy.llm_models) ? ctx.policy.llm_models : null;
   const canon = LLM_ALIASES[m] || m;
+  const sunset = fn === 'LLMQUERY' ? sunsetFinding(fn, lit, canon, ctx) : null;
+  if (sunset) out.push(sunset);
   if (allowed && !allowed.includes(canon)) out.push(err('E_LLM_MODEL_POLICY', `模型「${lit || '（預設）'}」不在本院允許清單（.strucmed/policy.json）：${allowed.join('、') || '（空）'}`));
   // LlmGateway 白名單快取（llmgateway_models）：別名對應到閘道模型後檢查存在、狀態、視覺能力
   const gw = ctx.policy && Array.isArray(ctx.policy.gateway_models) ? checkAlias(canon, fn === 'LLMvision' ? 'LLMvision' : 'LLMQUERY', ctx.policy.gateway_models) : null;
@@ -289,6 +291,19 @@ function checkModel(modelText, ctx, out, fn) {
     else if (fn === 'LLMvision' && !gw.vision) out.push(err('E_LLM_MODEL_NO_VISION', `LLMvision 的模型「${shown}」（${gw.gateway_model}）在 LlmGateway 沒有視覺能力，會被拒絕`));
   }
   return canon;
+}
+
+// 落日模型（calx-catalog.mjs LLM_SUNSET）：level=error，validate 依「是否本次新增／修改」決定：
+// 新增或改到的巨集 → E_LLM_MODEL_SUNSET；原表單既有、沒動到的 → W_LLM_MODEL_SUNSET。下架日起改回 E_LLM_MODEL_DEPRECATED。
+function sunsetFinding(fn, lit, name, ctx) {
+  const hit = sunsetModel(name);
+  if (!hit) return null;
+  const to = hit.replacement;
+  const fix = `請改用 "${to}"（整理、摘要、擷取、長文件用 nemotron35；推理用 tnemotron35，固定格式用 tnemotron35-low；只經院內 LlmGateway）`;
+  if (sunsetPassed(ctx.policy && ctx.policy.now)) {
+    return { ...err('E_LLM_MODEL_DEPRECATED', `${fn} 的模型「${lit}」屬 ${LLM_SUNSET.family}，已於 ${LLM_SUNSET.date} 自 LlmGateway 下架；${fix}`), sunset: true, replacement: to };
+  }
+  return { ...err('E_LLM_MODEL_SUNSET', `${fn} 的模型「${lit}」屬 ${LLM_SUNSET.family}：將於 ${LLM_SUNSET.date} 自 LlmGateway 下架，院方建議不採用，新寫或改到的巨集不得使用；${fix}`), sunset: true, replacement: to };
 }
 
 // 只經 LlmGateway 的模型代號（nemotron35 系列，平台 20261124）：站台沒啟用 Gateway 時 LLMQUERY 顯示提示、不送出；
@@ -306,6 +321,8 @@ function checkAttachModel(lit, ctx, out) {
   const known = m in ATTACH_MODELS;
   if (known && GATEWAY_ONLY_MODELS.includes(m)) out.push(gatewayOnlyWarn('LLMATTACH', lit));
   if (!known) out.push(warn('W_LLM_MODEL_PASSTHROUGH', `LLMATTACH 的模型「${lit}」不是內建代號（${Object.keys(ATTACH_MODELS).filter(Boolean).join('、')}）：經 LlmGateway 時原樣當模型 id 送出（必須與 llmgateway_models 的 id 完全相同），直連時改用預設 gemma3:12b；院外站台用使用者在設定畫面選的模型`));
+  const sunset = known ? null : sunsetFinding('LLMATTACH', lit, m, ctx);
+  if (sunset) out.push(sunset);
   const allowed = ctx.policy && Array.isArray(ctx.policy.llm_models) ? ctx.policy.llm_models : null;
   if (allowed && !allowed.includes(known ? m : lit)) out.push(err('E_LLM_MODEL_POLICY', `模型「${lit || '（預設）'}」不在本院允許清單（.strucmed/policy.json）：${allowed.join('、') || '（空）'}`));
   const models = ctx.policy && Array.isArray(ctx.policy.gateway_models) ? ctx.policy.gateway_models : null;

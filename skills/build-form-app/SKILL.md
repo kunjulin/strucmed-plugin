@@ -20,7 +20,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 前提：範本已上架（有 `template_id`）；線上已登入。
 
 1. `online_template_get(template_id, save:true)` → `form_import` 成新 draft（只為檢查，不輸出）→ `form_validate`。
-2. 模型：`llmgateway_models`（有金鑰時）→ `form_validate` 的 `E_LLM_MODEL_*`／`W_LLM_*` 就是白名單比對結果；沒有金鑰時只以靜態表檢查並標 `W_LLM_WHITELIST_STALE`。
+2. 模型：`llmgateway_models`（有金鑰時）→ `form_validate` 的 `E_LLM_MODEL_*`／`W_LLM_*` 就是白名單比對結果；沒有金鑰時只以靜態表檢查並標 `W_LLM_WHITELIST_STALE`。`W_LLM_MODEL_SUNSET`／`E_LLM_MODEL_SUNSET`（qwen 系列：院方建議不採用，2027-01-01 自 LlmGateway 下架）→ 清單標 ✗「落日模型，上線前改用 nemotron35／tnemotron35」，交回 `edit-form` 改版；下架日後是 `E_LLM_MODEL_DEPRECATED`。
 3. 站台：`online_features`
    - `llm_gateway.enabled: false` → 表單內的 LLM／語音仍走舊的院內端點，不經閘道（由平台管理者啟用）。
    - 巨集用了只經 Gateway 的模型（`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY`，目前是 `nemotron35` 系列）→ 站台**必須**啟用 Gateway：沒有時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`。舊站 `/go/` 沒有這些代號，只能用在 `/strucmed`。`online_features` 讀不到 `api/llm-config`（403）時，清單寫「請平台管理者確認」。

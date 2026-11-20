@@ -14,7 +14,45 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.13.0（MCP 2.16.0）— 2026-11-20：qwen 系列列為落日模型，建議與範例改用 `nemotron35`／`tnemotron35`；院外站台的 LLM／語音敘述更正
+
+發佈（2026-11-20）：strucmed-plugin tag `v3.13.0`。
+
+依據：院方決定（2026-11-19）——qwen 系列（`qwen3627b`、`tqwen3627b` 與 `-low`／`-medium`／`-high`、`qwen332b`、`tqwen332b`；閘道模型 `Qwen3.6:27B`、`qwen3:32b`）屬中國開源模型，**建議不採用**，LlmGateway 設落日條款，**2027-01-01 下架**。取代：Nemotron 3.5 Super VL（`nemotron35` 不思考、`tnemotron35` 思考，另有 `-low`／`-medium`／`-high`；只經院內 LlmGateway）。模型說明依 StrucMed GitBook「生成式 AI 巨集函數」。
+
+**行為變化（MCP）**
+- 新增落日常數 `LLM_SUNSET`（`src/calx-catalog.mjs`：下架日 `2027-01-01`、落日別名與替代寫法；調整只改這裡）。qwen 別名**仍認得**，不會變成 `E_LLM_MODEL_UNKNOWN`。
+- **下架日之前**：
+  - 本次新增或改到的巨集用了 qwen（含舊別名 `70b`、`gpt-oss-*`、模型取自欄位預設值、`LLMATTACH` 直接寫閘道 id）→ **`E_LLM_MODEL_SUNSET`（error）**：`form_add_control`／`form_update_control` 當下拒絕、不寫入 draft；`formula_check` 回 error。訊息附替代寫法，finding 另帶 `replacement`。
+  - 改版時原表單既有、這次沒動到的巨集 → **`W_LLM_MODEL_SUNSET`（warning）**，不擋匯入、驗證、輸出與上架。只要改到該巨集（腳本、按鈕名稱、寫入目標）就要一併換模型。
+  - 不需要白名單快取也會檢查；qwen 還在閘道上、狀態正常時一樣回報。
+- **下架日（台灣時間 2027-01-01 00:00）起**：一律 `E_LLM_MODEL_DEPRECATED`（訊息寫明已下架與替代寫法）；原表單既有、沒動到的依既有慣例列 warning（原表單既有）。
+- 替代對應：`qwen3627b`／`qwen332b` → `nemotron35`；`tqwen3627b`／`tqwen332b` → `tnemotron35`；`tqwen3627b-low`／`-medium`／`-high` → `tnemotron35-low`／`-medium`／`-high`。
+- `E_LLM_MODEL_UNKNOWN` 的「可用」清單不再列出 qwen。
+- `llmgateway_models`：別名對應把 `nemotron35`／`tnemotron35` 排在前面，qwen 標「落日：2027-01-01 下架，不要新用」；清單含 qwen 時回 `W_LLM_MODEL_SUNSET`。`llmgateway_chat_test`：qwen 仍可試跑（比對既有表單用），回 `W_LLM_MODEL_SUNSET`。
+- 既有的 `W_LLM_MODEL_GATEWAY_ONLY`（`nemotron35` 系列只經院內 LlmGateway）不變。
+- **會受影響的既有用法**：`.strucmed/policy.json` 的 `llm_models` 若只列 qwen，改用 `nemotron35` 後會回 `E_LLM_MODEL_POLICY`，請一併更新清單。
+
+**建議、範例、樣板**
+- `ModelWhitelist.md` §3 改寫：整理、摘要、擷取、長文件（約 262K 上下文）用 `nemotron35`；推理（鑑別診斷、依準則判斷、多條件比對）用 `tnemotron35`，固定格式用 `tnemotron35-low`（後綴調的是回答的變化程度，不是思考長短）；一次看多張影像、讀影像上的文字用 `LLMvision`／`LLMATTACH` 搭配 `nemotron35`（LLMATTACH 一次最多 8 MB）；短句翻譯、簡單整理 `gemma3_12b`／`tw`。新增 §5 落日模型、§6 院外站台。每處建議 `nemotron35` 都寫明「只經院內 LlmGateway」。
+- `PromptPatterns.md`（P8、模型表、樣板 A～F，新增 C2＝GitBook 官方範例 5）、`MacroRecipes.md`（R1～R4、R8、R11）、`FormulaMacroRules.md`、`Gates.md`、`RuntimeVerification.md` 的模型全部改為 `nemotron35`／`tnemotron35`。
+- `form-planner` 不選 qwen（使用者指定時回 `NeedsRevision`）；`form-builder` 遇到 qwen 不寫入、不自行換模型；`form-reviewer` 新增檢查 6d：新增或改到的巨集用 qwen →「必須修正」，改版時原表單既有的列 warning 並給替代寫法；`Ready` 條件加上「沒有落日模型」。`create-form`、`edit-form`、`tune-prompt`、`build-form-app`、`strucmed-form`、`hooks/prompt-reminder.js` 同步。
+- README、`docs/01`、`docs/07`、`docs/08`、`docs/10`、`docs/case-mmse-cdr.md` 的範例與模型清單更新；歷史實測紀錄保留當時的模型名稱並註明已列落日。研究筆記未更動，也不被 references 引用。
+- GitBook 預告的 Gemma 4 31B 尚未公告寫法，本版不加（`gemma4_31b` 仍是已移除的舊代號）。
+
+**院外站台（cgmh.ddns.net、struNote）敘述更正**：原本寫「院外站台不提供 LLM 與語音」。現況：LLM 控制項、`LLMQUERY`、`LLMvision` 改走站台允許的院外 LLM 服務（目前 OpenAI），`VOICETOTEXT` 與語音小助手改走院外語音服務（OpenAI、Groq）；使用者自備 API 金鑰（只存在瀏覽器）；巨集指定的院內模型代號會被忽略，改用設定畫面選的模型；第一次使用會出現「院外 LLM／語音轉錄使用注意事項」；IE 舊版 temp.html 在院外不提供。
+- 更正：`online_features` 的 `W_SITE_EXTERNAL`、`form_validate` 的 `W_AI_DATAFLOW` 與院外的 `W_LLM_WHITELIST_STALE`、manifest「AI 資料流」說明、`scripts/check-env.mjs`、`connect-strucmed`、README〈院內與院外〉、MCP README、`docs/10`。AI 資料流揭露現在寫明「院外開啟時資料送往院外服務」。
+- 不變：院外沒有 LlmGateway 與 FMapi，plugin 的 `llmgateway_*`、`fmapi_*` 在院外不提供，模型白名單用內建靜態表；院內模型的行為要回院內實測。
+
+**未處理、待院方確認**：`VOICETOTEXT` 的語音服務 `'QWEN'`（院內 ASR）不在這次院方列出的代號內，MCP 仍接受；文件改為新案用 `'ASUS'`。若它也要落日，再加進 `LLM_SUNSET` 同一套機制。
+
+**測試**：`mcp/strucmed-mcp` `node --test`（Linux，Node 22）294 項：293 過、0 失敗、1 略過（`catalog: builtin list matches the vendored Calx`，需要平台 repo 副本，環境性）。新增落日測試 2 項（下架日前後、替代對應、舊別名、欄位預設值、LLMATTACH 閘道 id、新增／改到拒絕、原表單既有只提醒）；`llmgw.test.mjs` 假閘道加入 `Nemotron-3.5-Super-VL`；範例、fixture（`tools/v0-harness/fixtures/generated-v02.json`）改用 `nemotron35`。
+
+---
+
 ## 3.12.6（MCP 2.15.6）— 2026-11-19：線上範本取回時不含表單預設（片語）
+
+發佈（2026-11-19）：strucmed-plugin `0a7a77e`、tag `v3.12.6`、GitHub Release「strucmed 3.12.6（MCP 2.15.6）：線上範本取回時不含表單預設（片語）」；本 repo tag `v3.12.6-src`（`c687749`）。發佈時：`release-plugin.mjs` ok、235 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）292 項：284 過、6 失敗、2 略過，失敗的 6 項與 3.12.5 相同（Windows 環境問題）。尚未：從市集更新後的對話實測（含院外舊版站台的 W_SITE_PRESETS_UNSUPPORTED）。
 
 平台對應：strucmed #271（`GET api/v2/templates/{id}?presets=false`，回應標頭 `X-Strucmed-Presets: omitted`；2026-11-19 已部署 LVAIW `/strucmed`）。
 

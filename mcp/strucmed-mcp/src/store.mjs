@@ -126,7 +126,7 @@ export function loadEmbedApps() {
 }
 
 // 本院政策（院方決議後由使用者設定）：<root>/.strucmed/policy.json
-//   { "llm_models": ["", "qwen332b", ...] }   // 允許的 LLMQUERY 模型（'' = 預設模型）；未設定＝平台清單內都允許
+//   { "llm_models": ["", "nemotron35", ...] }   // 允許的 LLMQUERY 模型（'' = 預設模型）；未設定＝平台清單內都允許
 // 另合併 LlmGateway 白名單快取（llmgateway_models 寫入的 .strucmed/llm-models.json）：policy.gateway_models／gateway_fetched_at／gateway_stale
 export function loadPolicy() {
   const ws = workspace();

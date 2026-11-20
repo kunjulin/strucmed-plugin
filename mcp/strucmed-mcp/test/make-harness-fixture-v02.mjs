@@ -23,7 +23,7 @@ const bmi = add('BMI：', { datatype: 'label', format: 'formula', formula: `IF(A
 add('年齡：', { datatype: 'label', format: 'hisquery', hisquery: 'Procedure.InName(PKG.GET_AGE).GetValueByName(AGE)', his_query_title: 'patient.age' });
 const note = add('摘要：', { datatype: 'textarea' });
 const btn = add('', { datatype: 'action', action_name: '產生摘要', action_id: note,
-  action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "qwen332b"), MACRO(${note}, CONCATENATE(A${note}, "（AI 產生，請查核）"))` });
+  action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "nemotron35"), MACRO(${note}, CONCATENATE(A${note}, "（AI 產生，請查核）"))` });
 add('LLM：', { datatype: 'action2', action_name: '問 AI', action_id: note, action_script: `CONCATENATE("BMI 是 ", A${bmi})` });
 add('觸發：', { datatype: 'textbox', fur_action_id: btn });
 

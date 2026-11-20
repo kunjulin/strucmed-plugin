@@ -237,7 +237,7 @@
      "text": "選項控制項",
      "actionName": "產生摘要",
      "actionID": "6",
-     "actionScript": "LLMQUERY(6, CONCATENATE(\"BMI=\", A4, \"；請用一句話摘要\"), \"qwen332b\"), MACRO(6, CONCATENATE(A6, \"（AI 產生，請查核）\"))"
+     "actionScript": "LLMQUERY(6, CONCATENATE(\"BMI=\", A4, \"；請用一句話摘要\"), \"nemotron35\"), MACRO(6, CONCATENATE(A6, \"（AI 產生，請查核）\"))"
     },
     {
      "datatype": "newline"

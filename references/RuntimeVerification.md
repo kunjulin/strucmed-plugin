@@ -42,7 +42,7 @@ HIS 拿到的文字用 runtime 的 `GetJsonText()` 看，**不要用 `GetText()`
 - 按巨集：`performActionByID(按鈕 itemid)`，等約 0.5 秒再讀目標欄位
 - 讀模擬紀錄：`window.__simulated`（LLM／語音／HIS 查詢的 prompt 與模型）、`window.__blocked`（被封鎖的請求）
 
-結果寫進定稿檔的「### 驗證結果」，對話中只講一句（例：「LLM 按鈕實跑一次，prompt 2,300 字、模型 qwen332b、寫進 itemid 12」）。沒有內建瀏覽器的 client 跳過，在「### 驗證結果」列出「巨集未實跑，請在預覽頁按一次」。
+結果寫進定稿檔的「### 驗證結果」，對話中只講一句（例：「LLM 按鈕實跑一次，prompt 2,300 字、模型 nemotron35、寫進 itemid 12」）。沒有內建瀏覽器的 client 跳過，在「### 驗證結果」列出「巨集未實跑，請在預覽頁按一次」。
 
 ## 5. 截圖（預設不做）
 

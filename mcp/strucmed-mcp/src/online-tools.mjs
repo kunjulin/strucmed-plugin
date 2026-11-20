@@ -183,7 +183,7 @@ export const ONLINE_TOOLS = [
     async handler() {
       const user = online.currentUser();
       const out = { site: site.describe(), health: { available: false }, runtime: { available: false }, llm_gateway: { available: false, enabled: false }, embed_apps: { available: false }, warnings: [] };
-      if (out.site.profile === 'external') out.warnings.push('W_SITE_EXTERNAL：院外站台不提供 LlmGateway、LLM 與語音轉文字；模型白名單使用內建靜態表，AI 巨集請回院內實測');
+      if (out.site.profile === 'external') out.warnings.push('W_SITE_EXTERNAL：院外站台沒有 LlmGateway 與 FMapi，模型白名單使用內建靜態表。表單的 LLM 控制項、LLMQUERY、LLMvision 改走站台允許的院外 LLM 服務（目前 OpenAI），VOICETOTEXT 與語音小助手改走院外語音服務（OpenAI、Groq）；使用者自備 API 金鑰（只存在瀏覽器），巨集指定的院內模型代號會被忽略、改用設定畫面選的模型，第一次使用會出現「院外 LLM／語音轉錄使用注意事項」。院內模型（含只經 Gateway 的 nemotron35 系列）的行為請回院內實測；IE 舊版 temp.html 在院外不提供');
       const probe = async (what, fn) => { try { return await fn(); } catch (e) { out.warnings.push(`${what} 無法讀取：${e.message}`); return null; } };
       const h = await probe('api/health', () => online.call('GET', 'api/health', {}, '讀取健康狀態'));
       if (h) out.health = { available: true, ok: !!h.ok, ts: h.ts || null };

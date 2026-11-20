@@ -68,13 +68,13 @@ test('formula lint: functions, references, runtime replacement', () => {
 
 test('macro lint: step splitting, step commands, models, targets', () => {
   const controls = new Map([
-    ['1', { datatype: 'textarea', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'qwen332b' }],
+    ['1', { datatype: 'textarea', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'nemotron35' }],
     ['3', { datatype: 'numberbox', tocalc: true }], ['4', { datatype: 'textbox', tocalc: true, datavalue: 'gpt4' }]]);
   const ctx = { controls };
   // 平台 20261124b 起看引號（kunjulin/strucmed#264）；舊版 runtime 只算括號 → 只提醒部署
   assert.deepEqual(platformSplit('MACRO(1, "a,b"), SETVALUEBYID(3, 1)').steps, ['MACRO(1, "a,b")', 'SETVALUEBYID(3, 1)']);
   assert.deepEqual(codes(lintMacro('MACRO(1, "(x"), SETVALUEBYID(3, 1)', ctx)), ['W_MACRO_SPLIT_NEEDS_DEPLOY']);
-  const ok = lintMacro('LLMQUERY(1, CONCATENATE("摘要：", A3), "qwen332b"), MACRO(3, 1 + 1), SETVALUEBYID(3, 2)', ctx);
+  const ok = lintMacro('LLMQUERY(1, CONCATENATE("摘要：", A3), "nemotron35"), MACRO(3, 1 + 1), SETVALUEBYID(3, 2)', ctx);
   assert.deepEqual(ok.findings.filter(f => f.level === 'error'), []);
   assert.deepEqual(ok.targets.sort(), ['1', '3']);
   assert.deepEqual(ok.ai[0].inputs, ['3']);
@@ -86,9 +86,9 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", "gemma4_31b")', ctx)).includes('E_LLM_MODEL_UNKNOWN'));
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", tw)', ctx)).includes('E_LLM_MODEL_UNQUOTED'));
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", "70b")', ctx)).includes('W_LLM_MODEL_ALIAS'));
-  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", A2)', ctx)), [], '模型取自欄位預設值 qwen332b');
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", A2)', ctx)), ['W_LLM_MODEL_GATEWAY_ONLY'], '模型取自欄位預設值 nemotron35');
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", A4)', ctx)).includes('E_LLM_MODEL_UNKNOWN'), '欄位預設值 gpt4 不在清單');
-  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "tw")', { ...ctx, policy: { llm_models: ['', 'qwen332b'] } })).includes('E_LLM_MODEL_POLICY'));
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "tw")', { ...ctx, policy: { llm_models: ['', 'nemotron35'] } })).includes('E_LLM_MODEL_POLICY'));
   assert.ok(codes(lintMacro('LLMvision(2, "看圖", "gemma3")', ctx)).includes('E_MACRO_TARGET_TYPE'), 'LLMvision 只能寫入 textarea');
   assert.ok(codes(lintMacro('LLMvision(1, "看圖", "tw")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), 'tw 不是影像模型');
   // Nemotron 3.5 Super VL（平台 20261124，只經 LlmGateway）：認得代號、提醒只經 Gateway
@@ -99,7 +99,7 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.ok(codes(lintMacro('LLMvision(1, "看圖", "tnemotron35")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), 'LLMvision 沒有思考版');
   const gwNemo = [{ id: 'Nemotron-3.5-Super-VL', status: 'active', vision: true }];
   assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "tnemotron35")', { ...ctx, policy: { gateway_models: gwNemo } })), ['W_LLM_MODEL_GATEWAY_ONLY']);
-  assert.ok(codes(lintMacro('LLMvision(1, "看圖", "nemotron35")', { ...ctx, policy: { gateway_models: [{ id: 'Qwen3.6:27B' }] } })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'));
+  assert.ok(codes(lintMacro('LLMvision(1, "看圖", "nemotron35")', { ...ctx, policy: { gateway_models: [{ id: 'gemma3:12b' }] } })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'));
   assert.ok(codes(lintMacro('VOICETOTEXT(1, "GOOGLE")', ctx)).includes('E_ASR_PROVIDER'));
   assert.ok(codes(lintMacro('LLMQUERY(9, "x")', ctx)).includes('E_REF_BROKEN'));
   assert.ok(codes(lintMacro('MACRO(IF(A3 > 1, 1, 3), 2)', ctx)).includes('E_MACRO_SYNTAX'), 'MACRO 目標不能含逗號');
@@ -113,17 +113,18 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.deepEqual(codes(bare).sort(), ['W_PROMPT_NO_GUARD', 'W_PROMPT_NO_SCOPE']);
   assert.ok(bare.findings.every(f => f.level === 'warn'));
   assert.deepEqual(codes(lintPrompt('"Please explain metabolic syndrome"', ctx)), [], '純問答不檢查');
-  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "qwen332b")', ctx)), [], '沒有欄位參照不檢查');
-  assert.deepEqual(codes(lintMacro('LLMQUERY(1, IF(LEN(A3) < 10, "not available", CONCATENATE("Only based on the records below, answer only: ", A3)), "qwen3627b")', ctx)), []);
-  assert.ok(codes(lintMacro('LLMQUERY(1, CONCATENATE("只根據下列紀錄，無資料回 not available：", A3), "qwen3627b")', ctx)).includes('W_PROMPT_NO_GUARD'));
-  assert.ok(!codes(lintMacro('LLMQUERY(1, CONCATENATE("只根據下列紀錄，無資料回 not available：", A3), "qwen3627b")', ctx)).includes('W_PROMPT_NO_SCOPE'));
-  assert.ok(codes(lintMacro('LLMQUERY(1, IF(LEN(A3) < 10, "x", CONCATENATE("摘要：", A3)), "qwen3627b")', ctx)).includes('W_PROMPT_NO_SCOPE'));
-  assert.ok(codes(lintMacro('LLMQUERY(1, CONCATENATE("摘要：", GETTEXT()), "qwen3627b")', ctx)).includes('W_PROMPT_NO_GUARD'), 'GETTEXT 也算帶入資料');
+  const gwOnly = ['W_LLM_MODEL_GATEWAY_ONLY'];
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "nemotron35")', ctx)), gwOnly, '沒有欄位參照不檢查');
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, IF(LEN(A3) < 10, "not available", CONCATENATE("Only based on the records below, answer only: ", A3)), "nemotron35")', ctx)), gwOnly);
+  assert.ok(codes(lintMacro('LLMQUERY(1, CONCATENATE("只根據下列紀錄，無資料回 not available：", A3), "nemotron35")', ctx)).includes('W_PROMPT_NO_GUARD'));
+  assert.ok(!codes(lintMacro('LLMQUERY(1, CONCATENATE("只根據下列紀錄，無資料回 not available：", A3), "nemotron35")', ctx)).includes('W_PROMPT_NO_SCOPE'));
+  assert.ok(codes(lintMacro('LLMQUERY(1, IF(LEN(A3) < 10, "x", CONCATENATE("摘要：", A3)), "nemotron35")', ctx)).includes('W_PROMPT_NO_SCOPE'));
+  assert.ok(codes(lintMacro('LLMQUERY(1, CONCATENATE("摘要：", GETTEXT()), "nemotron35")', ctx)).includes('W_PROMPT_NO_GUARD'), 'GETTEXT 也算帶入資料');
   // LLMvision 之後沒有 LLMQUERY 接力
   assert.ok(codes(lintMacro('LLMvision(1, "只描述影像所見", "gemma3_12b")', ctx)).includes('W_VISION_NO_FOLLOWUP'));
-  assert.ok(!codes(lintMacro('LLMvision(1, "只描述影像所見", "gemma3_12b"), LLMQUERY(1, IF(LEN(A1) < 10, "not available", CONCATENATE("只根據下列描述整理，只提供答案：", A1)), "qwen332b")', ctx)).includes('W_VISION_NO_FOLLOWUP'));
+  assert.ok(!codes(lintMacro('LLMvision(1, "只描述影像所見", "gemma3_12b"), LLMQUERY(1, IF(LEN(A1) < 10, "not available", CONCATENATE("只根據下列描述整理，只提供答案：", A1)), "nemotron35")', ctx)).includes('W_VISION_NO_FOLLOWUP'));
   // AI 資料流要列出整份報告與識別資料，不能只列 A<n>
-  const bulk = lintMacro('LLMQUERY(1, CONCATENATE("摘要：", A3, GETTEXT()), "qwen3627b")', ctx);
+  const bulk = lintMacro('LLMQUERY(1, CONCATENATE("摘要：", A3, GETTEXT()), "nemotron35")', ctx);
   assert.deepEqual(bulk.ai[0].inputs, ['3']);
   assert.match(bulk.ai[0].sources[0], /^GETTEXT\(\)/);
   assert.ok(codes(lintMacro('LLMQUERY(1, CONCATENATE(G_CHTNO(), GETTEXT()))', ctx)).includes('W_AI_IDENTIFIER'));
@@ -149,8 +150,8 @@ test('tools: build a form with formula, HIS query, macro and LLM button', () => 
   add('年齡：', { datatype: 'label', format: 'hisquery', hisquery: 'Procedure.InName(PKG.GET_AGE).GetValueByName(AGE)', his_query_title: 'patient.age' });
   const note = add('摘要：', { datatype: 'textarea' }).itemid;
   const btn = add('', { datatype: 'action', action_name: '產生摘要', action_id: note,
-    action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "qwen332b"), MACRO(${note}, CONCATENATE(A${note}, "（AI 產生，請查核）"))` });
-  assert.ok(btn.ai.length === 1 && btn.ai[0].model === 'qwen332b');
+    action_script: `LLMQUERY(${note}, CONCATENATE("BMI=", A${bmi}, "；請用一句話摘要"), "nemotron35"), MACRO(${note}, CONCATENATE(A${note}, "（AI 產生，請查核）"))` });
+  assert.ok(btn.ai.length === 1 && btn.ai[0].model === 'nemotron35');
   add('LLM：', { datatype: 'action2', action_name: '問 AI', action_id: note, action_script: `CONCATENATE("BMI 是 ", A${bmi})` });
   add('觸發：', { datatype: 'textbox', fur_action_id: btn.itemid });
 
@@ -199,7 +200,7 @@ test('tools: build a form with formula, HIS query, macro and LLM button', () => 
   const man = fs.readFileSync(path.join(ws, r.files.manifest), 'utf8');
   assert.match(man, /## 計算式與巨集/);
   assert.match(man, /### AI 資料流（2 個步驟）/);
-  assert.match(man, /qwen332b/);
+  assert.match(man, /nemotron35/);
   assert.match(man, /不要按「重新編號」/);
 });
 
@@ -305,32 +306,32 @@ test('macro split: quotes protect commas and parentheses, same as the platform r
 
 test('macro lint: prompts may contain commas and parentheses inside quotes', () => {
   const controls = new Map([['21', { datatype: 'textarea', tocalc: true }], ['6', { datatype: 'textarea', tocalc: true }],
-    ['7', { datatype: 'textbox', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'qwen332b' }],
+    ['7', { datatype: 'textbox', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'nemotron35' }],
     ['12', { datatype: 'attachbox', tocalc: false }], ['13', { datatype: 'attachbox', tocalc: false }]]);
   const ctx = { controls };
   const errors = r => r.findings.filter(f => f.level === 'error').map(f => `${f.code} ${f.message}`);
   const deployed = { ...ctx, policy: { runtime_quote_aware_split: true } };
   // 只看切分相關的結果（提示詞設計的建議、LLMvision 接力另有測試）
-  const codes = r => r.findings.map(f => f.code).filter(c => !/^W_PROMPT_|^W_VISION_NO_FOLLOWUP$/.test(c));
+  const codes = r => r.findings.map(f => f.code).filter(c => !/^W_PROMPT_|^W_VISION_NO_FOLLOWUP$|^W_LLM_MODEL_GATEWAY_ONLY$/.test(c));
 
   // 使用者回報的案例：原本回 E_FORMULA_SYNTAX（第 2 個參數字串沒有結束的引號）
-  const vision = lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, CONCATENATE("整理, 摘要：", A21), "qwen332b")', ctx);
+  const vision = lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, CONCATENATE("整理, 摘要：", A21), "nemotron35")', ctx);
   assert.deepEqual(errors(vision), []);
   assert.deepEqual(codes(vision), ['W_MACRO_SPLIT_NEEDS_DEPLOY'], 'HIS 端還是舊版時提醒一次');
   assert.equal(vision.ai[0].model, 'gemma3_12b', '模型是第 3 個參數，沒有被逗號擠掉');
   assert.deepEqual(vision.ai[1].inputs, ['21']);
-  assert.deepEqual(codes(lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, "x", "qwen332b")', deployed)), [], '部署後在 policy 關閉提醒');
+  assert.deepEqual(codes(lintMacro('LLMvision(21, "a, b", "gemma3_12b"), LLMQUERY(6, "x", "nemotron35")', deployed)), [], '部署後在 policy 關閉提醒');
 
   // 含括號的提示詞
-  assert.deepEqual(codes(lintMacro('LLMQUERY(6, "1) list, 2) summarize (short)", "qwen3627b")', deployed)), []);
-  assert.deepEqual(codes(lintMacro('LLMvision(21, "read the numbers, and (if any) summarize", "gemma3_12b"), LLMQUERY(6, A21, "qwen332b")', deployed)), []);
+  assert.deepEqual(codes(lintMacro('LLMQUERY(6, "1) list, 2) summarize (short)", "nemotron35")', deployed)), []);
+  assert.deepEqual(codes(lintMacro('LLMvision(21, "read the numbers, and (if any) summarize", "gemma3_12b"), LLMQUERY(6, A21, "nemotron35")', deployed)), []);
   // LLMATTACH：提示詞的逗號不切開，"12,13" 是一個參數
   const attach = lintMacro('LLMATTACH(6, "summary, (short)", "gemma3_12b", "12,13")', { ...deployed, attachBox: true });
   assert.deepEqual(errors(attach), []);
   assert.deepEqual(attach.ai[0].attachments.map(b => b.itemid), [12, 13]);
 
   // 舊式以引號包住的步驟
-  const old = lintMacro('"LLMQUERY(6, "x", "qwen332b")", "MACRO(7, 1)"', deployed);
+  const old = lintMacro('"LLMQUERY(6, "x", "nemotron35")", "MACRO(7, 1)"', deployed);
   assert.deepEqual(codes(old), ['W_MACRO_QUOTED_STEP', 'W_MACRO_QUOTED_STEP']);
   assert.deepEqual(old.targets.sort(), ['6', '7']);
   assert.deepEqual(codes(lintMacro(`"LLMQUERY(6, 'x, y', A2)", "MACRO(7, 1)"`, deployed)), ['W_MACRO_QUOTED_STEP', 'W_MACRO_QUOTED_STEP']);
@@ -339,16 +340,107 @@ test('macro lint: prompts may contain commas and parentheses inside quotes', () 
   assert.ok(codes(lintMacro('"MACRO(7, "a, b")"', deployed)).includes('E_MACRO_SPLIT'));
 
   // 雙引號內的單引號
-  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, "patient's note, today", "qwen332b")`, deployed)), []);
-  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, '他說"好", 然後離開', "qwen332b")`, deployed)), []);
+  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, "patient's note, today", "nemotron35")`, deployed)), []);
+  assert.deepEqual(codes(lintMacro(`LLMQUERY(6, '他說"好", 然後離開', "nemotron35")`, deployed)), []);
 
   // "" 跳脫：runtime 切分留在同一個參數（不再是「沒有結束的引號」），但 Calx 不支援 → 語法錯誤並說明
-  const esc = lintMacro('LLMQUERY(6, "say ""hi"", ok", "qwen332b")', deployed);
+  const esc = lintMacro('LLMQUERY(6, "say ""hi"", ok", "nemotron35")', deployed);
   assert.deepEqual(codes(esc), ['E_FORMULA_SYNTAX']);
   assert.match(esc.findings[0].message, /第 2 個參數/);
   assert.match(esc.findings[0].message, /不支援 "" 跳脫/);
   // \" 跳脫：Calx 認、runtime 切分不認 → 切法不同
-  assert.ok(codes(lintMacro('LLMQUERY(6, "a \\"b, c\\" d", "qwen332b")', deployed)).includes('E_MACRO_SPLIT'));
+  assert.ok(codes(lintMacro('LLMQUERY(6, "a \\"b, c\\" d", "nemotron35")', deployed)).includes('E_MACRO_SPLIT'));
   // 未結束的引號
-  assert.ok(codes(lintMacro('LLMQUERY(6, "x, "qwen332b")', deployed)).includes('E_MACRO_SYNTAX'));
+  assert.ok(codes(lintMacro('LLMQUERY(6, "x, "nemotron35")', deployed)).includes('E_MACRO_SYNTAX'));
+});
+
+// ── 落日模型（qwen 系列，calx-catalog.mjs LLM_SUNSET；院方決定 2026-11-19）──
+test('sunset models: qwen is recognised, not suggested; E_LLM_MODEL_SUNSET before the date, E_LLM_MODEL_DEPRECATED after', async () => {
+  const { LLM_SUNSET, sunsetModel, sunsetPassed, LLM_MODELS, LLM_ALIASES } = await import('../src/calx-catalog.mjs');
+  assert.equal(LLM_SUNSET.date, '2027-01-01');
+  assert.equal(sunsetPassed('2026-12-31T23:59:59+08:00'), false);
+  assert.equal(sunsetPassed('2027-01-01T00:00:00+08:00'), true);
+  // 每個 qwen 別名都在落日表、都有 nemotron35 系列的替代寫法；替代寫法本身不是落日模型
+  const qwen = Object.keys(LLM_MODELS).filter(k => /qwen/.test(k));
+  assert.equal(qwen.length, 7);
+  for (const k of qwen) {
+    assert.match(sunsetModel(k).replacement, /^t?nemotron35(-low|-medium|-high)?$/, k);
+    assert.equal(/^t/.test(k), /^t/.test(sunsetModel(k).replacement), `${k}：思考對思考、不思考對不思考`);
+    assert.ok(sunsetModel(k).replacement in LLM_MODELS && !sunsetModel(sunsetModel(k).replacement));
+  }
+  for (const k of Object.keys(LLM_MODELS).filter(k => !/qwen/.test(k))) assert.equal(sunsetModel(k), null, k);
+  assert.ok(sunsetModel('Qwen3.6:27B') && sunsetModel('QWEN3:32B'), '閘道 id 也認得');
+
+  const controls = new Map([['1', { datatype: 'textarea', tocalc: true }], ['2', { datatype: 'textbox', tocalc: true, datavalue: 'qwen332b' }],
+    ['12', { datatype: 'attachbox', tocalc: false }]]);
+  const before = { controls, policy: { now: '2026-11-19T09:00:00+08:00' } };
+  const after = { controls, policy: { now: '2027-01-01T00:00:00+08:00' } };
+  const find = (r, code) => r.findings.find(f => f.code === code);
+  const expected = { qwen3627b: 'nemotron35', qwen332b: 'nemotron35', tqwen3627b: 'tnemotron35', 'tqwen3627b-low': 'tnemotron35-low',
+    'tqwen3627b-medium': 'tnemotron35-medium', 'tqwen3627b-high': 'tnemotron35-high', tqwen332b: 'tnemotron35' };
+  for (const [m, to] of Object.entries(expected)) {
+    const r = lintMacro(`LLMQUERY(1, "x", "${m}")`, before);
+    const f = find(r, 'E_LLM_MODEL_SUNSET');
+    assert.ok(f && f.level === 'error' && f.replacement === to, m);
+    assert.match(f.message, /2027-01-01 自 LlmGateway 下架，院方建議不採用/);
+    assert.ok(f.message.includes(`"${to}"`) && /只經院內 LlmGateway/.test(f.message), '附替代寫法與 Gateway 前提');
+    assert.ok(!codes(r).includes('E_LLM_MODEL_UNKNOWN'), `${m} 仍是已知模型`);
+    assert.equal(r.ai[0].model, m, 'AI 資料流照實列出');
+    const late = lintMacro(`LLMQUERY(1, "x", "${m}")`, after);
+    assert.ok(!codes(late).includes('E_LLM_MODEL_SUNSET'));
+    assert.match(find(late, 'E_LLM_MODEL_DEPRECATED').message, /已於 2027-01-01 自 LlmGateway 下架/);
+    assert.equal(find(late, 'E_LLM_MODEL_DEPRECATED').replacement, to);
+  }
+  // 舊別名（導向 qwen332b）、欄位預設值、大小寫、LLMATTACH 直接寫閘道 id
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "70b")', before)).sort(), ['E_LLM_MODEL_SUNSET', 'W_LLM_MODEL_ALIAS']);
+  assert.equal(LLM_ALIASES['gpt-oss-120b'], 'tqwen332b');
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "gpt-oss-120b")', before)).includes('E_LLM_MODEL_SUNSET'));
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", A2)', before)).includes('E_LLM_MODEL_SUNSET'), '模型取自欄位預設值 qwen332b');
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "QWEN3627B")', before)).includes('E_LLM_MODEL_SUNSET'));
+  const attach = lintMacro('LLMATTACH(1, "x", "Qwen3.6:27B", "12")', before);
+  assert.ok(codes(attach).includes('E_LLM_MODEL_SUNSET') && codes(attach).includes('W_LLM_MODEL_PASSTHROUGH'));
+  // 還在閘道上（status 正常）也照樣回報；沒有 policy.now 時用現在時間
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "qwen3627b")', { controls, policy: { now: before.policy.now, gateway_models: [{ id: 'Qwen3.6:27B', status: '' }] } })).includes('E_LLM_MODEL_SUNSET'));
+  const today = codes(lintMacro('LLMQUERY(1, "x", "qwen332b")', { controls }));
+  assert.ok(today.includes(sunsetPassed() ? 'E_LLM_MODEL_DEPRECATED' : 'E_LLM_MODEL_SUNSET'));
+  // 未知模型的「可用」清單不再列出 qwen
+  const unknown = find(lintMacro('LLMQUERY(1, "x", "gpt4")', before), 'E_LLM_MODEL_UNKNOWN');
+  assert.ok(!/qwen/i.test(unknown.message) && /nemotron35/.test(unknown.message), unknown.message);
+  // 替代寫法只多一個既有的 Gateway 提醒
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "tnemotron35-low")', before)), ['W_LLM_MODEL_GATEWAY_ONLY']);
+});
+
+test('sunset models: new or modified macros are rejected; untouched imported macros only warn (W_LLM_MODEL_SUNSET)', () => {
+  // 新表單：寫入當下就拒絕
+  const { draft_id } = t.form_create({ name: '落日新表單', dept_no: 'TEST0' });
+  const { area_itemid: a } = t.form_add_area({ draft_id });
+  const note = t.form_add_control({ draft_id, area_itemid: a, label_text: '摘要：', control: { datatype: 'textarea' } }).itemid;
+  const script = m => `LLMQUERY(${note}, "請用一句話說明代謝症候群", "${m}")`;
+  assert.throws(() => t.form_add_control({ draft_id, area_itemid: a, label_text: '', control: { datatype: 'action', action_name: '問', action_id: 0, action_script: script('qwen3627b') } }),
+    e => e.code === 'E_INVALID_INPUT' && e.details.errors.some(x => x.code === 'E_LLM_MODEL_SUNSET' && x.replacement === 'nemotron35'));
+  const btn = t.form_add_control({ draft_id, area_itemid: a, label_text: '', control: { datatype: 'action', action_name: '問', action_id: 0, action_script: script('nemotron35') } });
+  assert.ok(btn.script_warnings.some(w => w.startsWith('W_LLM_MODEL_GATEWAY_ONLY')), '替代模型提醒只經 Gateway');
+  assert.throws(() => t.form_update_control({ draft_id, itemid: btn.itemid, changes: { action_script: script('tqwen332b') } }),
+    e => e.details.errors.some(x => x.code === 'E_LLM_MODEL_SUNSET' && x.replacement === 'tnemotron35'));
+
+  // 改版既有表單：原表單的 qwen 巨集沒動到 → 只有 W_LLM_MODEL_SUNSET；動到就要一併換掉
+  const text = JSON.stringify(model.toFormJson(store.loadDraft(draft_id), 'strucmed-skill test'));
+  assert.ok(text.includes('nemotron35'));
+  fs.writeFileSync(path.join(ws, 'qwen-src.json'), text.replaceAll('nemotron35', 'qwen3627b'));
+  const imp = t.form_import({ source_path: 'qwen-src.json', name: '落日改版', dept_no: 'TEST0' });
+  let old = null;
+  const find = v => { if (!v || typeof v !== 'object') return; if (v.datatype === 'action' && /qwen3627b/.test(v.actionScript || '')) old = v; Object.values(v).forEach(find); };
+  find(store.loadDraft(imp.draft_id).areas);
+  assert.ok(old, '匯入的表單保留 qwen 巨集');
+  const oldId = Number(old.itemid);
+  const v = t.form_validate({ draft_id: imp.draft_id });
+  assert.ok(!v.errors.some(e => /LLM_MODEL/.test(e.code)), JSON.stringify(v.errors));
+  const w = v.warnings.find(x => x.code === 'W_LLM_MODEL_SUNSET');
+  assert.ok(w && w.itemid === oldId && /"nemotron35"/.test(w.message) && /原表單既有/.test(w.message), JSON.stringify(v.warnings));
+  assert.throws(() => t.form_update_control({ draft_id: imp.draft_id, itemid: oldId, changes: { action_name: '問 AI' } }),
+    e => e.details.errors.some(x => x.code === 'E_LLM_MODEL_SUNSET'), '改到這顆巨集就要換模型');
+  const fixed = t.form_update_control({ draft_id: imp.draft_id, itemid: oldId, changes: { action_name: '問 AI', action_script: script('nemotron35') } });
+  assert.ok(fixed);
+  const v2 = t.form_validate({ draft_id: imp.draft_id });
+  assert.ok(![...v2.errors, ...v2.warnings].some(x => /LLM_MODEL_SUNSET/.test(x.code)));
 });
