@@ -176,7 +176,8 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_features',
-    description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中）、' +
+    description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中；runtime.no_patient＝站台是否支援非病人表單，' +
+      'supported:true 時 chtno 是保留代碼，false 時 reason 說明是站台尚未更新還是停用）、' +
       'api/llm-config（只回 enabled 與 base_url；不回傳任何 token）、api/v2/runtime/apps（嵌入頁 APP 目錄：經啟動橋接頁 app-launch.html 啟動的 APP 代號、名稱、實際主機、送出的欄位；' +
       '寫成本機快取 .strucmed/embed-apps.json，form_validate 據此揭露嵌入頁面資料流）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
     inputSchema: { type: 'object', properties: {} },
@@ -188,7 +189,11 @@ export const ONLINE_TOOLS = [
       const h = await probe('api/health', () => online.call('GET', 'api/health', {}, '讀取健康狀態'));
       if (h) out.health = { available: true, ok: !!h.ok, ts: h.ts || null };
       const f = await probe('api/v2/runtime/features', () => online.call('GET', 'api/v2/runtime/features', { query: { user: user.userId, deptNo: user.deptNo } }, '讀取 runtime 功能'));
-      if (f) out.runtime = { available: true, presets: !!f.presets, record_delete: !!f.recordDelete, save: !!f.save, query: !!f.query };
+      // 非病人表單（f_nopatient）：站台回 noPatientChtno（保留代碼）才算支援；沒有這個欄位＝站台尚未更新，空字串＝站台停用
+      if (f) out.runtime = { available: true, presets: !!f.presets, record_delete: !!f.recordDelete, save: !!f.save, query: !!f.query,
+        no_patient: typeof f.noPatientChtno === 'string' && f.noPatientChtno
+          ? { supported: true, chtno: f.noPatientChtno }
+          : { supported: false, reason: f.noPatientChtno === '' ? '站台停用非病人表單（保留代碼設成空字串）：f_nopatient 的表單照一般表單處理' : '站台沒有回 noPatientChtno：尚未更新到支援非病人表單的版本，f_nopatient 的表單會被當成一般表單、要求病歷號' } };
       const g = await probe('api/llm-config', () => online.call('GET', 'api/llm-config', { headers: { 'X-Asr-Site': 'strucmed' } }, '讀取 LLM 閘道設定'));
       // 刻意只取狀態欄位：g.token 是瀏覽器型金鑰，不得進入回應、log 或檔案
       if (g) out.llm_gateway = { available: true, enabled: !!g.enabled, base_url: g.enabled ? String(g.baseUrl || '') : null, site: g.site ? String(g.site) : null,

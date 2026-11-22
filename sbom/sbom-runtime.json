@@ -3,12 +3,12 @@
   "specVersion": "1.5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-20T14:38:40.077Z",
+    "timestamp": "2026-11-22T08:06:40.414Z",
     "tools": [
       {
         "vendor": "Chang Gung Memorial Hospital",
         "name": "strucmed-plugin scripts/sbom.mjs",
-        "version": "3.15.1"
+        "version": "3.16.0"
       }
     ],
     "component": {
@@ -23,7 +23,7 @@
       },
       {
         "name": "strucmed:state",
-        "value": "找不到 manifest（C:\\Users\\kunju\\.strucmed\\runtime\\.strucmed-runtime.json）：這台機器還沒有用 runtime_fetch 抓過，或使用者用的是自己的副本（STRUCMED_RUNTIME_WEB）"
+        "value": "找不到 manifest（C:\\Users\\kunjulin\\.strucmed\\runtime\\.strucmed-runtime.json）：這台機器還沒有用 runtime_fetch 抓過，或使用者用的是自己的副本（STRUCMED_RUNTIME_WEB）"
       },
       {
         "name": "strucmed:note",
@@ -32,5 +32,5 @@
     ]
   },
   "components": [],
-  "serialNumber": "urn:uuid:7ac2c65e-f410-0077-804a-08a800884be8"
+  "serialNumber": "urn:uuid:2a31c076-e650-1d22-0b16-0008c4838f05"
 }

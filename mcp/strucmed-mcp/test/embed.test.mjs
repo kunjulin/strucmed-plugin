@@ -168,9 +168,15 @@ test('平台：result values are text; number fields reject non-numbers', () => 
   assert.equal(eb.coerceResultValue(['a'], false).ok, false);
 });
 
-test('錯誤碼與訊息和平台完全相同（12 個 E_EMBED_*）', () => {
+test('錯誤碼與訊息和平台完全相同（13 個 E_EMBED_*，含非病人表單的 E_EMBED_NOPATIENT）', () => {
   assert.deepEqual(eb.CODES, ['E_EMBED_URL', 'E_EMBED_SCHEME', 'E_EMBED_HOST', 'E_EMBED_PII', 'E_EMBED_HEIGHT', 'E_EMBED_FILL', 'E_EMBED_INPUT',
-    'E_EMBED_OUTPUT_MISSING', 'E_EMBED_OUTPUT_EMBED', 'E_EMBED_OUTPUT_GROUP', 'E_EMBED_OUTPUT_DUP', 'E_EMBED_MAP']);
+    'E_EMBED_OUTPUT_MISSING', 'E_EMBED_OUTPUT_EMBED', 'E_EMBED_OUTPUT_GROUP', 'E_EMBED_OUTPUT_DUP', 'E_EMBED_MAP', 'E_EMBED_NOPATIENT']);
+  // 非病人表單（iot f_nopatient）：params 帶 {chtno}、{opdno} 都擋；一般表單（沒有 iot 或沒有旗標）不擋。平台副本找不到時這一段仍然執行
+  const npForm = flag => baseForm().filter(x => x.itemtype !== 'iot').concat([embedBlock(40, { params: { c: '{chtno}', v: '{opdno}', u: '{user}' } }), { itemtype: 'iot', ...(flag !== undefined && { f_nopatient: flag }) }]);
+  assert.deepEqual(eb.validateForm(npForm(true)), [{ itemid: '40', code: 'E_EMBED_NOPATIENT', message: eb.MESSAGES.E_EMBED_NOPATIENT + '：c、v' }]);
+  assert.deepEqual(eb.validateForm(npForm('true')).map(e => e.code), ['E_EMBED_NOPATIENT']);
+  assert.deepEqual(eb.validateForm(npForm(undefined)), []);
+  assert.deepEqual(eb.validateForm(npForm(false)), []);
   // 平台 web/ 的本機副本（STRUCMED_RUNTIME_WEB，或 repo 旁的 strucmed/web）有 embed-block.js 時，直接載入比對訊息與同一組案例的結果；找不到就略過
   const here = path.dirname(fileURLToPath(import.meta.url));
   const platform = [process.env.STRUCMED_RUNTIME_WEB && path.join(process.env.STRUCMED_RUNTIME_WEB, 'js/embed-block.js'),
@@ -181,7 +187,7 @@ test('錯誤碼與訊息和平台完全相同（12 個 E_EMBED_*）', () => {
   const pe = sandbox.module.exports;
   assert.deepEqual(pe.MESSAGES, eb.MESSAGES);
   const cases = [baseForm().concat([embedBlock(40, { url: 'http://evil.com/?idno=1', params: { x: '{idno}', name: 'a' }, outputs: { 'a b': 10, o: 14, p: 99 }, inputs: { k: 'A10', n: 12 }, height: 'fill' }), embedBlock(41, { height: 'fill', outputs: { q: 10 } })])];
-  for (const f of cases) assert.deepEqual(eb.validateForm(f), pe.validateForm(f));
+  for (const f of [...cases, npForm(true), npForm(false), npForm(undefined)]) assert.deepEqual(eb.validateForm(f), pe.validateForm(f));
 });
 
 // 平台 tests/fixtures/internal-hosts.json（DLL NavigationPolicy.IsInternalHost 與站台 isInternalHost 共用，commit 44dac17）的案例逐條抄來。

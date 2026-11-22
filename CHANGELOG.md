@@ -14,6 +14,73 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.16.0（MCP 2.19.0）— 2026-11-22：非病人表單規則與平台現況同步（`{opdno}` 升為 error、`auto_load_on_open`、紀錄主體與紀錄鍵、`runtime.no_patient`）
+
+尚未發佈。
+
+依據：3.15.0 加入非病人表單時平台還沒實作，許多行為是「依介面約定推定」並列為「待平台確認」。平台 `kunjulin/strucmed` 之後合併 #276（非病人表單）、#278（存檔雙向驗證、稽核、使用規範）、#280（測試帳號）、#282（查詢強制 `sheetid`、資料下載只含本人、`recNo` 作為嚴格的紀錄鍵、帶鍵開啟一律載入），院方 2026-11-22 核准紀錄主體設計（平台 `docs/PLAN-record-subject.md` 第 0A 節），同日部署到院內 LVAIW `/strucmed`（`b11e446`）與院外站台 `cgmh.ddns.net`（`01f8fa4`），並以院內正式倉儲實測。這一版以平台 `main`（`01f8fa4`）的 `docs/API-V2.md`「非病人表單」、`docs/gitbook/api-v2/strunote.md`、`web/js/embed-block.js`、`web/js/TempHtml.js` 為準，把規則、檢查、說明改成確定的。plugin 仍然沒有、也不提供查詢或存檔病人紀錄的 tool。
+
+**3.15.0「待平台確認」各項的答案**
+
+| 3.15.0 的推定 | 平台現況 | 這一版 |
+|---|---|---|
+| 保留代碼實際值 | `APP-NP`（`V2:Note:NoPatientChtno`；空字串＝停用） | 說明文字不變；`online_features` 新增 `runtime.no_patient` 回站台實際值 |
+| 非病人表單的 `opdno` | 表頭 `Opdno`＝`APP`、`Deptno`＝`APP`；`opdno` 是「紀錄主體」，現行固定 `APP` | `W_NOPATIENT_OPDNO_FUNC` 的訊息由「多半是空值」改成「讀到的是紀錄主體代碼 `APP`」 |
+| `strucmed.context` 的內容 | `chtno: ''`、`opdno: ''`、`noPatient: true`（不送保留代碼） | `W_NOPATIENT_EMBED_CONTEXT`、`EmbedPageContract.md` 改寫（原本寫「仍送出保留代碼」是錯的） |
+| 嵌入頁 `params` 的 `{opdno}` | 與 `{chtno}` 同為 `E_EMBED_NOPATIENT`：編輯器擋存檔、runtime 不載入 | `W_NOPATIENT_EMBED_OPDNO` → **`E_NOPATIENT_EMBED_OPDNO`（error）** |
+| 平台部署前的暫行做法 | 院內、院外站台都已部署（2026-11-22） | 所有「暫行輸入固定代碼」的文字移除，改成「站台是否支援」 |
+
+**會影響既有用法的變更**
+- **`{opdno}` 由 warning 升為 error**：非病人表單的嵌入頁 `params` 帶 `{opdno}`，3.15.x 只警告（`W_NOPATIENT_EMBED_OPDNO`），現在是 `E_NOPATIENT_EMBED_OPDNO`——不能輸出、不能上架。嚴重度規則不變：新建或這次才設成非病人的一律 error；原表單本來就是非病人表單、這次沒動到的嵌入頁列 warning（原表單既有）。代碼 `W_NOPATIENT_EMBED_OPDNO` 不再出現。
+- **非病人表單預設多寫 `f_autoLoadOnOpen: true`**：`options.no_patient: true` 現在一併預設 `auto_load_on_open: true`（明確給 false 時不寫）。3.15.x 建出的非病人表單沒有這個鍵，匯入後原樣保留並列 `W_NOPATIENT_AUTOLOAD`。
+- **一般表單的輸出不變**：不寫 `f_nopatient`、`f_autoLoadOnOpen`，iot 的鍵與順序與 3.15.1 相同（測試固定）；沒有任何 `NOPATIENT` 訊息；`W_EMBED_DATAFLOW` 的文字不變。
+
+**MCP：選項**
+- `form_create`／`form_update_meta`／`form_build` 的 `options` 新增 `auto_load_on_open`（→ iot `f_autoLoadOnOpen: true`，編輯器「開啟表單時自動取出本次就醫最近一次紀錄」）。只有 true 才寫出。非病人表單預設 true：struNote 不帶 `recNo`，每人每張表單只有一筆，沒勾時開頁是空白、存檔會覆寫上一筆（平台 2026-11-22 院內實測的覆寫陷阱；帶 `recNo` 開啟時平台一律載入，不受這個選項影響）。改版 draft 直接改來源 iot，`iot_options` 多回 `f_autoLoadOnOpen`。
+- 範本套件 v2：`$defs/iotOptions` 新增 `f_autoLoadOnOpen`（布林），套件驗證拒絕非布林值；`f_nopatient` 的說明更新。
+
+**MCP：`form_validate`（非病人表單才檢查）**
+- error 新增 `E_NOPATIENT_EMBED_OPDNO`（見上）。`E_NOPATIENT_EMBED_CHTNO` 的訊息改為平台的實際行為（編輯器擋存檔、runtime 不載入，`E_EMBED_NOPATIENT`）。`E_NOPATIENT_HISQUERY`、`E_NOPATIENT_LOOKUPDW` 補「平台執行時不送出」。
+- warning 新增：
+  - `W_NOPATIENT_AUTOLOAD`：沒有開「開啟時自動取出」（明確關閉，或來源表單沒有勾）。
+  - `W_NOPATIENT_HIS_LIST`：設了捷徑與作業別（會出現在 HIS 清單）。HIS 內開啟時 HIS 仍帶真實病歷號，存檔會被平台的雙向檢查拒絕；站台關閉 API 存檔或退回直連倉儲時伺服器擋不到，紀錄會存在該病歷號下。
+- 訊息更新：`W_NOPATIENT_LOADDOC`（平台只取回這張表單、同一個 `recNo`、自己建立的紀錄；拿掉「平台尚未部署前可能取到別人的」）、`W_NOPATIENT_OPDNO_FUNC`（見上表）、`W_NOPATIENT_EMBED_CONTEXT`（見上表）、`W_NOPATIENT_DICT_WRITE`（補「只有建立者本人查得到、下載得到，資料下載對原作者與管理者也只含本人的紀錄，目前無法彙整他人的紀錄」）、`W_NOPATIENT_FORM`（紀錄表頭 `chtno`＝`APP-NP`、`deptNo`＝`APP`、`opdno`＝`APP`、`recNo`＝紀錄鍵；只有本人查得到、查詢須帶 `sheetid`；HIS 內不能存檔；站台是否支援）。非病人表單的 `W_EMBED_DATAFLOW` 改寫成「送出科別、使用者（病歷號與門診序號是空字串，另帶 `noPatient: true`）」。
+
+**MCP：嵌入頁檢查與平台 `embed-block.js` 同步**
+- `src/embed.mjs` 是平台 `web/js/embed-block.js` 的對應實作，`test/embed.test.mjs` 在找得到平台副本時逐字比對訊息與結果。平台加了 `E_EMBED_NOPATIENT`、`W_NOPATIENT_HIS`、`W_NOPATIENT_LOOKUP` 之後，這項比對在平台 repo 放在旁邊的開發機上會失敗（`main` 也一樣；找不到平台副本的環境會略過比對，所以不會發現）。這一版補上三則訊息、`isNoPatientForm`、`patientParams`，`validateForm` 對帶 iot `f_nopatient` 的完整範本 JSON 回 `E_EMBED_NOPATIENT`（`CODES` 12 → 13）。`form_validate` 不受影響：它只傳區塊、沒有 iot，非病人表單的回報仍是 `E_NOPATIENT_EMBED_CHTNO`／`E_NOPATIENT_EMBED_OPDNO`。
+
+**MCP：站台是否支援非病人表單**
+- `online_features` 的 `runtime` 新增 `no_patient`，來源是站台 `GET api/v2/runtime/features` 的 `noPatientChtno`：有值 → `{ supported: true, chtno }`；沒有這個欄位（站台尚未更新）或空字串（站台停用）→ `{ supported: false, reason }`。院內、院外站台 2026-11-22 起都回 `APP-NP`（院外已實測，見「尚未確認」前一段）。
+- 不支援的站台會把 `f_nopatient` 的表單當成一般表單、要求病歷號：規則改成「不要在那個站台使用，不輸入真實病歷號，也不自行輸入保留代碼」（已更新的平台對一般表單帶保留代碼回 400；代碼由平台決定，範本與用戶端只送旗標）。沒有登入、無法判斷時，交付寫「尚未確認」，不推定。
+
+**manifest 與定稿檔**
+- manifest「## 非病人表單」改寫：站台支援、紀錄表頭、只有本人查得到與下載得到、HIS 內不能存檔、開啟時自動取出的狀態、保留代碼登錄（`chtno` 為 `Shortcut` 或以 `APP` 開頭的都不是病人紀錄；`500` 是測試用病歷號）。`form_create`／`form_import`／`form_update_meta` 的 `no_patient_note` 與上架 plan 的 `no_patient` 同步改寫（共用 `model.mjs` 的 `NOPATIENT_NOTE`）。
+
+**skills／agents／references**
+- `FormDesignRules.md`〈非病人表單〉整節改寫：站台是否支援、取捨表（加「HIS 內開啟」「紀錄筆數」）、新小節〈紀錄主體與紀錄鍵（`opdno`、`recNo`）〉（一筆紀錄由 `user`＋`sheetid`＋`opdno`＋`recNo` 定位；`recNo` 由表單頁 `?recNo=` 帶入，英數字與 `_`、`.`、`-`，最多 64 字，沒帶時是 `none`、自成一個鍵；只認完全相同的 `recNo`；帶 `recNo` 開啟一律載入；struNote 沒有輸入 `recNo` 的地方，每人每張表單一筆；取值規則須先登錄）、〈查詢、下載與分析〉（查保留代碼必須帶 `sheetid`，否則 400，`DRAWimg`／`XMLtxt` 例外；只回自己建立的紀錄；資料下載只含本人；保留代碼登錄）、檢查代碼表、交付必須告知。
+- `build-form-app`：**B1 對非病人表單明確擋下**（第 4c 步與清單列一律 ✗「不能在 HIS 內使用，請改走 B2」；原本只寫「通常不從 HIS 開」）。B2 第 3b 步改寫：先看 `runtime.no_patient`、建議 H1、多筆紀錄怎麼帶 `recNo`、查詢與下載的限制。`AppBuildWorkflow.md` 新增 §2b。
+- `create-form`（選項說明與交付 3b）、`edit-form`、`publish-form`（定稿前以 `online_features` 確認站台支援）、`FormulaMacroRules.md`、`Gates.md`、`PublishWorkflow.md`、`RevisionWorkflow.md`、`EmbedPageContract.md`、`form-planner`（不設作業別；需求要彙整他人紀錄時列待決）、`form-builder`、`form-reviewer`（`W_NOPATIENT_AUTOLOAD`、`W_NOPATIENT_HIS_LIST` 列「必須修正」）、三份 README 同步。
+
+**評估後沒有做的**
+- `G_OPDNO()`／`GETOPDNO()`／`GETPACSNO()` 沒有升為 error：平台照常回值（`APP`），不擋；只改訊息。
+- `LOADDOC`／`LOADXML` 維持 warning：平台已限制為這張表單、同一個 `recNo`、自己的紀錄，使用上是安全的。
+- 沒有新增 `recNo`／`opdno` 的表單選項：兩者是開啟表單頁的 APP 帶入的執行期值，不在範本定義裡；取值規則要先向平台登錄。
+- **表單 APP 範本（`templates/form-app/`）沒有改**：H0／H2 產生的 APP 清單頁仍是同一個病歷號欄位（非病人表單也要填值才能開，平台會忽略這個值），也不帶 `recNo`。這次只改規則、檢查、說明與測試；範本改成依 `me/notes` 的 `noPatient` 免填病歷號、支援 `recNo` 列為後續工作。文件已寫明這個限制並建議非病人表單走 H1（struNote）。產生的 APP 與 `scaffold-form-app.mjs` 沒有查詢紀錄的程式（測試固定），不受「查詢須帶 `sheetid`」影響。
+- 本機預覽頁（`form_preview(html)`）沒有改：預覽不需要病歷號，也不模擬 `recNo`。
+
+**院外站台實測（2026-11-22，唯讀 GET，未登入）**
+- 平台 `main` `ff2c22d` 的 `docs/CHANGELOG.md` 記錄院外站台 `cgmh.ddns.net` 已部署 `01f8fa4`（含 #276、#278～#280、#282、#283）。
+- `GET https://cgmh.ddns.net/api/v2/runtime/features` 回 200：`noPatientChtno: "APP-NP"` → `runtime.no_patient` 會是 `{ supported: true, chtno: "APP-NP" }`。`GET api/health` 回 200。
+- 前端檔案：`js/embed-block.js` 含 `E_EMBED_NOPATIENT`；`TempHtml.html` 引用 `TempHtml.js?v=20261124h`、`embed-block.js?v=20261120`；`js/TempHtml.js` 含嚴格紀錄鍵（`noPatientRecNoKey`）與 `strucmed.context` 的 `noPatient` 處理。
+- 規則文字因此改成「院內、院外站台都已支援」；`runtime.no_patient` 的判斷保留，用在其他站台、回退後的站台或無法確定版本時。
+- 沒有做：登入院外站台、以 MCP 的 `online_features` 實際呼叫、開表單或存檔。未帶使用者呼叫時 `save`、`query` 是 false（匿名呼叫的結果，不代表登入者的白名單狀態）。平台的部署紀錄也寫明院外「struNote 以測試帳號開非病人表單、存檔」尚未實測。
+
+**尚未確認**
+- 這一版沒有以真實站台實測（建立、上架、struNote 開啟、存檔）；平台行為引用平台 repo 的文件、程式與其 CHANGELOG 記載的院內實測結果。
+- 「沒勾開啟時自動取出、不帶 `recNo` 時存檔會覆寫上一筆」是依平台 CHANGELOG 2026-11-22 的實測記錄（帶鍵情形）與修正說明（「沒帶鍵時仍依表單選項」）推得；不帶鍵的情形平台記錄裡沒有單獨的實測項目。
+
+**測試**：見本版 PR 說明（Windows；與 `main` 的 4 項環境性失敗相同）。`test/nopatient.test.mjs` 13 → 16 項並改寫既有斷言：四個預設與 `auto_load_on_open`、一般表單 iot 鍵與順序固定、`E_NOPATIENT_EMBED_OPDNO`、`W_NOPATIENT_EMBED_CONTEXT`／`W_EMBED_DATAFLOW` 的新文字、`W_NOPATIENT_LOADDOC`、`W_NOPATIENT_HIS_LIST`、`W_NOPATIENT_AUTOLOAD`、`W_NOPATIENT_DICT_WRITE`、manifest 各點、套件驗證、規則文件一致性（沒有過時的暫行做法；〈紀錄主體與紀錄鍵〉、查詢限制、B1 擋下、保留代碼登錄都在；產生的 APP 沒有查詢紀錄的程式）。`test/online.test.mjs` 新增 1 項（`runtime.no_patient` 三種情形）並更新上架 plan 的斷言。
+
 ## 3.15.1（MCP 2.18.1）— 2026-11-20：預覽伺服器改由 MCP 常駐承載（修復 Antigravity 預覽連線被拒）；Antigravity Windows hook 免裝 Node.js
 
 **預覽伺服器改由 MCP 行程常駐承載（`form_preview(format: "html")`）**

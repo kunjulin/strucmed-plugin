@@ -257,10 +257,15 @@ function stripTrailingNewline(items) {
   return out;
 }
 
-// 非病人表單（iot f_nopatient，平台 kunjulin/strucmed 約定）：平台以保留代碼開啟，struNote 不要求病歷號。
-// 保留代碼只用在說明文字；實際值由平台設定決定
+// 非病人表單（iot f_nopatient；平台 kunjulin/strucmed docs/API-V2.md「非病人表單」，院方 2026-11-22 核定表頭規格）：
+// 平台以保留代碼開啟，struNote 不要求病歷號；紀錄表頭 chtno＝保留代碼、deptNo＝APP、opdno（紀錄主體）現行固定 APP、recNo＝紀錄鍵。
+// 這些值只用在說明文字：實際值由平台設定決定（V2:Note:NoPatientChtno），範本與用戶端只送旗標、不自行填代碼
 export const NOPATIENT_CODE = 'APP-NP';
-// no_patient:true 時的預設：不以病歷號／就醫號查近期紀錄、隱藏「上次紀錄」圖示；使用者明確指定的值優先
+export const NOPATIENT_SUBJECT = 'APP';
+// 各 tool 回應與上架 plan 共用的一行說明
+export const NOPATIENT_NOTE = `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；紀錄只有填寫者本人查得到、下載得到，查詢須帶 sheetid；目前只在 struNote／表單頁使用，HIS 內開啟時存檔會被平台拒絕；站台是否支援以 online_features 的 runtime.no_patient 為準（院內、院外站台 2026-11-22 起支援），且不要用倉儲以病歷號查詢這類紀錄`;
+// no_patient:true 時的預設：不以病歷號／就醫號查近期紀錄、隱藏「上次紀錄」圖示、開啟時自動取出（struNote 不帶 recNo，
+// 沒勾時開頁是空白，存檔會覆寫同一個紀錄鍵的上一筆）；使用者明確指定的值優先
 export function iotOptionFields(o = {}) {
   const np = o.no_patient === true;
   return {
@@ -268,7 +273,8 @@ export function iotOptionFields(o = {}) {
     f_chtno: typeof o.f_chtno === 'boolean' ? o.f_chtno : !np,
     f_hideprevicon: typeof o.hide_prev_icon === 'boolean' ? o.hide_prev_icon : np,
     // 只有 true 才寫出：一般表單的輸出與既有版本逐位元相同（平台預設 false）
-    ...(np && { f_nopatient: true })
+    ...(np && { f_nopatient: true }),
+    ...((typeof o.auto_load_on_open === 'boolean' ? o.auto_load_on_open : np) && { f_autoLoadOnOpen: true })
   };
 }
 // draft 是否為非病人表單：改版 draft 以來源 iot 為準（form_update_meta 的 options 直接改它），新 draft 看 meta.options
@@ -278,7 +284,7 @@ export function isNoPatient(draft) {
 }
 // form_update_meta(options) 套到改版 draft 的來源 iot；回傳實際改到的 iot 鍵
 const OPTION_IOT = { f_chtno: ['f_chtno', Boolean], f_opdno: ['f_opdno', Boolean], hide_prev_icon: ['f_hideprevicon', Boolean],
-  hide_assist: ['f_hideAssist', Boolean], hide_preset: ['f_hidePreset', Boolean],
+  hide_assist: ['f_hideAssist', Boolean], hide_preset: ['f_hidePreset', Boolean], auto_load_on_open: ['f_autoLoadOnOpen', Boolean],
   f_day: ['f_day', v => String(v)], histext: ['f_histext', v => (v === 'dict' ? 'histextbydict' : 'histextbyblock')] };
 export function applyOptionsToIot(iot, o = {}) {
   const changed = [];
@@ -288,6 +294,7 @@ export function applyOptionsToIot(iot, o = {}) {
     if (typeof o.f_chtno !== 'boolean') set('f_chtno', false);
     if (typeof o.f_opdno !== 'boolean') set('f_opdno', false);
     if (typeof o.hide_prev_icon !== 'boolean') set('f_hideprevicon', true);
+    if (typeof o.auto_load_on_open !== 'boolean') set('f_autoLoadOnOpen', true);
   } else if (o.no_patient === false && iot.f_nopatient !== undefined) { delete iot.f_nopatient; changed.push('f_nopatient'); }
   for (const [k, [key, conv]] of Object.entries(OPTION_IOT)) {
     if (o[k] === undefined || o[k] === null || o[k] === '') continue;
@@ -303,6 +310,7 @@ export function iotObject(meta, generator) {
     itemtype: 'iot', editorver: EDITORVER, sheetid: '',
     f_opdno: f.f_opdno, f_chtno: f.f_chtno,
     ...(f.f_nopatient && { f_nopatient: true }),
+    ...(f.f_autoLoadOnOpen && { f_autoLoadOnOpen: true }),
     templateID: '',
     f_histext: o.histext === 'dict' ? 'histextbydict' : 'histextbyblock',
     f_hideprevicon: f.f_hideprevicon, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,

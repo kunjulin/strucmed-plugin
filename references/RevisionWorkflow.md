@@ -26,7 +26,7 @@
    - **本次改到的面向**有問題 → error，必須修正。
    - 原表單既有的問題 → warning（標示「原表單既有」）。要逐條告知使用者，但不擋輸出。
    - `W_CUSTOM_JS`：原表單有自訂 JS，本工具未審查。要明確告知使用者。
-   - 非病人表單（`FormDesignRules.md`〈非病人表單〉）：來源 iot 有 `f_nopatient: true` 時 `form_import` 回 `no_patient: true`，選項原樣保留到輸出與上架。原表單既有的 HIS 參照等列 warning（原表單既有），改到就是 error。要把一般表單改成非病人表單用 `form_update_meta(options: { no_patient: true })`：這是本次的修改，既有的 HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`{chtno}` 一律 `E_NOPATIENT_*`，要先移除或改寫。
+   - 非病人表單（`FormDesignRules.md`〈非病人表單〉）：來源 iot 有 `f_nopatient: true` 時 `form_import` 回 `no_patient: true`，選項原樣保留到輸出與上架（來源沒有勾「開啟時自動取出」時也原樣保留，`W_NOPATIENT_AUTOLOAD` 提醒，問使用者要不要 `form_update_meta(options: { auto_load_on_open: true })`）。原表單既有的 HIS 參照等列 warning（原表單既有），改到就是 error。要把一般表單改成非病人表單用 `form_update_meta(options: { no_patient: true })`：這是本次的修改，既有的 HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、嵌入頁 `{chtno}`／`{opdno}` 一律 `E_NOPATIENT_*`，要先移除或改寫；原本有作業別的要一併拿掉（`W_NOPATIENT_HIS_LIST`：HIS 內不能存檔），而且原本以病歷號存的舊紀錄不會出現在非病人表單的資料下載裡，要先告知。
 5. 定稿 G2 後 `form_export` 兩段式。manifest 會列出「改版自」與本次改動的控制項（✎）。
 
 **v1 限制**（告訴使用者，請其匯入後在編輯器調整）：

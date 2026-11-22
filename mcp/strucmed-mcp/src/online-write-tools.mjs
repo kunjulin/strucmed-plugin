@@ -18,7 +18,7 @@ import { walk, isControl } from './formtree.mjs';
 import { digestForm, diffDigest, describeDiff } from './formdiff.mjs';
 import * as dc from './dictcomment.mjs';
 import { scriptPlan } from './script-snippets.mjs';
-import { NOPATIENT_CODE } from './model.mjs';
+import { NOPATIENT_NOTE } from './model.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 // 白名單片段（docs/13）：計畫原樣列出渲染後的 JS（閘門 G2 的審閱對象）
@@ -117,7 +117,7 @@ function planCommon(d, v, built, user, base) {
     publish_on_save: !!(t.shortcut && t.groups.length),
     areas: d.areas.length, controls: v.stats && v.stats.controls,
     dictionaries: built.pkg.dictionaries.map(x => ({ id: x.id, name: x.dicName })),
-    ...(v.no_patient && { no_patient: `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；平台尚未部署前 struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄` }),
+    ...(v.no_patient && { no_patient: NOPATIENT_NOTE }),
     draft_sha256: draftHash(d), body_chars: built.size, warnings: v.warnings,
     ...scriptPlan(d)
   };

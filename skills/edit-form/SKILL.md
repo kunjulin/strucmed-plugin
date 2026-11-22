@@ -56,7 +56,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion, Task, Bash(node *
 
 - `form_build`（`draft_id`）：一次加完新的區塊與欄位（含計算式與巨集；參照用 `{C3}` 寫穩定 ID，既有欄位直接寫 itemid）。失敗時照 `details.build` 接著修，不要整張重來。加在既有欄位中間、或只改一兩個欄位時用下面的單筆 tool
 - `form_update_meta`：名稱、捷徑、作業別、Info、表單選項（`options`）
-- 非病人表單（`references/FormDesignRules.md`〈非病人表單〉）：`form_import` 回 `no_patient: true` 表示原表單就是非病人表單，選項原樣保留，新增的內容不得有 HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`G_CHTNO()`、嵌入頁 `{chtno}`（`E_NOPATIENT_*`）。使用者要把與病人無關的既有表單改成非病人表單時，先說明取捨再 `form_update_meta(options: { no_patient: true })`（一併關閉依病歷號查近期紀錄、隱藏「上次紀錄」圖示）；之後既有的違規也都是 error，逐項與使用者確認移除或改寫，不要自行刪欄位。需求明顯與病人無關而原表單不是非病人表單時，在階段 1 提出這個選項（同 `create-form` §2）。
+- 非病人表單（`references/FormDesignRules.md`〈非病人表單〉）：`form_import` 回 `no_patient: true` 表示原表單就是非病人表單，選項原樣保留，新增的內容不得有 HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`G_CHTNO()`、嵌入頁 `{chtno}`／`{opdno}`（`E_NOPATIENT_*`）。使用者要把與病人無關的既有表單改成非病人表單時，先說明取捨（含：紀錄只有本人查得到、HIS 內不能存檔所以要拿掉作業別、原本以病歷號存的舊紀錄不會出現在資料下載裡）再 `form_update_meta(options: { no_patient: true })`（一併關閉依病歷號查近期紀錄、隱藏「上次紀錄」圖示、開啟「開啟時自動取出」）；之後既有的違規也都是 error，逐項與使用者確認移除或改寫，不要自行刪欄位。需求明顯與病人無關而原表單不是非病人表單時，在階段 1 提出這個選項（同 `create-form` §2）。
 - `form_update_control`：說明文字（頂層 `label_text`，`changes` 內沒有 caption）、單位（`changes.unit`）、預設值、必填、選項、字典（改版時先 `online_dictionary_search(update_index:true)`；原表單綁的是科部字典而體系有同名時，**建議改綁體系字典**，使用者同意才改；改了 datatype、單位、選項或計算式的欄位，該字典的 memo 列入 G2 前的補述；要換字典時用 `dictionary-assist` 模式 1 找候選；只想把原表單的字典補述補齊而不改表單時，改用 `dictionary-assist` 模式 3）；計算式、HIS 參照、巨集腳本（`references/FormulaMacroRules.md`；多步驟配方 `MacroRecipes.md`；prompt 寫法 `PromptPatterns.md`，只調 prompt 可改用 `tune-prompt`）
 - `form_add_control`：只能加在文字區塊與表格／頁籤的格子；itemid 自動接續原表單最大值；`after_itemid` 指定位置
 - `form_add_area`：新增文字、表格、頁籤區塊（`references/TablesTabsRules.md`）；`after_itemid` 插在指定區塊之後

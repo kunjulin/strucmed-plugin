@@ -117,5 +117,5 @@
 - `online_template_get(template_id, save:true)`（只回摘要）：確認 `summary` 的名稱、捷徑、作業別與控制項數與定稿相同（伺服器的 `sha256` 是 head 雜湊，與套件 `integrity` 不同，不能直接比對）。
 - 更新時另跑 `online_template_versions` 回報新 rev 與 `current`。
 - 交付：templateID、資料夾（格式同 §3 的表）、rev、是否已上架（捷徑＋作業別）、W_AI_DATAFLOW、W_RENUMBER_MACRO（在編輯器開啟後不要按「重新編號」）、人工確認清單（編輯器開啟檢查人形圖示與字典角色；新字典角色一律 tohis）。
-- 非病人表單（plan 有 `no_patient`、`form_validate` 回 `W_NOPATIENT_FORM`）必列三點：struNote 不需病歷號、平台以保留代碼開啟；**平台尚未部署前** struNote 仍會要求病歷號，暫行做法是輸入固定代碼（預設 `APP-NP`，以平台公告為準），不要輸入真實病歷號；**不要用倉儲以病歷號查詢這類紀錄**。離線輸出時 manifest「## 非病人表單」已寫同樣內容。
+- 非病人表單（plan 有 `no_patient`、`form_validate` 回 `W_NOPATIENT_FORM`）必列：struNote 不需病歷號、平台以保留代碼開啟；站台是否支援（院內、院外站台都已支援；其他站台以 `online_features` 的 `runtime.no_patient` 為準，不支援的站台不要使用、不輸入真實病歷號）；紀錄只有填寫者本人查得到、下載得到，目前無法彙整他人的紀錄；從 struNote 開每人每張表單一筆，HIS 內開啟時存檔會被平台拒絕；不要用倉儲以病歷號查詢這類紀錄（`FormDesignRules.md`〈非病人表單〉）。上架前後有登入時以 `online_features` 看 `runtime.no_patient`：`supported: false` 要在交付的第一行講明這個站台目前不能用。離線輸出時 manifest「## 非病人表單」已寫同樣內容。
 - 字典：新建與補述的字典（id 前 8 碼）；有體系升級建議時列出字典名稱、id 前 8 碼與理由，註明「**請轉給體系字典管理者在字典頁升級**；升級不改 id，這次上架的表單不用改」。FHIR 對應中標「待人工確認」的代碼列出請使用者查核。

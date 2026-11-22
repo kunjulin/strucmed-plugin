@@ -10,7 +10,7 @@
 
 | 方向 | 訊息 | 說明 |
 |---|---|---|
-| 表單 → 嵌入頁 | `{ type: 'strucmed.context', version: 1, chtno, deptNo, user, opdno, values }` | iframe 載入後送一次；`values` 是 `inputs` 宣告的 `{ key: 欄位值 }`。病歷號等只走這裡，不放網址 |
+| 表單 → 嵌入頁 | `{ type: 'strucmed.context', version: 1, chtno, deptNo, user, opdno, values }` | iframe 載入後送一次；`values` 是 `inputs` 宣告的 `{ key: 欄位值 }`。病歷號等只走這裡，不放網址。**非病人表單**（`f_nopatient`）：`chtno`、`opdno` 是空字串，另帶 `noPatient: true`（不送保留代碼）；嵌入頁要能處理沒有病人的情境，不可以空的病歷號查詢。非病人表單的 `params` 帶 `{chtno}`、`{opdno}` 時 runtime 不載入這個嵌入頁（`E_EMBED_NOPATIENT`；`form_validate` 的 `E_NOPATIENT_EMBED_CHTNO`／`E_NOPATIENT_EMBED_OPDNO`） |
 | 嵌入頁 → 表單 | `{ type: 'strucmed.ready' }` | 嵌入頁初始化完成後送；表單收到會**重送** `strucmed.context`（嵌入頁的監聽比表單送得晚時靠它補） |
 | 嵌入頁 → 表單 | `{ type: 'strucmed.result', data: { key: 值 } }` | 寫回 `outputs` 宣告的欄位。**欄位值放在 `data`**（不是 `values`）；值是字串、數字或布林，數字欄位收到非數字會被拒絕；沒宣告的 key 不寫 |
 

@@ -526,7 +526,7 @@ qwen 系列模型（`qwen3627b`、`qwen332b` 與思考版）院方建議不採�
 | `/strucmed:build-form-app` | B1 執行條件檢核清單；B2 表單 APP 產生（G4；H0 本機 Docker／H1 既有 struNote／H2 站台 `/apps/`） | `<範本 ID> [b1\|b2]` |
 | `/strucmed:report-issue` | 收集 workflow-log、版本與遮蔽後的錯誤，產生 issue 草稿（由你自己送出） | `[一句話描述問題]` |
 
-**非病人表單**（3.15.0）：教案、備課、會議紀錄這類與病人無關的表單，`create-form` 會在需求階段提出「非病人表單」選項（`form_create` 的 `options.no_patient` → iot `f_nopatient`）：struNote 不需病歷號，平台以保留代碼開啟；不能用 HIS 參照、`HISQUERY`、`LOOKUPDW`、`{chtno}`（`form_validate` 的 `E_NOPATIENT_*`）。平台尚未部署前 struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄。規則見 `references/FormDesignRules.md`〈非病人表單〉。
+**非病人表單**（3.15.0；3.16.0 依平台現況更新）：教案、備課、會議紀錄這類與病人無關的表單，`create-form` 會在需求階段提出「非病人表單」選項（`form_create` 的 `options.no_patient` → iot `f_nopatient`）：struNote 不需病歷號，平台以保留代碼（`APP-NP`）開啟，紀錄只有填寫者本人查得到、下載得到；不能用 HIS 參照、`HISQUERY`、`LOOKUPDW`、嵌入頁 `{chtno}`／`{opdno}`（`form_validate` 的 `E_NOPATIENT_*`）；目前只在 struNote／表單頁使用，HIS 內開啟時存檔會被平台拒絕。院內、院外站台都已支援（2026-11-22）；其他站台以 `online_features` 的 `runtime.no_patient` 為準。不要用倉儲以病歷號查詢這類紀錄。規則見 `references/FormDesignRules.md`〈非病人表單〉。
 
 Agents（headless，由 skill 以 Task 啟動，不直接給使用者用）：`form-planner`（唯讀，產表單草案）、`form-builder`（單一、依序建置 draft）、`form-reviewer`（草案 ↔ draft 對照、自出試算例、白名單、AI 資料流、疑似個資）、`app-builder`（執行 scaffold 與靜態檢查）、`dictionary-annotator`（唯讀，為一張表單用到的字典起草補述；dictionary-assist 模式 3 超過 5 本時啟動）。共同規則在 [AGENTS.md](AGENTS.md)。
 

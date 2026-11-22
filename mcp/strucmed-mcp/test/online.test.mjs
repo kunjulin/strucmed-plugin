@@ -144,7 +144,8 @@ function handler(req, res) {
       return json(res, 200, { userId: USER_ID, name: '測試醫師', deptNo: behavior.noDept ? '' : 'APP', folders: { usr: USER_ID, sub: 'APP', dpt: 'APP' }, isAdmin: false, tokenExpiresAt: '2026-10-19T12:00:00Z' });
     if (req.method === 'GET' && p === 'api/health') return json(res, 200, { ok: true, ts: '2026-10-19T00:00:00Z' });
     if (req.method === 'GET' && p === 'api/v2/runtime/features')
-      return json(res, 200, { ok: true, presets: true, recordDelete: true, save: url.searchParams.get('user') === USER_ID, query: false, queryRoot: 'x' });
+      return json(res, 200, { ok: true, presets: true, recordDelete: true, save: url.searchParams.get('user') === USER_ID, query: false, queryRoot: 'x',
+        ...(behavior.noPatientChtno !== undefined && { noPatientChtno: behavior.noPatientChtno }) });
     if (req.method === 'GET' && p === 'api/v2/runtime/apps')
       return json(res, 200, { ok: true, enabled: true, apps: [
         { id: 'ercdss', name: '急診臨床決策支援', host: 'assistantai.cgmh.org.tw', sends: ['chtno', 'user'], forwardContext: 'none', outputs: ['risk_score'], ready: true, apiKey: 'MUST-NOT-BE-KEPT' }] });
@@ -599,6 +600,23 @@ test('online_features aggregates health, runtime features and llm-config without
   assert.ok(feat.search.includes('user=' + USER_ID) && feat.search.includes('deptNo=APP'));
 });
 
+// 站台是否支援非病人表單：api/v2/runtime/features 的 noPatientChtno（平台 2026-11-20 起；院內 2026-11-22 部署）
+test('online_features：runtime.no_patient 依站台回的 noPatientChtno 判斷（有值＝支援、沒有欄位＝站台尚未更新、空字串＝停用）', async () => {
+  await browserLogin(mcp, {});
+  try {
+    let r = await mcp.call('online_features', {});
+    assert.equal(r.data.runtime.no_patient.supported, false);
+    assert.match(r.data.runtime.no_patient.reason, /尚未更新到支援非病人表單的版本/);
+    behavior.noPatientChtno = 'APP-NP';
+    r = await mcp.call('online_features', {});
+    assert.deepEqual(r.data.runtime.no_patient, { supported: true, chtno: 'APP-NP' });
+    behavior.noPatientChtno = '';
+    r = await mcp.call('online_features', {});
+    assert.equal(r.data.runtime.no_patient.supported, false);
+    assert.match(r.data.runtime.no_patient.reason, /站台停用非病人表單/);
+  } finally { delete behavior.noPatientChtno; }
+});
+
 test('online_features 取站台的嵌入頁 APP 目錄並寫成本機快取（只留揭露用的欄位）', async () => {
   await browserLogin(mcp, {});
   const r = await mcp.call('online_features', {});
@@ -708,12 +726,15 @@ test('online_template_create：非病人表單的 plan 列出 no_patient，POST 
   const plan = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
   assert.equal(plan.ok, true, JSON.stringify(plan));
   assert.match(plan.data.plan.no_patient, /非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼/);
+  assert.match(plan.data.plan.no_patient, /只有填寫者本人查得到、下載得到，查詢須帶 sheetid/);
+  assert.match(plan.data.plan.no_patient, /HIS 內開啟時存檔會被平台拒絕/);
+  assert.doesNotMatch(plan.data.plan.no_patient, /尚未部署|暫行/);
   assert.ok(plan.data.plan.warnings.some(w => w.code === 'W_NOPATIENT_FORM'));
   const done = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token });
   assert.equal(done.ok, true, JSON.stringify(done));
   const post = reqs.filter(x => x.method === 'POST' && x.path.endsWith('/api/v2/folders/usr/templates')).pop();
   const iot = post.body.form[post.body.form.length - 1];
-  assert.deepEqual([iot.f_nopatient, iot.f_chtno, iot.f_opdno, iot.f_hideprevicon], [true, false, false, true]);
+  assert.deepEqual([iot.f_nopatient, iot.f_chtno, iot.f_opdno, iot.f_hideprevicon, iot.f_autoLoadOnOpen], [true, false, false, true, true]);
   // 一般表單的 plan 沒有這一項
   const plain = await mcp.call('online_template_create', { draft_id: await makeDraft(mcp, { name: '一般上架' }), folder_type: 'usr' });
   assert.equal(plain.data.plan.no_patient, undefined);

@@ -39,4 +39,4 @@
 - `W_FORMULA_FN_NEEDS_DEPLOY`：TEXT、VALUE、MEDIAN 等函數要等平台 #25 部署後才可用。
 - `W_MACRO_SPLIT_NEEDS_DEPLOY`：巨集字串內的半形逗號或括號要等平台 #264（`TempHtml.js` 20261124b）部署到 HIS 端後才能正確切分。
 - `W_PATIENT_DATA_READ`：HIS 參照與 lookup 函數會在 HIS 端讀取病人資料。
-- `W_NOPATIENT_FORM`（非病人表單，`FormDesignRules.md`〈非病人表單〉）：struNote 不需病歷號、平台以保留代碼開啟；平台部署前的暫行做法與「不要用倉儲以病歷號查詢」。非病人表單不能用 label HIS 參照、`HISQUERY`、`LOOKUPDW`／`LOOKUPDEFAULTSETTING`／`LOOKUPIOT`、`G_CHTNO()`／`GETCHTNO()`（`E_NOPATIENT_*`）。
+- `W_NOPATIENT_FORM`（非病人表單，`FormDesignRules.md`〈非病人表單〉）：struNote 不需病歷號、平台以保留代碼開啟；站台是否支援、紀錄只有本人查得到、HIS 內不能存檔與「不要用倉儲以病歷號查詢」。非病人表單不能用 label HIS 參照、`HISQUERY`、`LOOKUPDW`／`LOOKUPDEFAULTSETTING`／`LOOKUPIOT`、`G_CHTNO()`／`GETCHTNO()`、嵌入頁 `{chtno}`／`{opdno}`（`E_NOPATIENT_*`）；`G_OPDNO()`／`GETOPDNO()` 讀到的是紀錄主體代碼 `APP`、不是就醫號（`W_NOPATIENT_OPDNO_FUNC`）；`LOADDOC`／`LOADXML` 只取回這張表單、同一個 `recNo`、自己建立的紀錄（`W_NOPATIENT_LOADDOC`）。

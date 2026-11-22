@@ -7,7 +7,7 @@ import { E, fail, ToolError } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle, isNoPatient, applyOptionsToIot, NOPATIENT_CODE } from './model.mjs';
+import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle, isNoPatient, applyOptionsToIot, NOPATIENT_CODE, NOPATIENT_NOTE } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE, EMBED_DEFERRABLE } from './validate.mjs';
 import { validateForm as embedValidateForm, summarize as embedSummarize, summaryText as embedSummaryText } from './embed.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
@@ -37,13 +37,14 @@ const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = description => ({ type: 'boolean', description });
 // 表單選項（form_create、form_update_meta 共用）
-const FORM_OPTION_KEYS = ['no_patient', 'f_chtno', 'f_opdno', 'f_day', 'histext', 'hide_assist', 'hide_preset', 'hide_prev_icon'];
+const FORM_OPTION_KEYS = ['no_patient', 'f_chtno', 'f_opdno', 'f_day', 'histext', 'hide_assist', 'hide_preset', 'hide_prev_icon', 'auto_load_on_open'];
 const FORM_OPTIONS = { type: 'object', description: '表單選項', properties: {
-  no_patient: bool(`非病人表單（iot f_nopatient；教案、會議紀錄等與病人無關的表單）：struNote 不要求病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。true 時預設一併 f_chtno:false、f_opdno:false、hide_prev_icon:true（明確指定時以指定值為準）；form_validate 會擋 HIS 參照、HISQUERY、LOOKUPDW、{chtno} 等讀病人資料的寫法（E_NOPATIENT_*）`),
+  no_patient: bool(`非病人表單（iot f_nopatient；教案、會議紀錄等與病人無關的表單）：struNote 不要求病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。紀錄只有填寫者本人查得到；目前只在 struNote／表單頁使用（HIS 內存檔會被平台拒絕）。true 時預設一併 f_chtno:false、f_opdno:false、hide_prev_icon:true、auto_load_on_open:true（明確指定時以指定值為準）；form_validate 會擋 HIS 參照、HISQUERY、LOOKUPDW、嵌入頁 {chtno}／{opdno} 等讀病人資料的寫法（E_NOPATIENT_*）`),
   f_chtno: bool('依病歷號查近期紀錄（預設 true；非病人表單預設 false）'), f_opdno: bool('依就醫號只查當次'),
   f_day: { type: 'number', description: '查詢天數（預設 30）' },
   histext: str('block | dict', { enum: ['block', 'dict'] }),
-  hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示（非病人表單預設 true）') } };
+  hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示（非病人表單預設 true）'),
+  auto_load_on_open: bool('開啟時自動取出最近一次紀錄（iot f_autoLoadOnOpen；編輯器「開啟表單時自動取出本次就醫最近一次紀錄」）。預設 false、不寫出；非病人表單預設 true（struNote 不帶 recNo，沒勾時開頁是空白，存檔會覆寫上一筆）。HIS 已自行帶入紀錄的一般表單不要開，內容會重複') } };
 // 只留有給值的鍵（部分 agent 平台會把沒用到的選填參數填成 '' 或 null），型別不對就拒絕
 function cleanOptions(o) {
   if (o === undefined || o === null || o === '') return {};
@@ -59,7 +60,6 @@ function cleanOptions(o) {
   }
   return out;
 }
-const NOPATIENT_NOTE = `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；平台尚未部署前 struNote 仍會要求病歷號，暫行做法是輸入固定代碼，且不要用倉儲以病歷號查詢這類紀錄`;
 const MAX_SOURCE = 10 * 1024 * 1024;
 const HIS_TEXT_KEYS = { type: 'array', items: { type: 'string' }, description: 'HIS 接收端要的文字鍵（選填；例 ["Report","Impression"]，每個 ≤ 40 字、英數與中文）；只存在本機 draft，不寫進表單，form_validate 與預覽頁的文字輸出會比對' };
 // 路徑與內容擇一：HTTP 模式的呼叫端看不到伺服器的檔案系統，只能直接傳內容。回 true＝用內容。
@@ -736,7 +736,7 @@ export const TOOLS = [
   {
     name: 'form_update_meta',
     description: '修改 draft 的表單名稱、捷徑、作業別、Info、建議資料夾、科部、HIS 接收端要的文字鍵、表單選項（options，只改有帶的鍵；改版 draft 直接改來源的 iot 選項）（離線）；drop_presets:true 移除改版來源帶來的表單預設（片語）。' +
-      'options.no_patient:true 把表單設成非病人表單（同 form_create），之後 form_validate 會把既有的 HIS 參照、HISQUERY、LOOKUPDW、{chtno} 等一律列為 error；no_patient:false 取消，但不會自動把 f_chtno、hide_prev_icon 改回來。',
+      'options.no_patient:true 把表單設成非病人表單（同 form_create），之後 form_validate 會把既有的 HIS 參照、HISQUERY、LOOKUPDW、嵌入頁 {chtno}／{opdno} 等一律列為 error；no_patient:false 取消，但不會自動把 f_chtno、hide_prev_icon、auto_load_on_open 改回來。',
     inputSchema: { type: 'object', required: ['draft_id'], properties: {
       draft_id: str('draft id'), name: str('表單名稱（≤36 字）'), shortcut: str('捷徑（一律存成小寫；空字串＝不上架）'),
       groups: { type: 'array', items: { type: 'string', enum: GROUPS } }, description: str('Info'),
@@ -778,7 +778,7 @@ export const TOOLS = [
       d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
       return { meta: d.meta, ...shortcutNote(a.shortcut), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }),
-        ...(optionsChanged && { options_changed: optionsChanged, ...(d.source && d.source.iot && { iot_options: Object.fromEntries(['f_nopatient', 'f_chtno', 'f_opdno', 'f_hideprevicon', 'f_hideAssist', 'f_hidePreset', 'f_day', 'f_histext'].filter(k => d.source.iot[k] !== undefined).map(k => [k, d.source.iot[k]])) }) }),
+        ...(optionsChanged && { options_changed: optionsChanged, ...(d.source && d.source.iot && { iot_options: Object.fromEntries(['f_nopatient', 'f_chtno', 'f_opdno', 'f_hideprevicon', 'f_hideAssist', 'f_hidePreset', 'f_autoLoadOnOpen', 'f_day', 'f_histext'].filter(k => d.source.iot[k] !== undefined).map(k => [k, d.source.iot[k]])) }) }),
         ...(isNoPatient(d) && { no_patient: true, no_patient_note: NOPATIENT_NOTE }) };
     }
   },

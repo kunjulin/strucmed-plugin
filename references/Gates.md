@@ -100,7 +100,7 @@ A2 身體測量（formtable）
 | 捷徑／作業別 | —／— |
 | 保存後即上架 | 否 |
 | 更新既有範本 | —（或 templateID） |
-| 非病人表單 | 否（是：struNote 不需病歷號，平台以保留代碼開啟；`form_create` 帶 `options.no_patient: true`，不得有 HIS 參照、倉儲查詢、`{chtno}`） |
+| 非病人表單 | 否（是：struNote 不需病歷號，平台以保留代碼開啟，紀錄只有填寫者本人查得到；`form_create` 帶 `options.no_patient: true`，不得有 HIS 參照、倉儲查詢、嵌入頁 `{chtno}`／`{opdno}`，不設作業別） |
 
 ### 待決（有才寫）
 要使用者取捨的地方：planner 依建議值先寫進結構，這裡列出建議值與替代方案，skill 在草案摘要後一起列。
@@ -142,7 +142,7 @@ Revision: 1
 - 審查：error 0、warning n（review.md 路徑）；warning 的本文寫在「### 警告」，這裡不重複。
 - W_AI_DATAFLOW：…
 - W_EMBED_DATAFLOW：…（有嵌入頁面時；主機、參數、寫回欄位）
-- W_NOPATIENT_FORM：…（非病人表單時；平台部署前的暫行做法、不要用倉儲以病歷號查詢）
+- W_NOPATIENT_FORM：…（非病人表單時；站台是否支援、紀錄只有本人查得到、HIS 內不能存檔、不要用倉儲以病歷號查詢）
 
 ### HIS 文字輸出
 - 模式：histextbyblock；回 HIS 的區塊：…

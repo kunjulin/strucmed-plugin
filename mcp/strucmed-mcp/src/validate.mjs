@@ -3,7 +3,7 @@
 // actionID / furActionID / 計算式與巨集中的 A<n>。
 // 嚴重度：本工具新增或修改的部分 → error；既有表單原封保留的部分 → warning（標示「原表單既有」）。
 // v0.2：計算式、巨集、HIS 參照的檢查（scriptlint）也依同一套分級；修改類別為 formula。
-import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind, isNoPatient, iotOptionFields, NOPATIENT_CODE } from './model.mjs';
+import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind, isNoPatient, iotOptionFields, NOPATIENT_CODE, NOPATIENT_SUBJECT } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import * as dc from './dictcomment.mjs';
@@ -115,8 +115,10 @@ export function presetPhiFindings(presets) {
 }
 
 // ── 非病人表單（iot f_nopatient）──────────────────────────────────────────
-// 平台以保留代碼開啟，沒有病人：讀病人資料或以病歷號查詢的寫法都不成立，而且保留代碼是所有人共用的，
-// 以它查 HIS／倉儲會拿到別人的紀錄或空值。函數名稱以字串以外的部分比對（提示詞文字裡提到函數名不算）。
+// 平台以保留代碼開啟，沒有病人：讀病人資料或以病歷號查詢的寫法都不成立（平台 runtime 不送出並提示一次；
+// 嵌入頁 params 帶 {chtno}／{opdno} 是 E_EMBED_NOPATIENT，編輯器擋存檔、runtime 不載入）。
+// 紀錄表頭（院方 2026-11-22 核定）：chtno＝保留代碼、deptNo＝APP、opdno＝APP（紀錄主體）、recNo＝紀錄鍵。
+// 函數名稱以字串以外的部分比對（提示詞文字裡提到函數名不算）。
 export const NOPATIENT_FUNCS = {
   HISQUERY: 'E_NOPATIENT_HISQUERY',
   LOOKUPDW: 'E_NOPATIENT_LOOKUPDW', DWLOOKUP: 'E_NOPATIENT_LOOKUPDW', LOOKUPDEFAULTSETTING: 'E_NOPATIENT_LOOKUPDW',
@@ -126,11 +128,11 @@ export const NOPATIENT_FUNCS = {
   LOADDOC: 'W_NOPATIENT_LOADDOC', LOADXML: 'W_NOPATIENT_LOADDOC'
 };
 const NOPATIENT_WHY = {
-  E_NOPATIENT_HISQUERY: '會在 HIS 端以病歷號讀取病人資料；非病人表單沒有病人，請移除',
-  E_NOPATIENT_LOOKUPDW: `會以病歷號查倉儲；非病人表單的病歷號是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），會查到別人的紀錄，請移除`,
+  E_NOPATIENT_HISQUERY: '會在 HIS 端以病歷號讀取病人資料；非病人表單沒有病人，平台執行時不送出，請移除',
+  E_NOPATIENT_LOOKUPDW: `會以病歷號查倉儲；非病人表單的病歷號是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），平台執行時不送出，請移除`,
   E_NOPATIENT_CHTNO_FUNC: `讀到的是保留代碼（預設 ${NOPATIENT_CODE}），不是病歷號，請移除`,
-  W_NOPATIENT_OPDNO_FUNC: '非病人表單沒有就醫／檢查號，多半是空值；請確認是否需要',
-  W_NOPATIENT_LOADDOC: '以保留代碼取回最近的存檔；平台只給看自己的紀錄，平台尚未部署前可能取到別人的，請確認是否需要'
+  W_NOPATIENT_OPDNO_FUNC: `非病人表單沒有就醫／檢查號：G_OPDNO()／GETOPDNO() 讀到的是紀錄主體代碼（現行固定 ${NOPATIENT_SUBJECT}），GETPACSNO() 不是檢查號（表單頁忽略傳入的 pacsno）；不要當成就醫號使用，請確認是否需要`,
+  W_NOPATIENT_LOADDOC: '平台只取回這張表單、同一個紀錄鍵（recNo；struNote 不帶，是 none）、自己建立的紀錄，不會跨表單或取到別人的；請確認是否需要'
 };
 const stripStrings = s => String(s || '').replace(/"[^"]*"|'[^']*'/g, '""');
 export function noPatientFindings(c) {
@@ -400,13 +402,13 @@ export function validateDraft(draft, dictIndex, policy = {}) {
       if (noPatient) {
         const keysOf = ph => s.params.filter(p => String(p.value).trim() === ph).map(p => p.key);
         const cht = keysOf('{chtno}'), opd = keysOf('{opdno}');
-        if (cht.length) report(npAll || freshEmbed.get(String(s.itemid)), 'E_NOPATIENT_EMBED_CHTNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${cht.join('、')} 用了 {chtno}；帶出去的是所有人共用的保留代碼（預設 ${NOPATIENT_CODE}），不是病歷號，嵌入頁會拿它去查病人，請移除這個參數`, s.itemid);
-        if (opd.length) warn('W_NOPATIENT_EMBED_OPDNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${opd.join('、')} 用了 {opdno}；非病人表單沒有門診序號，多半是空值，請確認是否需要`, s.itemid);
-        warn('W_NOPATIENT_EMBED_CONTEXT', `嵌入頁面 #${s.itemid}：非病人表單：runtime 仍會以 strucmed.context 送出病歷號欄位，內容是保留代碼（預設 ${NOPATIENT_CODE}）；嵌入頁不可用它查病人資料，請與嵌入頁的維護者確認`, s.itemid);
+        if (cht.length) report(npAll || freshEmbed.get(String(s.itemid)), 'E_NOPATIENT_EMBED_CHTNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${cht.join('、')} 用了 {chtno}；非病人表單沒有病人，平台編輯器不讓這樣的表單存檔、runtime 不載入這個嵌入頁（E_EMBED_NOPATIENT），請移除這個參數`, s.itemid);
+        if (opd.length) report(npAll || freshEmbed.get(String(s.itemid)), 'E_NOPATIENT_EMBED_OPDNO', `嵌入頁面 #${s.itemid}：非病人表單：網址參數 ${opd.join('、')} 用了 {opdno}；非病人表單沒有門診序號，平台編輯器不讓這樣的表單存檔、runtime 不載入這個嵌入頁（E_EMBED_NOPATIENT），請移除這個參數`, s.itemid);
+        warn('W_NOPATIENT_EMBED_CONTEXT', `嵌入頁面 #${s.itemid}：非病人表單：runtime 送出的 strucmed.context 裡 chtno、opdno 是空字串，另帶 noPatient: true（不送保留代碼）；嵌入頁要能處理沒有病人的情境、不可以空的病歷號查詢，請與嵌入頁的維護者確認`, s.itemid);
       }
       embeds.push({ kind: 'embed', ...s, itemid: Number(s.itemid), source: a.imported ? 'imported' : 'new' });
       if (embed.isLocalHost(s.host)) warn('W_EMBED_LOCALHOST', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}的網址是本機（${s.host}）：只有執行該服務的電腦開得到，其他工作站開這張表單時嵌入頁空白；只用於示範與測試，部署到院內主機後請改網址再更新範本`, s.itemid);
-      warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出病歷號、科別、使用者、門診序號${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);
+      warn('W_EMBED_DATAFLOW', `嵌入頁面 #${s.itemid}${s.title ? `「${s.title}」` : ''}會在表單載入時開啟院內頁面：${embed.summaryText(s)}；載入後 runtime 另以 strucmed.context 送出${noPatient ? '科別、使用者（非病人表單：病歷號與門診序號是空字串，另帶 noPatient: true）' : '病歷號、科別、使用者、門診序號'}${s.inputs.length ? '與送出欄位的值' : ''}${s.outputs.length ? '，嵌入頁回傳的值會寫進寫回欄位並隨表單存檔' : ''}（交付時必須告知使用者；清單見 manifest「嵌入頁面資料流」）`, s.itemid);
     }
   }
 
@@ -414,9 +416,11 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     const iot = draft.source ? draft.source.iot : iotOptionFields(m.options);
     const on = [iot.f_chtno === true && '依病歷號查近期紀錄（f_chtno）', iot.f_opdno === true && '依就醫號查當次（f_opdno）', iot.f_hideprevicon !== true && '顯示「上次紀錄」圖示'].filter(Boolean);
     if (on.length) warn('W_NOPATIENT_OPTION', `非病人表單卻開啟了${on.join('、')}：病歷號是保留代碼，平台的「上次紀錄」只看自己的；沒有特別理由請用 form_update_meta 的 options 關閉（f_chtno:false、f_opdno:false、hide_prev_icon:true）`);
+    if (iot.f_autoLoadOnOpen !== true) warn('W_NOPATIENT_AUTOLOAD', '非病人表單沒有開啟「開啟時自動取出」（f_autoLoadOnOpen）：從 struNote 開啟不帶紀錄鍵（recNo），每人每張表單只有一筆；沒勾時開頁是空白表單，存檔會覆寫上次存的那一筆。除非每次都要從空白開始，請用 form_update_meta 的 options 開啟（auto_load_on_open:true）；以 recNo 開啟的 APP 不受影響（帶 recNo 一律載入既有紀錄）');
+    if ((m.groups || []).length && m.shortcut) warn('W_NOPATIENT_HIS_LIST', `非病人表單設了捷徑與作業別（${m.groups.join('、')}），會出現在 HIS 清單：HIS 內開啟時 HIS 仍帶真實病歷號，存檔會被平台拒絕（站台關閉 API 存檔或退回直連倉儲時擋不到，紀錄會存在該病歷號下）。這類表單目前只在 struNote／表單頁使用，請 form_update_meta(groups: []) 拿掉作業別`);
     const writers = controls.map(x => x.node).filter(c => ['tohis', 'puthis'].includes(c.dicrole) && (c.dicid || c.dictionary));
-    if (writers.length) warn('W_NOPATIENT_DICT_WRITE', `非病人表單有 ${writers.length} 個欄位寫入字典（${writers.slice(0, 8).map(c => '#' + c.itemid).join('、')}${writers.length > 8 ? '…' : ''}）：值會以保留代碼（預設 ${NOPATIENT_CODE}）存進倉儲，所有人的紀錄都在同一個代碼下；不要用倉儲以病歷號查詢這類紀錄，不需要統計的欄位請不要綁字典`);
-    warn('W_NOPATIENT_FORM', `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。平台尚未部署這項功能前，struNote 仍會要求病歷號，暫行做法是輸入固定代碼 ${NOPATIENT_CODE}（以平台公告為準）；不要用倉儲以病歷號查詢這類紀錄（交付時必須告知使用者）`);
+    if (writers.length) warn('W_NOPATIENT_DICT_WRITE', `非病人表單有 ${writers.length} 個欄位寫入字典（${writers.slice(0, 8).map(c => '#' + c.itemid).join('、')}${writers.length > 8 ? '…' : ''}）：值會以保留代碼（預設 ${NOPATIENT_CODE}）存進倉儲，所有人的紀錄都在同一個代碼下，但只有建立者本人查得到、下載得到（資料下載對原作者與管理者也只含本人的紀錄），目前無法彙整他人的紀錄；不要用倉儲以病歷號查詢這類紀錄，不需要統計的欄位請不要綁字典`);
+    warn('W_NOPATIENT_FORM', `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；紀錄表頭 chtno＝${NOPATIENT_CODE}、deptNo＝APP、opdno＝${NOPATIENT_SUBJECT}（紀錄主體）、recNo＝紀錄鍵（struNote 不帶，每人每張表單一筆）。紀錄只有填寫者本人查得到、下載得到，查詢須帶 sheetid；HIS 內開啟時存檔會被平台拒絕，請從 struNote 使用。院內、院外站台都已支援（2026-11-22）；其他站台以 online_features 的 runtime.no_patient 為準，不支援的站台會把它當一般表單、要求病歷號，這時不要在該站台使用（不輸入真實病歷號，也不自行輸入保留代碼）。不要用倉儲以病歷號查詢這類紀錄（交付時必須告知使用者）`);
   }
 
   const pending = draft.pendingDictionaries || [];

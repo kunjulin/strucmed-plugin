@@ -33,9 +33,25 @@ export const MESSAGES = {
   E_EMBED_OUTPUT_EMBED: 'outputs 不能指向嵌入頁面區塊',
   E_EMBED_OUTPUT_GROUP: 'outputs 不能指向彈出片語（form）或群組控制項（subgroup）裡的欄位',
   E_EMBED_OUTPUT_DUP: '多個嵌入頁面的 outputs 不能寫同一個欄位',
-  E_EMBED_MAP: 'inputs／outputs 的 key 只能是英數字、底線、減號，值是欄位 ID'
+  E_EMBED_MAP: 'inputs／outputs 的 key 只能是英數字、底線、減號，值是欄位 ID',
+  // 非病人表單（iot f_nopatient；平台 embed-block.js 20261120）：params 不可帶病人占位符。
+  // W_NOPATIENT_* 是平台編輯器存檔前的提示文字，這裡只為了與平台的 MESSAGES 逐字相同；本工具的檢查在 validate.mjs（E_NOPATIENT_*）
+  E_EMBED_NOPATIENT: '非病人表單（不需病歷號）的嵌入頁面參數不可帶 {chtno}、{opdno}（沒有病人）',
+  W_NOPATIENT_HIS: '非病人表單不會查詢 HIS（HISQUERY／label hisquery 在執行時略過）',
+  W_NOPATIENT_LOOKUP: '非病人表單不會以病歷號查倉儲病人資料（LOOKUPDW／LOOKUPDEFAULTSETTING 在執行時略過）'
 };
-export const CODES = Object.keys(MESSAGES);
+export const CODES = Object.keys(MESSAGES).filter(k => k.startsWith('E_EMBED_'));
+const NOPATIENT_PLACEHOLDERS = { '{chtno}': true, '{opdno}': true };
+// 範本 JSON 的 iot 選項 f_nopatient（非病人表單，不需病歷號）
+export function isNoPatientForm(form) {
+  const iot = (Array.isArray(form) ? form : []).find(x => x && x.itemtype === 'iot');
+  return !!iot && (iot.f_nopatient === true || iot.f_nopatient === 'true');
+}
+// params 中帶病人占位符（{chtno}、{opdno}）的參數名稱
+export function patientParams(params) {
+  const p = params && typeof params === 'object' ? params : {};
+  return Object.keys(p).filter(k => NOPATIENT_PLACEHOLDERS[String(p[k])] === true);
+}
 
 function err(code, detail) {
   return { code, message: MESSAGES[code] + (detail ? '：' + detail : '') };
@@ -198,11 +214,14 @@ export function validateForm(form) {
   const out = [];
   let fills = 0;
   const owner = {};   // 輸出欄位 → 第一個寫入它的 embed
+  // 帶 iot 的完整範本 JSON 才判斷得出非病人表單；validateDraft 只傳區塊（沒有 iot），那裡由 E_NOPATIENT_EMBED_* 回報，不會重複
+  const noPatient = isNoPatientForm(form);
   for (const b of Array.isArray(form) ? form : []) {
     if (!b || b.itemtype !== 'embed') continue;
     const id = String(b.itemid);
     const push = e => { out.push({ itemid: id, code: e.code, message: e.message }); };
     checkBlock(b).forEach(push);
+    if (noPatient && patientParams(b.params).length) push(err('E_EMBED_NOPATIENT', patientParams(b.params).join('、')));
     const h = parseHeight(b.height);
     if (h && h.fill && ++fills > 1) push(err('E_EMBED_FILL', 'A' + id));
     const inputs = b.inputs && typeof b.inputs === 'object' ? b.inputs : {};
