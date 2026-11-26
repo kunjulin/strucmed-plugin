@@ -14,9 +14,28 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
-## 3.16.0（MCP 2.19.0）— 2026-11-22：非病人表單規則與平台現況同步（`{opdno}` 升為 error、`auto_load_on_open`、紀錄主體與紀錄鍵、`runtime.no_patient`）
+## 3.16.1（MCP 2.19.1）— 2026-11-25：HIS 參照補上 IPDDATA、OPDATA、EXAMDATA（`formula_check` kind=hisquery 誤報修正）
 
 尚未發佈。
+
+依據：使用者以 `formula_check`（kind=hisquery）檢查 `OPDATA.InDays(30).GetAllJson()`，回 `E_HISQUERY_SYNTAX`「必須以 LABDATA / OPDDATA / ERDDATA / Procedure 開頭」。GitBook「計算式 HIS 參照」一節已有 **OPDATA 手術紀錄**、**IPDDATA 住院會診**、**EXAMDATA 檢查報告**，外掛的白名單過時，正確的寫法被當成錯誤。這一版以 GitBook 各頁（2026-11-25 逐頁核對 LABDATA、OPDDATA、ERDDATA、IPDDATA、OPDATA、EXAMDATA、Procedure）為準。
+
+**MCP：`lintHisQuery`（`formula_check` kind=hisquery、label HIS 參照、`HISQUERY` 巨集共用）**
+- 新增函數：`IPDDATA`（`InName(consultation)` 必填、`InDays`；`GetAllString`／`GetLatestString`／`GetAllJson`）、`OPDATA`（`InDays`、`InDuration`、`InADM`、`InSource`、`InDr`；`GetAllString`／`GetLatestString`／`GetAllJson`／`GetValueByName`／`GetDateByName`）、`EXAMDATA`（`InDays`、`InADM`、`InItem`；同上五種取值）。
+- OPDDATA／ERDDATA 補上文件列出的 `InDr`，但文件標「規劃中」→ `W_HISQUERY_PLANNED`。
+- **OPDATA（手術）與 OPDDATA（門診）只差一個字母**：函數名稱拼錯時 `E_HISQUERY_SYNTAX` 附最接近的名稱與這句提醒；在 OPDDATA 用了 OPDATA 才有的條件（`InADM`、`GetAllJson`…）時 `W_HISQUERY_METHOD` 提醒是否寫錯。
+- 參數檢查：`InDuration(yyyyMMdd-yyyyMMdd)` 格式、日期存在、起日不晚於訖日（新代碼 `E_HISQUERY_DURATION`）；`InSource` 只接受 `O`／`I`、`InADM()` 不帶參數（`E_HISQUERY_SYNTAX`）；OPDATA／EXAMDATA 的 `GetValueByName` 名稱與 IPDDATA 的 `InName` 不在文件清單時 `W_HISQUERY_VALUE`（大小寫不同時 `W_HISQUERY_CASE`）。
+- `InDays` 的 180 天上限只套用在文件寫明的 LABDATA／OPDDATA／ERDDATA；IPDDATA／OPDATA／EXAMDATA 文件沒寫上限，只檢查是正整數。
+
+**文件**：`references/FormulaMacroRules.md` 新增「HIS 參照的函數與條件」表；`docs/01` §6.4、`docs/03` 的限用清單更新；`references/PromptPatterns.md` 的 `LABDATA.InDays(365)`（超過上限）改為 180。
+
+**測試**：`test/v02.test.mjs` 新增「HIS query lint: IPDDATA / OPDATA / EXAMDATA per GitBook」：GitBook 頁面範例全部通過（含 `OPDATA.InDays(90).GetAllJson()`）、OPDATA／OPDDATA 拼錯與互換的提示、參數格式、180 天上限範圍。`node --test`（Windows）340 項：334 過、4 失敗、2 略過；失敗的 4 項是預覽頁的埠與 symlink 測試，未改動的 HEAD 上相同。
+
+---
+
+## 3.16.0（MCP 2.19.0）— 2026-11-22：非病人表單規則與平台現況同步（`{opdno}` 升為 error、`auto_load_on_open`、紀錄主體與紀錄鍵、`runtime.no_patient`）
+
+發佈（2026-11-22）：strucmed-plugin `2d05446`（已推送 main；發佈樹由本 repo `e40e0ef` 產生）。發佈時：`release-plugin.mjs` ok、248 檔、掃描無發現（第一次掃描擋下 `test/nopatient.test.mjs` 裡的倉儲 API 名稱，修正後重跑）；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）339 項：333 過、4 失敗、2 略過，失敗的 4 項是預覽頁的埠與 symlink 測試（Windows 環境問題，main 上相同）。tag：strucmed-plugin `v3.16.0`（→ `2d05446`）、本 repo `v3.16.0-src`（`e40e0ef`）；GitHub Release「strucmed 3.16.0（MCP 2.19.0）：非病人表單規則與平台現況同步」。尚未：從市集更新後的對話實測、登入真實站台實測非病人表單（建立、上架、struNote 開啟、存檔）、院外站台登入後的實測。
 
 依據：3.15.0 加入非病人表單時平台還沒實作，許多行為是「依介面約定推定」並列為「待平台確認」。平台 `kunjulin/strucmed` 之後合併 #276（非病人表單）、#278（存檔雙向驗證、稽核、使用規範）、#280（測試帳號）、#282（查詢強制 `sheetid`、資料下載只含本人、`recNo` 作為嚴格的紀錄鍵、帶鍵開啟一律載入），院方 2026-11-22 核准紀錄主體設計（平台 `docs/PLAN-record-subject.md` 第 0A 節），同日部署到院內 LVAIW `/strucmed`（`b11e446`）與院外站台 `cgmh.ddns.net`（`01f8fa4`），並以院內正式倉儲實測。這一版以平台 `main`（`01f8fa4`）的 `docs/API-V2.md`「非病人表單」、`docs/gitbook/api-v2/strunote.md`、`web/js/embed-block.js`、`web/js/TempHtml.js` 為準，把規則、檢查、說明改成確定的。plugin 仍然沒有、也不提供查詢或存檔病人紀錄的 tool。
 

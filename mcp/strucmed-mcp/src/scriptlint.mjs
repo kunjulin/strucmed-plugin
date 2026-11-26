@@ -531,13 +531,37 @@ export function lintMacro(script, ctx = {}) {
 }
 
 // ── HIS 參照（label format=hisquery、HISQUERY 巨集）──────────────────────────
-// 鏈式語法 <函數>.<搜尋條件>….<取值條件>（01 §6.4；GB:JJ/ji-suan-shi-his-can-zhao/*）
+// 鏈式語法 <函數>.<搜尋條件>….<取值條件>（01 §6.4；GB:JJ/ji-suan-shi-his-can-zhao/*，2026-11-25 逐頁核對）
+// maxDays：文件寫明「最多 180 天」的才擋上限；planned：文件標「規劃中」的條件；require：必填的搜尋條件；
+// values：文件列出的參數值（GetValueByName 的欄位名稱、IPDDATA 的 InName）
 const HIS_ROOTS = {
-  LABDATA: { search: ['InDays', 'InDr', 'InName', 'InItem', 'InAbnormal'], get: ['GetValueByName', 'GetDateByName', 'GetAllString', 'GetLatestString', 'GetAllJson'] },
-  OPDDATA: { search: ['InDays'], get: ['GetAllString', 'GetLatestString'] },
-  ERDDATA: { search: ['InDays'], get: ['GetAllString', 'GetLatestString'] },
-  Procedure: { search: ['InName', 'AddParameter'], get: ['GetValueByName'] }
+  LABDATA: { search: ['InDays', 'InDr', 'InName', 'InItem', 'InAbnormal'], get: ['GetValueByName', 'GetDateByName', 'GetAllString', 'GetLatestString', 'GetAllJson'], maxDays: 180 },
+  OPDDATA: { label: '門診紀錄', search: ['InDays', 'InDr'], get: ['GetAllString', 'GetLatestString'], maxDays: 180, planned: ['InDr'] },
+  ERDDATA: { label: '急診紀錄', search: ['InDays', 'InDr'], get: ['GetAllString', 'GetLatestString'], maxDays: 180, planned: ['InDr'] },
+  IPDDATA: { label: '住院會診', search: ['InName', 'InDays'], get: ['GetAllString', 'GetLatestString', 'GetAllJson'],
+    require: { InName: 'IPDDATA 必須指定 InName(consultation)（查詢會診紀錄必填）' }, values: { InName: ['consultation'] } },
+  OPDATA: { label: '手術紀錄', search: ['InDays', 'InDuration', 'InADM', 'InSource', 'InDr'], get: ['GetAllString', 'GetLatestString', 'GetAllJson', 'GetValueByName', 'GetDateByName'],
+    values: { GetValueByName: ['PreOpAssessment', 'PostOpAssessment', 'Explanation', 'finding'] } },
+  EXAMDATA: { label: '檢查報告', search: ['InDays', 'InADM', 'InItem'], get: ['GetAllString', 'GetLatestString', 'GetAllJson', 'GetValueByName', 'GetDateByName'],
+    values: { GetValueByName: ['Date', 'Department', 'DepartmentName', 'Item', 'ItemName', 'Abstract', 'Report'] } },
+  Procedure: { search: ['InName', 'AddParameter'], get: ['GetValueByName'], require: { InName: 'Procedure 必須指定 InName(<套件.程序>)' } }
 };
+// OPDATA（手術）與 OPDDATA（門診）只差一個字母（GitBook OPDATA 頁的提醒）
+const HIS_LOOKALIKE = { OPDATA: 'OPDDATA', OPDDATA: 'OPDATA' };
+function hisRootTitle(r) { return HIS_ROOTS[r].label ? `${r}（${HIS_ROOTS[r].label}）` : r; }
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+function validYmd(s) {
+  const y = +s.slice(0, 4), m = +s.slice(4, 6), d = +s.slice(6, 8);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
 export function lintHisQuery(q) {
   const out = [];
   const s = String(q || '').trim();
@@ -554,25 +578,63 @@ export function lintHisQuery(q) {
   segs.push(cur);
   if (depth !== 0) return { findings: [err('E_HISQUERY_SYNTAX', `HIS 參照括號不對稱：「${s.slice(0, 40)}」`)], root: null };
   const rootName = Object.keys(HIS_ROOTS).find(r => r.toLowerCase() === segs[0].trim().toLowerCase());
-  if (!rootName) return { findings: [err('E_HISQUERY_SYNTAX', `HIS 參照必須以 ${Object.keys(HIS_ROOTS).join(' / ')} 開頭：「${segs[0].slice(0, 20)}」`)], root: null };
+  if (!rootName) {
+    const given = segs[0].trim();
+    const dist = Object.keys(HIS_ROOTS).map(r => [r, editDistance(given.toUpperCase(), r.toUpperCase())]);
+    const best = Math.min(...dist.map(([, n]) => n));
+    const near = best <= 2 ? dist.filter(([, n]) => n === best).map(([r]) => r) : [];
+    let hint = '';
+    if (near.length) {
+      hint = `；是不是 ${near.map(hisRootTitle).join('、')}？`;
+      if (near.some(r => HIS_LOOKALIKE[r])) hint += 'OPDATA（手術紀錄）與 OPDDATA（門診紀錄）只差一個字母，請確認要查的是哪一種';
+    }
+    return { findings: [err('E_HISQUERY_SYNTAX', `HIS 參照必須以 ${Object.keys(HIS_ROOTS).join(' / ')} 開頭：「${given.slice(0, 20)}」${hint}`)], root: null };
+  }
   if (rootName !== segs[0].trim()) out.push(warn('W_HISQUERY_CASE', `「${segs[0].trim()}」大小寫與文件寫法「${rootName}」不同`));
   const spec = HIS_ROOTS[rootName];
+  const argOf = m => String(m.arg ?? '').trim();
   const methods = segs.slice(1).map(x => {
     const m = /^\s*([A-Za-z]+)\s*(?:\(([\s\S]*)\))?\s*$/.exec(x);
     return m ? { name: m[1], arg: m[2] } : { bad: x };
   });
   for (const m of methods) {
     if (m.bad !== undefined) { out.push(err('E_HISQUERY_SYNTAX', `HIS 參照無法解析「${m.bad.slice(0, 30)}」`)); continue; }
-    if (![...spec.search, ...spec.get].includes(m.name)) out.push(warn('W_HISQUERY_METHOD', `${rootName} 的「${m.name}」不在文件列出的條件中，請確認拼字`));
-    if (m.name === 'InDays') {
-      const n = Number(m.arg);
-      if (!Number.isInteger(n) || n < 1 || n > 180) out.push(err('E_HISQUERY_INDAYS', `InDays(${m.arg}) 必須是 1–180 的整數`));
+    if (![...spec.search, ...spec.get].includes(m.name)) {
+      const twin = HIS_LOOKALIKE[rootName];
+      const inTwin = twin && [...HIS_ROOTS[twin].search, ...HIS_ROOTS[twin].get].includes(m.name);
+      out.push(warn('W_HISQUERY_METHOD', `${rootName} 的「${m.name}」不在文件列出的條件中，請確認拼字` +
+        (inTwin ? `；「${m.name}」是 ${hisRootTitle(twin)} 的條件，${rootName} 是${spec.label}，請確認沒有把 ${twin} 寫成 ${rootName}` : '')));
+      continue;
     }
-    if (m.name === 'InAbnormal' && !['H', 'L'].includes(String(m.arg).trim())) out.push(err('E_HISQUERY_SYNTAX', 'InAbnormal 只接受 H 或 L'));
+    if (spec.planned?.includes(m.name)) out.push(warn('W_HISQUERY_PLANNED', `${rootName} 的 ${m.name} 在文件標示為「規劃中」，平台可能還不支援，結果可能沒有依此篩選`));
+    if (m.name === 'InDays') {
+      const n = Number(argOf(m));
+      const max = spec.maxDays;
+      if (!/^\d+$/.test(argOf(m)) || n < 1 || (max && n > max)) out.push(err('E_HISQUERY_INDAYS', max ? `InDays(${m.arg ?? ''}) 必須是 1–${max} 的整數` : `InDays(${m.arg ?? ''}) 必須是正整數`));
+    }
+    if (m.name === 'InAbnormal' && !['H', 'L'].includes(argOf(m))) out.push(err('E_HISQUERY_SYNTAX', 'InAbnormal 只接受 H 或 L'));
+    if (m.name === 'InSource' && !['O', 'I'].includes(argOf(m))) out.push(err('E_HISQUERY_SYNTAX', `InSource(${m.arg ?? ''}) 只接受 O（門診）或 I（住院）`));
+    if (m.name === 'InADM' && argOf(m)) out.push(err('E_HISQUERY_SYNTAX', `InADM() 不帶參數（只查當次住院）：「InADM(${argOf(m).slice(0, 20)})」`));
+    if (m.name === 'InDuration') {
+      const d = /^(\d{8})-(\d{8})$/.exec(argOf(m));
+      if (!d) out.push(err('E_HISQUERY_DURATION', `InDuration(${m.arg ?? ''}) 要寫成 InDuration(yyyyMMdd-yyyyMMdd)，例：InDuration(20260101-20260630)`));
+      else if (!validYmd(d[1]) || !validYmd(d[2])) out.push(err('E_HISQUERY_DURATION', `InDuration(${argOf(m)}) 的日期不存在`));
+      else if (d[1] > d[2]) out.push(err('E_HISQUERY_DURATION', `InDuration(${argOf(m)}) 起日晚於訖日`));
+    }
+    const allowed = spec.values?.[m.name];
+    if (allowed && !argOf(m)) out.push(warn('W_HISQUERY_VALUE', `${rootName}.${m.name}() 沒有指定名稱（文件列出：${allowed.join(' / ')}）`));
+    if (allowed && argOf(m)) {
+      const v = argOf(m);
+      const hit = allowed.find(x => x.toLowerCase() === v.toLowerCase());
+      if (!hit) out.push(warn('W_HISQUERY_VALUE', `${rootName}.${m.name}(${v.slice(0, 30)}) 不在文件列出的名稱中（${allowed.join(' / ')}）`));
+      else if (hit !== v) out.push(warn('W_HISQUERY_CASE', `${rootName}.${m.name}(${v}) 大小寫與文件寫法「${hit}」不同`));
+    }
   }
   const last = methods[methods.length - 1];
   if (!last || !last.name || !spec.get.includes(last.name)) out.push(err('E_HISQUERY_NO_GETTER', `HIS 參照必須以取值條件結尾（${spec.get.join(' / ')}）`));
-  if (rootName === 'Procedure' && !methods.some(m => m.name === 'InName')) out.push(err('E_HISQUERY_SYNTAX', 'Procedure 必須指定 InName(<套件.程序>)'));
+  for (const [name, msg] of Object.entries(spec.require || {})) {
+    if (!methods.some(m => m.name === name)) out.push(err('E_HISQUERY_SYNTAX', msg));
+  }
   out.push(warn('W_PATIENT_DATA_READ', `HIS 參照會在 HIS 端讀取病人資料（${rootName}）`));
   return { findings: out, root: rootName };
 }

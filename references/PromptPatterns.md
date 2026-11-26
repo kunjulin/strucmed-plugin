@@ -38,7 +38,7 @@ Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接
 - 思考模式（`tnemotron35`）回覆慢、token 多；只在鑑別診斷、依準則判斷、多條件比對用，整理、摘要、擷取用 `nemotron35`。要每次輸出一致（固定格式）用 `tnemotron35-low`。
 - `nemotron35` 系列**只經院內 LlmGateway**（`W_LLM_MODEL_GATEWAY_ONLY`）：站台沒啟用 Gateway 時 `LLMQUERY` 不送出；院外站台忽略巨集的模型代號，改用使用者選的院外模型（`ModelWhitelist.md` §6）。計畫與交付說明都要寫這個前提。
 - **落日模型不得使用**：qwen 系列院方建議不採用，2027-01-01 自 LlmGateway 下架（`ModelWhitelist.md` §5）；新寫或改到的巨集 `E_LLM_MODEL_SUNSET`。
-- 一次送入的資料量要在上下文內：`GETTEXT()` 會送整份報告全文，`LABDATA.InDays(365)` 可能很長；超過就截斷或改天數。
+- 一次送入的資料量要在上下文內：`GETTEXT()` 會送整份報告全文，`LABDATA.InDays(180)`、`OPDATA.InDays(90).GetAllJson()` 可能很長；超過就截斷或改天數。
 
 ## 3. 骨架
 

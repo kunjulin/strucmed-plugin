@@ -144,6 +144,58 @@ test('HIS query lint', () => {
   assert.ok(codes(lintHisQuery('Procedure.GetValueByName(X)')).includes('E_HISQUERY_SYNTAX'));
 });
 
+// GitBook「計算式 HIS 參照」各頁（2026-11-25 核對）：IPDDATA、OPDATA、EXAMDATA 與各自的條件
+test('HIS query lint: IPDDATA / OPDATA / EXAMDATA per GitBook', () => {
+  const ok = q => assert.deepEqual(codes(lintHisQuery(q)), ['W_PATIENT_DATA_READ'], q);
+  // GitBook 頁面上的範例都要通過
+  ok('OPDATA.InDays(90).GetAllJson()');
+  ok('OPDATA.InDays(30).GetAllString()');
+  ok('OPDATA.InDuration(20260101-20260630).GetLatestString()');
+  ok('OPDATA.InADM().GetValueByName(PostOpAssessment)');
+  ok('OPDATA.InDays(180).InSource(I).InDr(2517).GetDateByName()');
+  ok('IPDDATA.InName(consultation).InDays(30).GetAllJson()');
+  ok('EXAMDATA.InADM().GetLatestString()');
+  ok('EXAMDATA.InDays(180).InItem(X75-011).GetValueByName(Report)');
+  ok('EXAMDATA.InDays(60).GetAllJson()');
+  ok('ERDDATA.InDays(30).GetLatestString()');
+  ok('LABDATA.InDays(30).GetAllJson()');
+  // HISQUERY 巨集裡的 OPDATA 也走同一份清單
+  const ctx = { controls: new Map([['3', { datatype: 'textarea', tocalc: true }]]) };
+  assert.ok(!codes(lintMacro('HISQUERY("3,OPDATA.InDays(30).GetAllJson()")', ctx)).some(c => c.startsWith('E_')));
+  assert.ok(codes(lintMacro('HISQUERY("3,OPDATTA.InDays(30).GetAllJson()")', ctx)).includes('E_HISQUERY_SYNTAX'));
+
+  // OPDATA／OPDDATA 拼錯：提示最接近的名稱與「只差一個字母」
+  const typo = lintHisQuery('OPDATTA.InDays(30).GetAllJson()').findings;
+  assert.deepEqual(typo.map(f => f.code), ['E_HISQUERY_SYNTAX']);
+  assert.match(typo[0].message, /是不是 OPDATA（手術紀錄）/);
+  assert.match(typo[0].message, /只差一個字母/);
+  assert.match(lintHisQuery('OPDDDATA.InDays(30).GetAllString()').findings[0].message, /是不是 OPDDATA（門診紀錄）/);
+  // 把 OPDATA 寫成 OPDDATA：門診沒有 InADM／GetAllJson
+  const swapped = lintHisQuery('OPDDATA.InADM().GetAllJson()').findings;
+  assert.ok(swapped.some(f => f.code === 'W_HISQUERY_METHOD' && /OPDATA（手術紀錄） 的條件/.test(f.message)));
+  assert.ok(swapped.some(f => f.code === 'E_HISQUERY_NO_GETTER'));
+  // 大小寫
+  assert.ok(codes(lintHisQuery('opdata.InDays(30).GetAllJson()')).includes('W_HISQUERY_CASE'));
+
+  // 參數格式
+  assert.ok(codes(lintHisQuery('OPDATA.InDuration(2026-01-01).GetAllString()')).includes('E_HISQUERY_DURATION'));
+  assert.ok(codes(lintHisQuery('OPDATA.InDuration(20260230-20260301).GetAllString()')).includes('E_HISQUERY_DURATION'));
+  assert.ok(codes(lintHisQuery('OPDATA.InDuration(20260630-20260101).GetAllString()')).includes('E_HISQUERY_DURATION'));
+  assert.ok(codes(lintHisQuery('OPDATA.InSource(X).GetAllString()')).includes('E_HISQUERY_SYNTAX'));
+  assert.ok(codes(lintHisQuery('OPDATA.InADM(1).GetAllString()')).includes('E_HISQUERY_SYNTAX'));
+  assert.ok(codes(lintHisQuery('OPDATA.GetValueByName(Summary)')).includes('W_HISQUERY_VALUE'));
+  assert.ok(codes(lintHisQuery('EXAMDATA.InDays(30).GetValueByName()')).includes('W_HISQUERY_VALUE'));
+  // IPDDATA 必填 InName(consultation)
+  assert.ok(codes(lintHisQuery('IPDDATA.InDays(30).GetAllString()')).includes('E_HISQUERY_SYNTAX'));
+  assert.ok(codes(lintHisQuery('IPDDATA.InName(surgery).InDays(30).GetAllString()')).includes('W_HISQUERY_VALUE'));
+  // 180 天上限只套用在文件寫明的 LABDATA／OPDDATA／ERDDATA
+  assert.ok(codes(lintHisQuery('OPDDATA.InDays(181).GetAllString()')).includes('E_HISQUERY_INDAYS'));
+  assert.ok(!codes(lintHisQuery('OPDATA.InDays(365).GetAllString()')).includes('E_HISQUERY_INDAYS'));
+  assert.ok(codes(lintHisQuery('OPDATA.InDays(0).GetAllString()')).includes('E_HISQUERY_INDAYS'));
+  // OPDDATA／ERDDATA 的 InDr 文件標「規劃中」
+  assert.ok(codes(lintHisQuery('OPDDATA.InDr(2517).InDays(30).GetAllString()')).includes('W_HISQUERY_PLANNED'));
+});
+
 test('tools: build a form with formula, HIS query, macro and LLM button', () => {
   const { draft_id } = t.form_create({ name: 'V02 計算與巨集', dept_no: 'TEST0' });
   const { area_itemid: a } = t.form_add_area({ draft_id });
