@@ -19,6 +19,7 @@ const MODELS = [
   { id: 'Qwen3.6:27B', owned_by: 'llm_test', context_length: 262144, vision: false, thinking: 'enable_thinking', status: '', description: '預設' },
   { id: 'qwen3:32b', owned_by: 'llama31', context_length: 40960, vision: false, thinking: 'think', status: '', description: '' },
   { id: 'Nemotron-3.5-Super-VL', owned_by: 'nemotron', context_length: 262144, vision: true, thinking: null, status: '', description: '只經 Gateway' },
+  { id: 'Gemma-4-31b', owned_by: 'nemotron', context_length: 65536, vision: true, thinking: 'chat_template_kwargs', status: '', description: '只經 Gateway' },
   { id: 'gemma3:12b', owned_by: 'gemma2_9b', context_length: 16000, vision: true, thinking: null, status: '', description: '影像' },
   { id: 'gemma2:latest', owned_by: 'gemma2_9b', context_length: 8192, vision: false, thinking: null, status: 'deprecated', description: '即將停用' },
   { id: 'llama3.1:8b-instruct-q8_0', owned_by: 'llama3-1q8', context_length: 32000, vision: false, thinking: null, status: '', description: '' }
@@ -120,7 +121,7 @@ test('llmgateway_models fetches with the bearer key, writes the cache and maps a
   assert.ok(!names.includes('llmgateway_chat_test'), 'chat test hidden by default flag');
   const r = await mcp.call('llmgateway_models', {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.data.count, 6);
+  assert.equal(r.data.count, 7);
   assert.equal(r.data.fetched, true);
   assert.equal(reqs[0].headers.authorization, `Bearer ${KEY}`);
   assert.match(r.data.aliases.nemotron35, /^Nemotron-3\.5-Super-VL$/);
@@ -129,7 +130,7 @@ test('llmgateway_models fetches with the bearer key, writes the cache and maps a
   assert.match(r.data.aliases.tw, /gemma2:latest（deprecated）/);
   assert.match(r.data.aliases.ph4, /不在清單/);
   const cache = JSON.parse(fs.readFileSync(path.join(mcp.ws, '.strucmed', 'llm-models.json'), 'utf8'));
-  assert.equal(cache.models.length, 6);
+  assert.equal(cache.models.length, 7);
   assert.ok(!JSON.stringify(cache).includes(KEY));
   const again = await mcp.call('llmgateway_models', { refresh: false });
   assert.equal(again.data.fetched, false, 'fresh cache reused');
@@ -203,8 +204,31 @@ test('llmgateway_chat_test (flag on): whitelist, PHI guard, headers, thinking fl
     assert.equal(chat.body.messages[0].role, 'system');
     const nemo = await m.call('llmgateway_chat_test', { model: 'tnemotron35', prompt: 'x', thinking: true });
     assert.equal(nemo.data.model, 'Nemotron-3.5-Super-VL');
-    assert.deepEqual(nemo.data.warnings, [], 'nemotron35 沒有落日提醒');
-    assert.equal(reqs.filter(x => x.path.endsWith('/v1/chat/completions')).at(-1).body.chat_template_kwargs, undefined);
+    assert.ok(!nemo.data.warnings.some(w => /SUNSET/.test(w)), 'nemotron35 沒有落日提醒');
+    assert.ok(nemo.data.warnings.some(w => /^W_LLM_THINKING_BUDGET/.test(w)));
+    // Nemotron、Gemma 4：思考開關與強度依別名比照 HIS 端（平台 20261127）
+    const sent = async (args) => {
+      const r = await m.call('llmgateway_chat_test', { prompt: 'x', ...args });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      const b = reqs.filter(x => x.path.endsWith('/v1/chat/completions')).at(-1).body;
+      return { model: b.model, kwargs: b.chat_template_kwargs, effort: b.reasoning_effort, budget: b.thinking_token_budget, warnings: r.data.warnings };
+    };
+    const strip = ({ warnings, ...rest }) => rest;
+    assert.deepEqual(strip(await sent({ model: 'tnemotron35', thinking: true })), { model: 'Nemotron-3.5-Super-VL', kwargs: { enable_thinking: true }, effort: undefined, budget: undefined });
+    const plain = await sent({ model: 'nemotron35' });
+    assert.deepEqual(strip(plain), { model: 'Nemotron-3.5-Super-VL', kwargs: { enable_thinking: false }, effort: undefined, budget: undefined }, '預設會思考，不思考的代號明確關閉');
+    assert.deepEqual(plain.warnings, []);
+    assert.deepEqual(strip(await sent({ model: 'tnemotron35-high' })), { model: 'Nemotron-3.5-Super-VL', kwargs: { enable_thinking: true }, effort: undefined, budget: undefined });
+    assert.deepEqual(strip(await sent({ model: 'tnemotron35-medium' })), { model: 'Nemotron-3.5-Super-VL', kwargs: { enable_thinking: true, medium_effort: true }, effort: undefined, budget: undefined });
+    assert.deepEqual(strip(await sent({ model: 'tnemotron35-low' })), { model: 'Nemotron-3.5-Super-VL', kwargs: { enable_thinking: true, medium_effort: true }, effort: undefined, budget: 512 });
+    assert.deepEqual(strip(await sent({ model: 'gemma4_31b' })), { model: 'Gemma-4-31b', kwargs: { enable_thinking: false }, effort: undefined, budget: undefined });
+    assert.deepEqual(strip(await sent({ model: 'tgemma4_31b' })), { model: 'Gemma-4-31b', kwargs: { enable_thinking: true }, effort: undefined, budget: undefined });
+    for (const e of ['low', 'medium', 'high'])
+      assert.deepEqual(strip(await sent({ model: `tgemma4_31b-${e}` })), { model: 'Gemma-4-31b', kwargs: { enable_thinking: true }, effort: e, budget: undefined }, 'Gemma 不送 thinking_token_budget、medium_effort');
+    // 以閘道 id 指定時用參數決定；不思考時不送強度
+    assert.deepEqual(strip(await sent({ model: 'Gemma-4-31b', thinking: true, reasoning_effort: 'medium' })), { model: 'Gemma-4-31b', kwargs: { enable_thinking: true }, effort: 'medium', budget: undefined });
+    assert.deepEqual(strip(await sent({ model: 'Gemma-4-31b', reasoning_effort: 'high' })), { model: 'Gemma-4-31b', kwargs: { enable_thinking: false }, effort: undefined, budget: undefined });
+    assert.equal((await m.call('llmgateway_chat_test', { model: 'tgemma4_31b', prompt: 'x', reasoning_effort: 'max' })).error.code, 'E_INVALID_INPUT');
     const byId = await m.call('llmgateway_chat_test', { model: 'gemma3:12b', prompt: 'x' });
     assert.equal(byId.data.model, 'gemma3:12b', 'gateway id accepted directly');
     behavior.rate = true;

@@ -4,7 +4,7 @@ import * as store from './store.mjs';
 import * as llmgw from './llmgw.mjs';
 import * as online from './online.mjs';
 import * as policy from './policy.mjs';
-import { LLM_ALIASES, LLM_SUNSET, sunsetModel, sunsetPassed } from './calx-catalog.mjs';
+import { LLM_ALIASES, LLM_SUNSET, sunsetModel, sunsetPassed, thinkingParams } from './calx-catalog.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const TW_ID = /[A-Z][12]\d{8}/;
@@ -39,12 +39,13 @@ export const LLMGW_TOOLS = [
     group: 'llmgw',
     flag: 'llmChatTest',
     description: '（LlmGateway，flag llmChatTest）用白名單內的模型試跑一段 prompt（POST /v1/chat/completions，stream:false，max_tokens ≤ 1024），回答與 usage 供設計 LLM 巨集時參考。' +
-      '模型以 TempHtml 別名（gemma3、nemotron35、tnemotron35…）或閘道 id 指定；不在快取白名單或 deprecated／maintenance 一律拒絕；prompt 先做個資偵測（身分證、病歷號樣式→拒絕）；不送影像。會計入金鑰配額。',
+      '模型以 TempHtml 別名（gemma3、nemotron35、tnemotron35、gemma4_31b、tgemma4_31b…）或閘道 id 指定；Nemotron、Gemma 4 的思考開關與強度依別名比照 HIS 端送出（t 開頭＝思考，-low／-medium／-high＝強度）；不在快取白名單或 deprecated／maintenance 一律拒絕；prompt 先做個資偵測（身分證、病歷號樣式→拒絕）；不送影像。會計入金鑰配額。',
     inputSchema: { type: 'object', required: ['model', 'prompt'], properties: {
       model: str('TempHtml 別名（例如 nemotron35）或閘道模型 id；qwen 系列已列落日，只供既有表單比對用（W_LLM_MODEL_SUNSET）'), prompt: str('使用者訊息（≤ 8000 字；不要放真實病人資料）'),
       system: str('system 訊息（選填）'), max_tokens: { type: 'number', description: '回答上限（預設 512，最多 1024）' },
-      temperature: { type: 'number', description: '預設 0.2' }, thinking: { type: 'boolean', description: '思考模式（預設 false）：只對以 enable_thinking 切換的 Qwen3.6 有效（落日模型）；其他模型忽略這個參數' } } },
-    async handler({ model, prompt, system, max_tokens, temperature, thinking }) {
+      temperature: { type: 'number', description: '預設 0.2' }, thinking: { type: 'boolean', description: '思考模式：對以 enable_thinking 切換的 Nemotron-3.5-Super-VL、Gemma-4-31b、Qwen3.6（落日模型）有效，其他模型忽略。沒給時 Nemotron、Gemma 4 依別名決定（tnemotron35、tgemma4_31b 系列＝思考），其餘為 false' },
+      reasoning_effort: { type: 'string', enum: ['low', 'medium', 'high'], description: '思考強度（選填，思考開啟時才有作用）：Gemma-4-31b 送 reasoning_effort；Nemotron-3.5-Super-VL 的 medium 加 medium_effort、low 再加 thinking_token_budget、high 只開思考。沒給時依別名的後綴；其他模型忽略' } } },
+    async handler({ model, prompt, system, max_tokens, temperature, thinking, reasoning_effort }) {
       const ws = store.workspace();
       const cache = policy.loadCache(ws);
       if (!cache) fail(E.NOT_WHITELISTED, '尚未取得模型白名單：請先呼叫 llmgateway_models');
@@ -69,7 +70,16 @@ export const LLMGW_TOOLS = [
       if (system) messages.push({ role: 'system', content: String(system) });
       messages.push({ role: 'user', content: text });
       const body = { model: hit.id, messages, stream: false, max_tokens: Math.min(Math.max(Number(max_tokens) || 512, 1), MAX_TOKENS), temperature: Number.isFinite(temperature) ? temperature : 0.2 };
-      if (/qwen3\.6/i.test(hit.id)) body.chat_template_kwargs = { enable_thinking: !!thinking };
+      // Nemotron、Gemma 4：比照 HIS 端（TempHtml.js 20261127）依別名送思考開關與強度；明確給的 thinking／reasoning_effort 優先
+      const byAlias = /^t(?:nemotron35|gemma4_31b)(?:-(low|medium|high))?$/.exec(alias.toLowerCase());
+      if (reasoning_effort !== undefined && !['low', 'medium', 'high'].includes(String(reasoning_effort))) fail(E.INVALID_INPUT, 'reasoning_effort 只接受 low、medium、high');
+      const think = typeof thinking === 'boolean' ? thinking : !!byAlias;
+      const tp = thinkingParams(hit.id, think, reasoning_effort || (byAlias && byAlias[1]) || '');
+      if (tp) {
+        Object.assign(body, tp);
+        if (think) warnings.push(`W_LLM_THINKING_BUDGET：思考內容也算在 max_tokens（這次 ${body.max_tokens}，試跑上限 ${MAX_TOKENS}；HIS 端思考代號是 16000），回答可能被截斷或是空的，請看 finish_reason`);
+      }
+      else if (/qwen3\.6/i.test(hit.id)) body.chat_template_kwargs = { enable_thinking: !!thinking };
       const headers = { 'X-Client-Feature': 'strucmed-skill' };
       const s = online.status();
       if (s.logged_in && s.user_id) headers['X-Client-User'] = encodeURIComponent(s.user_id);
@@ -85,7 +95,7 @@ export const LLMGW_TOOLS = [
 function summary(cache, fetched) {
   return { fetched: fetched, fetched_at: cache.fetched_at, stale: !!cache.stale, age_days: cache.age_days, count: cache.models.length,
     models: cache.models.map(x => ({ id: x.id, status: x.status || 'ok', vision: x.vision, thinking: x.thinking, context_length: x.context_length })),
-    aliases: Object.fromEntries(['', 'nemotron35', 'tnemotron35', 'gemma3', 'gemma3_12b', 'medgemma', 'tw', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b'].map(a => {
+    aliases: Object.fromEntries(['', 'nemotron35', 'tnemotron35', 'gemma4_31b', 'tgemma4_31b', 'gemma3', 'gemma3_12b', 'medgemma', 'tw', 'ph4', 'qwen332b', 'tqwen332b', 'qwen3627b', 'tqwen3627b'].map(a => {
       const c = policy.checkAlias(a, 'LLMQUERY', cache.models);
       const note = sunsetModel(a) ? `（落日：${LLM_SUNSET.date} 下架，不要新用，改 ${sunsetModel(a).replacement}）` : '';
       return [a || '(預設)', (c && c.found ? `${c.gateway_model}${c.status ? `（${c.status}）` : ''}` : `${c && c.gateway_model || '?'}（不在清單）`) + note];

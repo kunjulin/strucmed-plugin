@@ -14,6 +14,30 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.17.0（MCP 2.20.0）— 2026-11-27：Gemma 4 31B 的模型代號；Nemotron、Gemma 4 的思考強度
+
+尚未發佈。**發佈前提**：平台 `TempHtml.js?v=20261127` 與 LlmGateway 的 `Gemma-4-31b` 都已部署到院內站台，並實測過一次。平台還沒更新時，`gemma4_31b` 系列在 HIS 端會被靜默改用預設模型，這一版卻不再把它們報成 `E_LLM_MODEL_UNKNOWN`。
+
+依據：醫科 2026-11-26 提供 Gemma-4-31b（與 Nemotron 同一個管控端點，max_token 65536）與兩個模型的思考參數；平台同日加上對應的巨集代號（平台 CHANGELOG 2026-11-27）。
+
+**MCP：模型代號**
+- 新增 `gemma4_31b`（不思考）、`tgemma4_31b`、`tgemma4_31b-low`／`-medium`／`-high`（思考）→ 閘道模型 `Gemma-4-31b`，只經 Gateway（`W_LLM_MODEL_GATEWAY_ONLY`，訊息改為列出實際的閘道模型）。`LLMvision` 可用 `gemma4_31b`，`LLMATTACH` 另有 `tgemma4_31b`；請求上限 8 MiB。
+- `gemma4_31b`、`tgemma4_31b` 自「已移除」清單拿掉（原本回 `E_LLM_MODEL_UNKNOWN`）。有白名單快取而清單內沒有 `Gemma-4-31b` 時照舊回 `E_LLM_MODEL_NOT_ON_GATEWAY`。
+- `llmgateway_models` 的別名對照加上 `gemma4_31b`、`tgemma4_31b`。
+
+**MCP：`llmgateway_chat_test` 的思考參數**
+- Nemotron-3.5-Super-VL、Gemma-4-31b 依別名比照 HIS 端送出：`t` 開頭＝`enable_thinking: true`，其餘明確送 `false`（原本 Nemotron 不送，模型預設會思考，`nemotron35` 的試跑其實是思考後的回答）。
+- 思考強度：Nemotron 的 `-medium` 加 `chat_template_kwargs.medium_effort`，`-low` 再加 `thinking_token_budget: 512`，`-high` 只開思考；Gemma 4 的後綴送 `reasoning_effort`，不送 `thinking_token_budget`（上游不支援）。新參數 `reasoning_effort`（`low`／`medium`／`high`）可覆寫別名的後綴，`thinking` 可覆寫是否思考。對應常數與函式在 `calx-catalog.mjs`（`thinkingParams`、`NEMOTRON_LOW_THINKING_BUDGET`）。
+- 思考時加 `W_LLM_THINKING_BUDGET`：思考內容算在 `max_tokens`（試跑上限 1024）內，回答可能被截斷。
+
+**文件**：`references/ModelWhitelist.md`（Gemma 4 31B 的代號、前提與建議；`tnemotron35` 的後綴改為同時調 temperature 與思考長短；拿掉「公告前不要寫 Gemma 4 代號」）、`PromptPatterns.md`、`FormulaMacroRules.md`、`MacroRecipes.md`、`tune-prompt`、`build-form-app`、`form-reviewer`。
+
+**測試**：`test/v02.test.mjs`（Gemma 4 代號的巨集檢查）、`test/llmgw.test.mjs`（各別名送出的思考參數）。Linux 容器 `node --test` 340 項：336 通過、1 略過、3 失敗；失敗的 3 項是預覽伺服器的埠與站台連線，修改前相同，與這次無關。
+
+**尚未實測**：Gemma-4-31b 經 Gateway 的回覆、`reasoning_effort` 的效果、讀影像；Nemotron 的 `medium_effort`、`thinking_token_budget` 經 Gateway 的實際思考長度。
+
+---
+
 ## 3.16.1（MCP 2.19.1）— 2026-11-25：HIS 參照補上 IPDDATA、OPDATA、EXAMDATA（`formula_check` kind=hisquery 誤報修正）
 
 尚未發佈。

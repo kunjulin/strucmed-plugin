@@ -99,6 +99,10 @@ export const LLM_MODELS = {
   nemotron35: 'Nemotron-3.5-Super-VL（只經 Gateway）', tnemotron35: 'Nemotron-3.5-Super-VL（思考，只經 Gateway）',
   'tnemotron35-low': 'Nemotron-3.5-Super-VL（思考 low，只經 Gateway）', 'tnemotron35-medium': 'Nemotron-3.5-Super-VL（思考 medium，只經 Gateway）',
   'tnemotron35-high': 'Nemotron-3.5-Super-VL（思考 high，只經 Gateway）',
+  // Gemma 4 31B（平台 20261127，只經 Gateway）；gemma4_31b／tgemma4_31b 是 20260905 移除的舊代號，平台沿用同一組名稱
+  gemma4_31b: 'Gemma-4-31b（只經 Gateway）', tgemma4_31b: 'Gemma-4-31b（思考，只經 Gateway）',
+  'tgemma4_31b-low': 'Gemma-4-31b（思考 low，只經 Gateway）', 'tgemma4_31b-medium': 'Gemma-4-31b（思考 medium，只經 Gateway）',
+  'tgemma4_31b-high': 'Gemma-4-31b（思考 high，只經 Gateway）',
   // 落日模型（LLM_SUNSET）：仍認得，只為了既有表單改版時不變成未知模型；新寫的巨集不得使用
   qwen332b: 'qwen3:32b（落日）', tqwen332b: 'qwen3:32b（思考，落日）',
   qwen3627b: 'Qwen3.6:27B（落日）', tqwen3627b: 'Qwen3.6:27B（思考，落日）', 'tqwen3627b-low': 'Qwen3.6:27B（思考 low，落日）',
@@ -133,24 +137,44 @@ export function sunsetModel(name) {
 }
 // 只掛在 LlmGateway 的模型代號（平台 TempHtml.js LLM_GATEWAY_ONLY_MODELS、attachbox.js GATEWAY_VISION_MODELS）：
 // 沒有 Gateway 的站台 LLMQUERY 不送出，LLMvision／LLMATTACH 改用預設 gemma3:12b；請求上限見 GATEWAY_MODEL_MAX_BYTES
-export const GATEWAY_ONLY_MODELS = ['nemotron35', 'tnemotron35', 'tnemotron35-low', 'tnemotron35-medium', 'tnemotron35-high'];
-// Gateway 模型的請求本體上限（平台 attachbox.js GATEWAY_MODEL_TRAITS；Nemotron 上游 8 MiB，2026-11-17 實測）
-export const GATEWAY_MODEL_MAX_BYTES = { 'Nemotron-3.5-Super-VL': 8 * 1024 * 1024 };
+export const GATEWAY_ONLY_MODELS = ['nemotron35', 'tnemotron35', 'tnemotron35-low', 'tnemotron35-medium', 'tnemotron35-high',
+  'gemma4_31b', 'tgemma4_31b', 'tgemma4_31b-low', 'tgemma4_31b-medium', 'tgemma4_31b-high'];
+// Gateway 模型的請求本體上限（平台 attachbox.js GATEWAY_MODEL_TRAITS；Nemotron 上游 8 MiB，2026-11-17 實測；Gemma 4 31B 掛在同一個上游）
+export const GATEWAY_MODEL_MAX_BYTES = { 'Nemotron-3.5-Super-VL': 8 * 1024 * 1024, 'Gemma-4-31b': 8 * 1024 * 1024 };
+// 思考強度（平台 TempHtml.js 20261127，依醫科 2026-11-26 提供的參數）：思考代號的後綴 → 送給 Gateway 的額外參數。
+// 思考開關一律是 chat_template_kwargs.enable_thinking；沒有後綴或 Nemotron 的 -high 只開思考。
+//   Nemotron：思考長度「只開思考 > 加 medium_effort > 關閉」，thinking_token_budget 再強制限制長度
+//   Gemma 4 31B：reasoning_effort low／medium／high；上游不支援 thinking_token_budget
+export const NEMOTRON_LOW_THINKING_BUDGET = 512;
+export function thinkingParams(gatewayModel, thinking, effort) {
+  const id = String(gatewayModel || '').toLowerCase();
+  const isNemotron = id === 'nemotron-3.5-super-vl', isGemma4 = id === 'gemma-4-31b';
+  if (!isNemotron && !isGemma4) return null;
+  const body = { chat_template_kwargs: { enable_thinking: !!thinking } };
+  const e = thinking ? String(effort || '').toLowerCase() : '';
+  if (!['low', 'medium', 'high'].includes(e)) return body;
+  if (isGemma4) body.reasoning_effort = e;
+  else if (e !== 'high') {
+    body.chat_template_kwargs.medium_effort = true;
+    if (e === 'low') body.thinking_token_budget = NEMOTRON_LOW_THINKING_BUDGET;
+  }
+  return body;
+}
 // 舊別名（20260103 收斂政策後導向 qwen3:32b；qwen 系列已列落日 → 同樣回報 LLM_SUNSET）
 export const LLM_ALIASES = {
   '70b': 'qwen332b', qwen3a3b: 'qwen332b', tqwen3a3b: 'tqwen332b',
   ...Object.fromEntries(['gpt-oss-120b', 'gpt-oss-20b'].flatMap(b => ['', '-low', '-medium', '-high'].map(s => [b + s, 'tqwen332b'])))
 };
 // 已移除，會落回預設模型（20260905）
-export const LLM_REMOVED = ['medgemma:27b', 'gemma3_27b', 'gemma4_31b', 'tgemma4_31b'];
+export const LLM_REMOVED = ['medgemma:27b', 'gemma3_27b'];
 export const VISION_MODELS = { '': 'gemma3:12b（預設）', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma:4b_vision',
-  nemotron35: 'Nemotron-3.5-Super-VL（不思考，只經 Gateway）' };
+  nemotron35: 'Nemotron-3.5-Super-VL（不思考，只經 Gateway）', gemma4_31b: 'Gemma-4-31b（不思考，只經 Gateway）' };
 export const ASR_PROVIDERS = ['ASUS'];
 // 已下架的語音服務（院內 QWEN 語音服務 2026-10 底下架）：回 E_ASR_PROVIDER 並說明原因
 export const ASR_REMOVED = { QWEN: '已於 2026-10 底下架' };
-// LLMATTACH 的模型代號（平台 web/js/attachbox.js VISION_MODELS＋GATEWAY_VISION_MODELS）：LLMvision 的代號再加 tnemotron35（思考）。
+// LLMATTACH 的模型代號（平台 web/js/attachbox.js VISION_MODELS＋GATEWAY_VISION_MODELS）：LLMvision 的代號再加 tnemotron35、tgemma4_31b（思考）。
 // 不在表內的名稱不會被改成預設——經 LlmGateway 時原樣當模型 id 送出，直連時才改用預設；院外站台一律用使用者在「LLM 服務設定」選的模型
-export const ATTACH_MODELS = { ...VISION_MODELS, tnemotron35: 'Nemotron-3.5-Super-VL（思考，只經 Gateway）' };
+export const ATTACH_MODELS = { ...VISION_MODELS, tnemotron35: 'Nemotron-3.5-Super-VL（思考，只經 Gateway）', tgemma4_31b: 'Gemma-4-31b（思考，只經 Gateway）' };
 // 附件容器可放入的類型（控制項 JSON 的 attachkinds，逗號分隔；沒有這個欄位的舊容器只收影像）
 export const ATTACH_KINDS = ['image', 'pdf', 'sheet', 'text', 'audio'];
 export const ATTACH_KIND_LABELS = { image: '影像', pdf: 'PDF', sheet: 'Excel／CSV', text: '文字', audio: '音檔' };

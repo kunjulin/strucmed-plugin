@@ -83,7 +83,18 @@ test('macro lint: step splitting, step commands, models, targets', () => {
   assert.ok(codes(lintMacro('llmquery(1, "x")', ctx)).includes('W_LLM_NOT_AWAITED'));
   assert.ok(codes(lintMacro('IF(A3 > 1, LLMQUERY(1, "x"), 0)', ctx)).includes('W_LLM_NOT_AWAITED'));
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", "qwen")', ctx)).includes('E_LLM_MODEL_UNKNOWN'));
-  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "gemma4_31b")', ctx)).includes('E_LLM_MODEL_UNKNOWN'));
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "gemma3_27b")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), '已移除的代號');
+  // Gemma 4 31B（平台 20261127）：舊代號恢復，只經 Gateway；不思考的代號沒有強度後綴
+  for (const m of ['gemma4_31b', 'tgemma4_31b', 'tgemma4_31b-low', 'tgemma4_31b-medium', 'tgemma4_31b-high']) {
+    const f = lintMacro(`LLMQUERY(1, "x", "${m}")`, ctx).findings.filter(x => x.code === 'W_LLM_MODEL_GATEWAY_ONLY');
+    assert.equal(f.length, 1, m);
+    assert.match(f[0].message, /Gemma-4-31b/, m);
+  }
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "gemma4_31b-low")', ctx)).includes('E_LLM_MODEL_UNKNOWN'));
+  assert.deepEqual(codes(lintMacro('LLMvision(1, "看圖", "gemma4_31b")', ctx)).filter(c => c !== 'W_VISION_NO_FOLLOWUP'), ['W_LLM_MODEL_GATEWAY_ONLY']);
+  assert.ok(codes(lintMacro('LLMvision(1, "看圖", "tgemma4_31b")', ctx)).includes('E_LLM_MODEL_UNKNOWN'), 'LLMvision 沒有思考版');
+  assert.ok(codes(lintMacro('LLMQUERY(1, "x", "tgemma4_31b")', { ...ctx, policy: { gateway_models: [{ id: 'Nemotron-3.5-Super-VL' }] } })).includes('E_LLM_MODEL_NOT_ON_GATEWAY'), '金鑰沒有 Gemma-4-31b');
+  assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", "tgemma4_31b-low")', { ...ctx, policy: { gateway_models: [{ id: 'Gemma-4-31b', status: '' }] } })), ['W_LLM_MODEL_GATEWAY_ONLY']);
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", tw)', ctx)).includes('E_LLM_MODEL_UNQUOTED'));
   assert.ok(codes(lintMacro('LLMQUERY(1, "x", "70b")', ctx)).includes('W_LLM_MODEL_ALIAS'));
   assert.deepEqual(codes(lintMacro('LLMQUERY(1, "x", A2)', ctx)), ['W_LLM_MODEL_GATEWAY_ONLY'], '模型取自欄位預設值 nemotron35');

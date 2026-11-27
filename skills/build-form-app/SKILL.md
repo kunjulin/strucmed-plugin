@@ -23,7 +23,7 @@ allowed-tools: Read, Write, Edit, AskUserQuestion, Task, Bash(node *), Bash(npm 
 2. 模型：`llmgateway_models`（有金鑰時）→ `form_validate` 的 `E_LLM_MODEL_*`／`W_LLM_*` 就是白名單比對結果；沒有金鑰時只以靜態表檢查並標 `W_LLM_WHITELIST_STALE`。`W_LLM_MODEL_SUNSET`／`E_LLM_MODEL_SUNSET`（qwen 系列：院方建議不採用，2027-01-01 自 LlmGateway 下架）→ 清單標 ✗「落日模型，上線前改用 nemotron35／tnemotron35」，交回 `edit-form` 改版；下架日後是 `E_LLM_MODEL_DEPRECATED`。
 3. 站台：`online_features`
    - `llm_gateway.enabled: false` → 表單內的 LLM／語音仍走舊的院內端點，不經閘道（由平台管理者啟用）。
-   - 巨集用了只經 Gateway 的模型（`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY`，目前是 `nemotron35` 系列）→ 站台**必須**啟用 Gateway：沒有時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`。舊站 `/go/` 沒有這些代號，只能用在 `/strucmed`。`online_features` 讀不到 `api/llm-config`（403）時，清單寫「請平台管理者確認」。
+   - 巨集用了只經 Gateway 的模型（`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY`，目前是 `nemotron35`、`gemma4_31b` 系列）→ 站台**必須**啟用 Gateway：沒有時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`。舊站 `/go/` 沒有這些代號，只能用在 `/strucmed`。`online_features` 讀不到 `api/llm-config`（403）時，清單寫「請平台管理者確認」。
    - `runtime.save`／`query` → 登入者是否在 HIS 端存檔／查詢白名單（影響 HIS 端體驗，不影響表單設計）。
 4. 範本：捷徑＋作業別都有才會出現在 HIS 清單；`online_template_versions` 確認 `current` rev。
 4c. **非病人表單不走 B1**（`form_validate` 回 `no_patient: true`；`references/FormDesignRules.md`〈非病人表單〉）：HIS 內開啟時 HIS 仍帶真實病歷號，平台的存檔雙向檢查會拒絕（站台關閉 API 存檔或退回直連倉儲時伺服器擋不到，紀錄會存在該病歷號下），所以**非病人表單目前不能在 HIS 內存檔**。清單的「非病人表單」一列一律標 ✗「不能在 HIS 內使用，請改走 B2（H1 struNote 為主）」，在對話第一行講明並問使用者要不要改做 B2；範本有捷徑＋作業別（`W_NOPATIENT_HIS_LIST`）時另列「請以 `edit-form` 拿掉作業別，避免同仁從 HIS 清單開啟」。仍照常列出 `E_NOPATIENT_*`（HIS 參照、`HISQUERY`、`LOOKUPDW`、讀取型字典角色、`G_CHTNO()`、嵌入頁 `{chtno}`／`{opdno}`；有任何一條就列出控制項，請使用者以 `edit-form` 改版）與 `W_NOPATIENT_AUTOLOAD`、`W_NOPATIENT_OPTION`、`W_NOPATIENT_DICT_WRITE`，供 B2 使用。
