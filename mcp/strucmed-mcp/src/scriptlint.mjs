@@ -348,6 +348,7 @@ function lintHisQueryPairs(argSrc, ctx, out) {
   const lit = strLiteral(argSrc);
   if (lit === null) { out.push(warn('W_HISQUERY_DYNAMIC', 'HISQUERY 的參數是運算式，無法離線檢查')); return []; }
   const targets = [];
+  const examByItem = new Map(); // EXAMDATA 以 InItem 指定代碼的查詢，依其餘搜尋條件分組
   for (const pair of lit.replace(/[\r\n]+/g, '').split(';')) {
     if (!pair.trim()) continue;
     const parts = pair.split(',');
@@ -358,7 +359,21 @@ function lintHisQueryPairs(argSrc, ctx, out) {
       if (!/^\d+$/.test(key)) out.push(err('E_HISQUERY_PAIR', `HISQUERY 的目標「${key}」不是 itemid`));
       else if (ctx.controls && !ctx.controls.get(key)) out.push(err('E_REF_BROKEN', `HISQUERY 的目標 #${key} 不存在`));
     }
-    for (const f of lintHisQuery(parts[1].trim()).findings) out.push(f);
+    const q = parts[1].trim();
+    for (const f of lintHisQuery(q).findings) out.push(f);
+    const ex = /^EXAMDATA((?:\.[A-Za-z]+\([^)]*\))*?)\.InItem\(([^)]*)\)((?:\.[A-Za-z]+\([^)]*\))*?)\.[A-Za-z]+\([^)]*\)\s*$/i.exec(q);
+    if (ex) {
+      const group = (ex[1] + '|' + ex[3]).toLowerCase();
+      if (!examByItem.has(group)) examByItem.set(group, []);
+      examByItem.get(group).push(ex[2].trim());
+    }
+  }
+  // 同一個 HISQUERY 裡多行 EXAMDATA…InItem(代碼)：每行各呼叫一次檢查報告 package；
+  // GetValueByItem 在搜尋條件相同時只呼叫一次（GB:JJ/ji-suan-shi-his-can-zhao/examdata-jian-cha-bao-gao，2026-11-28）
+  for (const items of examByItem.values()) {
+    if (items.length < 2) continue;
+    out.push(warn('W_HISQUERY_PREFER_BYITEM', `HISQUERY 有 ${items.length} 行 EXAMDATA 以 InItem 指定代碼（${items.join('、')}），每行各呼叫一次檢查報告 package；` +
+      '只需要各代碼最新一筆時，改成相同的搜尋條件加 GetValueByItem(代碼)（例：EXAMDATA.InDays(1080).GetValueByItem(N73-016)），只呼叫一次 package'));
   }
   return targets;
 }
@@ -532,7 +547,7 @@ export function lintMacro(script, ctx = {}) {
 }
 
 // ── HIS 參照（label format=hisquery、HISQUERY 巨集）──────────────────────────
-// 鏈式語法 <函數>.<搜尋條件>….<取值條件>（01 §6.4；GB:JJ/ji-suan-shi-his-can-zhao/*，2026-11-25 逐頁核對）
+// 鏈式語法 <函數>.<搜尋條件>….<取值條件>（01 §6.4；GB:JJ/ji-suan-shi-his-can-zhao/*，2026-11-25 逐頁核對；EXAMDATA.GetValueByItem 2026-11-28）
 // maxDays：文件寫明「最多 180 天」的才擋上限；planned：文件標「規劃中」的條件；require：必填的搜尋條件；
 // values：文件列出的參數值（GetValueByName 的欄位名稱、IPDDATA 的 InName）
 const HIS_ROOTS = {
@@ -543,7 +558,7 @@ const HIS_ROOTS = {
     require: { InName: 'IPDDATA 必須指定 InName(consultation)（查詢會診紀錄必填）' }, values: { InName: ['consultation'] } },
   OPDATA: { label: '手術紀錄', search: ['InDays', 'InDuration', 'InADM', 'InSource', 'InDr'], get: ['GetAllString', 'GetLatestString', 'GetAllJson', 'GetValueByName', 'GetDateByName'],
     values: { GetValueByName: ['PreOpAssessment', 'PostOpAssessment', 'Explanation', 'finding'] } },
-  EXAMDATA: { label: '檢查報告', search: ['InDays', 'InADM', 'InItem'], get: ['GetAllString', 'GetLatestString', 'GetAllJson', 'GetValueByName', 'GetDateByName'],
+  EXAMDATA: { label: '檢查報告', search: ['InDays', 'InADM', 'InItem'], get: ['GetAllString', 'GetLatestString', 'GetAllJson', 'GetValueByName', 'GetDateByName', 'GetValueByItem'],
     values: { GetValueByName: ['Date', 'Department', 'DepartmentName', 'Item', 'ItemName', 'Abstract', 'Report'] } },
   Procedure: { search: ['InName', 'AddParameter'], get: ['GetValueByName'], require: { InName: 'Procedure 必須指定 InName(<套件.程序>)' } }
 };
@@ -621,6 +636,13 @@ export function lintHisQuery(q) {
       if (!d) out.push(err('E_HISQUERY_DURATION', `InDuration(${m.arg ?? ''}) 要寫成 InDuration(yyyyMMdd-yyyyMMdd)，例：InDuration(20260101-20260630)`));
       else if (!validYmd(d[1]) || !validYmd(d[2])) out.push(err('E_HISQUERY_DURATION', `InDuration(${argOf(m)}) 的日期不存在`));
       else if (d[1] > d[2]) out.push(err('E_HISQUERY_DURATION', `InDuration(${argOf(m)}) 起日晚於訖日`));
+    }
+    if (m.name === 'GetValueByItem') {
+      // 取出指定收費代碼最新一筆的報告（GitBook EXAMDATA 頁，2026-11-28）
+      const code = argOf(m);
+      if (!code) out.push(warn('W_HISQUERY_VALUE', `${rootName}.GetValueByItem() 沒有指定收費代碼（例：GetValueByItem(N73-060)）`));
+      else if (!/^[A-Za-z0-9]+-[A-Za-z0-9]+$/.test(code)) out.push(warn('W_HISQUERY_VALUE', `${rootName}.GetValueByItem(${code.slice(0, 30)}) 看起來不是收費代碼（例：N73-060、X75-011）`));
+      if (methods.some(x => x.name === 'InItem')) out.push(warn('W_HISQUERY_METHOD', `${rootName} 已用 GetValueByItem 指定代碼，不必再加 InItem；兩者代碼不同時可能查不到資料`));
     }
     const allowed = spec.values?.[m.name];
     if (allowed && !argOf(m)) out.push(warn('W_HISQUERY_VALUE', `${rootName}.${m.name}() 沒有指定名稱（文件列出：${allowed.join(' / ')}）`));

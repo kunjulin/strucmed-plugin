@@ -168,6 +168,8 @@ test('HIS query lint: IPDDATA / OPDATA / EXAMDATA per GitBook', () => {
   ok('EXAMDATA.InADM().GetLatestString()');
   ok('EXAMDATA.InDays(180).InItem(X75-011).GetValueByName(Report)');
   ok('EXAMDATA.InDays(60).GetAllJson()');
+  ok('EXAMDATA.InDays(1080).GetValueByItem(N73-060)');
+  ok('EXAMDATA.InDays(1080).GetValueByItem(N73-085A)');
   ok('ERDDATA.InDays(30).GetLatestString()');
   ok('LABDATA.InDays(30).GetAllJson()');
   // HISQUERY 巨集裡的 OPDATA 也走同一份清單
@@ -196,6 +198,19 @@ test('HIS query lint: IPDDATA / OPDATA / EXAMDATA per GitBook', () => {
   assert.ok(codes(lintHisQuery('OPDATA.InADM(1).GetAllString()')).includes('E_HISQUERY_SYNTAX'));
   assert.ok(codes(lintHisQuery('OPDATA.GetValueByName(Summary)')).includes('W_HISQUERY_VALUE'));
   assert.ok(codes(lintHisQuery('EXAMDATA.InDays(30).GetValueByName()')).includes('W_HISQUERY_VALUE'));
+  // EXAMDATA.GetValueByItem(收費代碼)：只回最新一筆（GitBook 2026-11-28）
+  assert.ok(codes(lintHisQuery('EXAMDATA.InDays(1080).GetValueByItem()')).includes('W_HISQUERY_VALUE'));
+  assert.ok(codes(lintHisQuery('EXAMDATA.InDays(1080).GetValueByItem(Report)')).includes('W_HISQUERY_VALUE'));
+  assert.ok(codes(lintHisQuery('EXAMDATA.InDays(1080).InItem(N73-016).GetValueByItem(N73-052)')).includes('W_HISQUERY_METHOD'));
+  assert.ok(codes(lintHisQuery('LABDATA.InDays(30).GetValueByItem(X75-011)')).includes('E_HISQUERY_NO_GETTER'));
+  // 同一個 HISQUERY 多行 EXAMDATA…InItem：建議改 GetValueByItem（只呼叫一次 package）
+  const ctx2 = { controls: new Map(['40', '41', '42'].map(k => [k, { datatype: 'textarea', tocalc: true }])) };
+  const byItem = codes(lintMacro('HISQUERY("41,EXAMDATA.InDays(1080).InItem(N73-016).GetAllString();42,EXAMDATA.InDays(1080).InItem(N73-052).GetAllString()")', ctx2));
+  assert.ok(byItem.includes('W_HISQUERY_PREFER_BYITEM'));
+  assert.ok(!codes(lintMacro('HISQUERY("40,EXAMDATA.InDays(1080).GetValueByItem(N73-060);41,EXAMDATA.InDays(1080).GetValueByItem(N73-016);42,EXAMDATA.InDays(1080).GetValueByItem(N73-052)")', ctx2))
+    .some(c => c.startsWith('E_') || c === 'W_HISQUERY_PREFER_BYITEM'));
+  // 搜尋條件不同（天數不同）不合併，不提示
+  assert.ok(!codes(lintMacro('HISQUERY("41,EXAMDATA.InDays(30).InItem(N73-016).GetAllString();42,EXAMDATA.InDays(90).InItem(N73-052).GetAllString()")', ctx2)).includes('W_HISQUERY_PREFER_BYITEM'));
   // IPDDATA 必填 InName(consultation)
   assert.ok(codes(lintHisQuery('IPDDATA.InDays(30).GetAllString()')).includes('E_HISQUERY_SYNTAX'));
   assert.ok(codes(lintHisQuery('IPDDATA.InName(surgery).InDays(30).GetAllString()')).includes('W_HISQUERY_VALUE'));

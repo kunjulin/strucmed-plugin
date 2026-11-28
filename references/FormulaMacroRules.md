@@ -24,11 +24,15 @@
 | `OPDDATA`（門診 SOAP）／`ERDDATA`（急診 SOAP） | `InDays(n≤180)`；`InDr` 文件標「規劃中」（`W_HISQUERY_PLANNED`） | `GetAllString`、`GetLatestString` |
 | `IPDDATA`（住院會診） | **`InName(consultation)` 必填**、`InDays(n)` | `GetAllString`、`GetLatestString`、`GetAllJson` |
 | `OPDATA`（手術紀錄） | `InDays(n)`、`InDuration(yyyyMMdd-yyyyMMdd)`、`InADM()`、`InSource(O\|I)`、`InDr` | `GetAllString`、`GetLatestString`、`GetAllJson`、`GetValueByName(PreOpAssessment\|PostOpAssessment\|Explanation\|finding)`、`GetDateByName` |
-| `EXAMDATA`（檢查報告） | `InDays(n)`、`InADM()`、`InItem(收費代碼)` | `GetAllString`、`GetLatestString`、`GetAllJson`、`GetValueByName(Date\|Department\|DepartmentName\|Item\|ItemName\|Abstract\|Report)`、`GetDateByName` |
+| `EXAMDATA`（檢查報告） | `InDays(n)`、`InADM()`、`InItem(收費代碼)` | `GetAllString`、`GetLatestString`、`GetAllJson`、`GetValueByName(Date\|Department\|DepartmentName\|Item\|ItemName\|Abstract\|Report)`、`GetDateByName`、`GetValueByItem(收費代碼)`（該代碼最新一筆） |
 | `Procedure`（HIS 繫結函數） | **`InName(<套件.程序>)` 必填**、`AddParameter(K=V)` | `GetValueByName(<輸出名稱>)` |
 
 - **`OPDATA`（手術）與 `OPDDATA`（門診）只差一個字母**：函數名稱拼錯時 `E_HISQUERY_SYNTAX` 會提示最接近的名稱；在 `OPDDATA` 用了 `OPDATA` 才有的條件（`InADM`、`GetAllJson`…）時 `W_HISQUERY_METHOD` 會提醒是否寫錯。
 - 只有 `LABDATA`、`OPDDATA`、`ERDDATA` 的文件寫明「最多 180 天」（超過 `E_HISQUERY_INDAYS`）；其他函數文件沒寫上限，`InDays` 只檢查是正整數，資料量仍要顧到 prompt 的上下文。
+- **一次帶出多種檢查的最新報告用 `EXAMDATA.<相同搜尋條件>.GetValueByItem(代碼)`**：`InItem` 是搜尋條件，同一個 `HISQUERY` 裡每行 `EXAMDATA…InItem(…)` 各呼叫一次檢查報告 package；`GetValueByItem` 是取值條件，搜尋條件相同時只呼叫一次，各行從第一次抓出的資料取該代碼**最新一筆**。要歷次報告才用 `InItem(…).GetAllString()`。同一個 `HISQUERY` 有兩行以上相同搜尋條件的 `EXAMDATA…InItem` 時 `W_HISQUERY_PREFER_BYITEM`；`GetValueByItem` 沒寫代碼或不像收費代碼 `W_HISQUERY_VALUE`，又加 `InItem` 時 `W_HISQUERY_METHOD`。寫法：
+  ```
+  HISQUERY("40,EXAMDATA.InDays(1080).GetValueByItem(N73-060);41,EXAMDATA.InDays(1080).GetValueByItem(N73-016);42,EXAMDATA.InDays(1080).GetValueByItem(N73-052)")
+  ```
 - `InDuration` 要兩個存在的日期且起日不晚於訖日（`E_HISQUERY_DURATION`）；`InSource` 只接受 `O`／`I`、`InADM()` 不帶參數（`E_HISQUERY_SYNTAX`）；`GetValueByName` 的名稱不在上表時 `W_HISQUERY_VALUE`。
 
 **引用欄位先看字典補述**：寫計算式、巨集、LLM prompt 前，用 `dictionary_suggest` 的 `cite` 或 `formula_check`（帶 `draft_id`）的 `ref_dictionary` 讀被引用欄位的 `unit`、`range`、`type`、`calx`、`llm`。單位換算、試算例範圍、計算式白話、prompt 欄位描述都以補述為準，與需求衝突時列入「待決」，不要默默改。`formula_check` 會以補述提醒 `W_REF_NO_MEMO`、`W_REF_UNIT_MISMATCH`（可換算時附倍率）、`W_REF_UNIT_UNKNOWN`、`W_REF_TYPE_MISMATCH`、`W_SAMPLE_OUT_OF_RANGE`。

@@ -14,9 +14,26 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.20.0（MCP 2.23.0）— 2026-11-28：EXAMDATA 新增 GetValueByItem（一次帶出多種檢查的最新報告）
+
+依據：醫科工程師 2026-11-28 說明新增 `EXAMDATA.<搜尋條件>.GetValueByItem(收費代碼)`，只回該代碼最新一筆；`InItem` 是搜尋條件，每行各呼叫一次檢查報告 package，`GetValueByItem` 在搜尋條件相同時只呼叫一次，其餘各行沿用第一次抓出的資料。GitBook「EXAMDATA 檢查報告」同日更新（change request #1292、#1293，含核醫以 `HISQUERY` 逐行帶出 N73-060 等十項的範例）。「計算式 HIS 參照」其他子頁自 3.16.1 核對後沒有更新。
+
+**MCP：`lintHisQuery`（`formula_check` kind=hisquery、label HIS 參照、`HISQUERY` 巨集共用）**
+- `EXAMDATA` 取值條件加上 `GetValueByItem`。修正前 `EXAMDATA.InDays(1080).GetValueByItem(N73-060)` 會回 `W_HISQUERY_METHOD` 與 `E_HISQUERY_NO_GETTER`。
+- `GetValueByItem()` 沒寫代碼、或代碼不像收費代碼（`N73-060`、`N73-085A`、`X75-011` 這類「英數-英數」）時 `W_HISQUERY_VALUE`；同一段又加 `InItem` 時 `W_HISQUERY_METHOD`（代碼不同時可能查不到資料）。
+- 新增 `W_HISQUERY_PREFER_BYITEM`：同一個 `HISQUERY` 字串裡有兩行以上搜尋條件相同的 `EXAMDATA…InItem(代碼)` 時，建議只需最新一筆的改用 `GetValueByItem`（只呼叫一次 package）。參數是 `CONCATENATE` 等運算式時照舊只有 `W_HISQUERY_DYNAMIC`，不做這項檢查。
+
+**文件**：`references/FormulaMacroRules.md` 的 HIS 參照表加上 `GetValueByItem` 與多種檢查的寫法；`docs/01` §6.4 同步。
+
+**測試**：`test/v02.test.mjs` 的「HIS query lint: IPDDATA / OPDATA / EXAMDATA per GitBook」加上 `GetValueByItem` 範例、參數檢查與 `W_HISQUERY_PREFER_BYITEM`（相同與不同搜尋條件）。全部測試（Windows）361 項：356 過、4 失敗、1 略過，失敗的 4 項是 symlink 與預覽伺服器埠的測試（Windows 環境問題，main 上相同）。
+
+---
+
 ## 3.19.0（MCP 2.22.0）— 2026-11-28：Gemma 4 31B 的模型代號；Nemotron、Gemma 4 的思考強度
 
 原為草稿 PR #155 的 3.17.0；3.18.0 先合併，改以 3.19.0 合併，並一起發佈 3.18.0 的內容（3.18.0 沒有單獨發佈）。
+
+發佈（2026-11-28）：strucmed-plugin `8e57cb2`（已推送 main；發佈樹由本 repo `a994f50` 產生）。發佈時：`release-plugin.mjs` ok、251 檔、掃描無發現；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）356 項：350 過、4 失敗、2 略過，失敗的 4 項是 symlink 與預覽伺服器埠的測試（Windows 環境問題，main 上相同）。tag：strucmed-plugin `v3.19.0`（→ `8e57cb2`）、本 repo `v3.19.0-src`（`a994f50`）；GitHub Release「strucmed 3.19.0（MCP 2.22.0）：Gemma 4 31B 的模型代號；Nemotron、Gemma 4 的思考強度」。GitBook「生成式 AI 巨集函數」change request #1290 同日合併。尚未：從市集更新後的對話實測。
 
 **發佈前提已滿足（2026-11-28）**：院內 LVAIW 部署平台 `722a464`（`TempHtml.js?v=20261127`）與 LlmGateway 的 `Gemma-4-31b`；舊站 `/go/`（HIS「AI小助手」視窗開的 `/go/temp2.html`）以平台 `deploy/go-gemma4` 同步（`?v=20261128a`）。同一張測試表單的 `LLMQUERY(…, "gemma4_31b")` 在 `/strucmed` 與 AI小助手各執行一次，LlmGateway 逐筆紀錄（token `strucmed`、`goweb`）都是 `Gemma-4-31b`、200；LlmGateway Playground 以 `Gemma-4-31b` 讀影像可用。GitBook「生成式 AI 巨集函數」同日更新（change request #1290）。
 
