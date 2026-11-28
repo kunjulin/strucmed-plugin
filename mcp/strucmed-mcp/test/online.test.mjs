@@ -106,6 +106,8 @@ function handler(req, res) {
       return json(res, 200, { currentRev: 2, diverged: false, versions: [{ rev: 2, fillID: 'F2', createUser: USER_ID, createDate: '20261022', sha256: 'h2', current: true, restorable: true, verified: true }, { rev: 1, fillID: 'F1', createUser: USER_ID, createDate: '20261021', sha256: 'h1', current: false, restorable: true, verified: true }] });
     if (req.method === 'POST' && (m = p.match(/^api\/v2\/folders\/(\w+)\/templates$/))) {
       if (behavior.writesDisabled) return err(res, 503, 'E_WRITES_DISABLED', '站台尚未開放範本寫入');
+      // 倉儲很慢（平台 #298：一次保存最久約 4 分鐘）：回應比用戶端的等待時間晚
+      if (behavior.slowWrite) return setTimeout(() => { if (!res.writableEnded) json(res, 201, { ok: true, templateID: 'T-SLOW', rev: 1, sha256: 'sha-slow' }); }, 2500);
       if (behavior.pendingFail) return json(res, 502, { ok: false, error: { code: 'E_UPSTREAM', message: '倉儲寫入失敗', details: { step: 'head', templateID: 'T-NEW', pending: true } } });
       if (m[1] === 'sys') return err(res, 403, 'E_FORBIDDEN', 'sys 需管理者');
       if (!body || !body.template || typeof body.template.name !== 'string' || !Array.isArray(body.form)) return err(res, 400, 'E_INVALID_INPUT', '本文格式錯誤');
@@ -145,7 +147,7 @@ function handler(req, res) {
     if (req.method === 'GET' && p === 'api/health') return json(res, 200, { ok: true, ts: '2026-10-19T00:00:00Z' });
     if (req.method === 'GET' && p === 'api/v2/runtime/features')
       return json(res, 200, { ok: true, presets: true, recordDelete: true, save: url.searchParams.get('user') === USER_ID, query: false, queryRoot: 'x',
-        ...(behavior.noPatientChtno !== undefined && { noPatientChtno: behavior.noPatientChtno }) });
+        ...(behavior.noPatientChtno !== undefined && { noPatientChtno: behavior.noPatientChtno }), ...(behavior.appRecords !== undefined && { appRecords: behavior.appRecords }) });
     if (req.method === 'GET' && p === 'api/v2/runtime/apps')
       return json(res, 200, { ok: true, enabled: true, apps: [
         { id: 'ercdss', name: '急診臨床決策支援', host: 'assistantai.cgmh.org.tw', sends: ['chtno', 'user'], forwardContext: 'none', outputs: ['risk_score'], ready: true, apiKey: 'MUST-NOT-BE-KEPT' }] });
@@ -234,7 +236,7 @@ function startMcp(env) {
 
 let mcp;
 const BASE = () => `http://127.0.0.1:${port}/strucmed`;
-const ONLINE_ENV = () => ({ STRUCMED_ONLINE_BASE_URL: BASE() + '/' });
+const ONLINE_ENV = () => ({ STRUCMED_ONLINE_BASE_URL: BASE() + '/', STRUCMED_TEMPLATE_WRITE_TIMEOUT_MS: '1000' });
 
 before(async () => {
   fake = http.createServer(handler);
@@ -617,6 +619,16 @@ test('online_features：runtime.no_patient 依站台回的 noPatientChtno 判斷
   } finally { delete behavior.noPatientChtno; }
 });
 
+test('online_features：runtime.app_records 依站台的 appRecords（院外 V2:Note:AppRecords）；舊站台沒有欄位＝false', async () => {
+  await browserLogin(mcp, {});
+  const old = await mcp.call('online_features');
+  assert.equal(old.data.runtime.app_records, false);
+  behavior.appRecords = true;
+  const on = await mcp.call('online_features');
+  assert.equal(on.data.runtime.app_records, true);
+  assert.equal(on.data.runtime.query, false, 'query 照舊（院外不開）');
+});
+
 test('online_features 取站台的嵌入頁 APP 目錄並寫成本機快取（只留揭露用的欄位）', async () => {
   await browserLogin(mcp, {});
   const r = await mcp.call('online_features', {});
@@ -776,6 +788,22 @@ test('online_template_create: two-step plan → POST, published recorded, errors
   assert.equal(r502.error.code, 'E_UPSTREAM');
   assert.equal(r502.error.details.pending, true);
   assert.match(r502.error.message, /請勿重複保存/);
+});
+
+// 3.18.0：範本寫入沒有回應（逾時、連線中斷）→ 結果不明，回「請勿重複保存」與 details.unknown，不是一般的連線失敗
+test('online_template_create：寫入逾時回結果不明（unknown、pending），不當成沒寫入', async () => {
+  await browserLogin(mcp, {});
+  const id = await makeDraft(mcp);
+  behavior.slowWrite = true;
+  const plan = await mcp.call('online_template_create', { draft_id: id, folder_type: 'usr' });
+  const r = await browserApprove(mcp, 'online_template_create', { draft_id: id, folder_type: 'usr', confirm_token: plan.data.confirm_token });
+  assert.equal(r.error.code, 'E_UPSTREAM');
+  assert.equal(r.error.details.unknown, true);
+  assert.equal(r.error.details.pending, true);
+  assert.match(r.error.message, /新增範本的結果不明（逾時）/);
+  assert.match(r.error.message, /請勿重複保存/);
+  assert.match(r.error.message, /online_folder_list/);
+  assert.equal(reqs.filter(x => x.method === 'POST' && x.path.endsWith('/templates')).length, 1, '只送一次，不自動重送');
 });
 
 // 2.3.0：寫入的第二段呼叫要使用者在瀏覽器確認頁按「確認寫入」；token 再對也不會自己寫入

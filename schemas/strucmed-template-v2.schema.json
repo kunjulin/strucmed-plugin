@@ -112,7 +112,13 @@
         "f_opdno": { "type": "boolean", "description": "依就醫號只查當次" },
         "f_hideprevicon": { "type": "boolean", "description": "隱藏「上次紀錄」圖示" },
         "f_nopatient": { "type": "boolean", "default": false, "description": "非病人表單：struNote 不要求病歷號，平台以保留代碼（預設 APP-NP）開啟；紀錄表頭 deptNo＝APP、opdno＝APP（紀錄主體）、recNo＝紀錄鍵，只有填寫者本人查得到、下載得到；HIS 內開啟時存檔會被平台拒絕。true 時不得有 HIS 參照、HISQUERY、LOOKUPDW、讀取型字典角色、G_CHTNO()、嵌入頁 {chtno}／{opdno} 參數（form_validate 的 E_NOPATIENT_*）。未出現視同 false" },
-        "f_autoLoadOnOpen": { "type": "boolean", "default": false, "description": "開啟表單時自動取出最近一次紀錄（同一張表單、同一個 recNo）。非病人表單不帶 recNo（struNote）時要開啟才會載入上次存的那一筆；帶 recNo 開啟時不論這個選項一律載入。未出現視同 false" }
+        "f_autoLoadOnOpen": { "type": "boolean", "default": false, "description": "開啟表單時自動取出最近一次紀錄（同一張表單、同一個 recNo）。非病人表單不帶 recNo（struNote）時要開啟才會載入上次存的那一筆；帶 recNo 開啟時不論這個選項一律載入。未出現視同 false" },
+        "f_applist": { "type": "boolean", "default": false, "description": "應用紀錄清單（平台 2026-11-22）：struNote 以 note/?app=<範本ID> 開啟時列出填寫者本人在這張表單的多筆紀錄（一個 recNo 一筆）。只在 f_nopatient 為 true 時有效，一般表單帶了一律忽略（編輯器存成 false）。未出現視同 false" },
+        "f_applistTitle": { "type": "string", "maxLength": 40, "description": "清單標題；空白時顯示「紀錄清單」" },
+        "f_applistKey": { "type": "string", "enum": ["code", "week", "month", "date", "time"], "default": "code", "description": "「新增」時 recNo 的產生規則：code＝使用者輸入、week＝2026-W47、month＝2026-11、date＝2026-11-22、time＝20261122-153045" },
+        "f_applistKeyLabel": { "type": "string", "maxLength": 20, "description": "紀錄鍵在畫面上的名稱；空白時顯示「紀錄鍵」" },
+        "f_applistFields": { "type": "string", "description": "清單顯示欄位：字典名稱以半形逗號分隔，最多 3 個，第一個當標題" },
+        "f_applistSort": { "type": "string", "enum": ["recDate-desc", "recDate-asc", "recNo-desc", "recNo-asc"], "default": "recDate-desc", "description": "排序" }
       }
     },
     "embedArea": {

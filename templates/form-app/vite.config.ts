@@ -9,6 +9,13 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'logo192.png', 'logo512.png'],
+      // 首頁（index.html）不進 service worker 的快取、不攔頁面導覽，一律向伺服器拿（nginx 對 index.html 回 no-store）：
+      // 放進快取時，改版後第一次開啟拿到的是舊版，要重新整理才換新版（平台 struNote 同樣的修正：kunjulin/strucmed#295、#296）。
+      // 登入與表單都需要連線，離線本來就不能用；assets/* 檔名含雜湊，照舊快取
+      workbox: {
+        globPatterns: ['**/*.{js,css}'],
+        navigateFallback: null,
+      },
       manifest: {
         name: '__APP_NAME__',
         short_name: '__APP_SHORT__',

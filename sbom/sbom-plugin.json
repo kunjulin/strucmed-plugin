@@ -3,19 +3,19 @@
   "specVersion": "1.5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-26T00:51:51.894Z",
+    "timestamp": "2026-11-28T05:35:21.513Z",
     "tools": [
       {
         "vendor": "Chang Gung Memorial Hospital",
         "name": "strucmed-plugin scripts/sbom.mjs",
-        "version": "3.16.1"
+        "version": "3.19.0"
       }
     ],
     "component": {
       "type": "application",
       "bom-ref": "strucmed-plugin",
       "name": "strucmed",
-      "version": "3.16.1",
+      "version": "3.19.0",
       "supplier": {
         "name": "Chang Gung Memorial Hospital（長庚醫療財團法人）",
         "url": [
@@ -63,7 +63,7 @@
       "type": "application",
       "bom-ref": "strucmed-mcp",
       "name": "strucmed-mcp",
-      "version": "2.19.1",
+      "version": "2.22.0",
       "description": "MCP 伺服器（Node ESM）。自有程式，執行期零第三方相依（package.json 的 dependencies 是空的，沒有 node_modules）。",
       "supplier": {
         "name": "Chang Gung Memorial Hospital（長庚醫療財團法人）",
@@ -184,5 +184,5 @@
       ]
     }
   ],
-  "serialNumber": "urn:uuid:06bea110-8ff5-0410-082a-29184ffb819f"
+  "serialNumber": "urn:uuid:60f0473b-cbd6-0667-f53e-c752ca7058e6"
 }

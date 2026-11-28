@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { toFormJson, isNoPatient, iotOptionFields, NOPATIENT_CODE, NOPATIENT_SUBJECT } from './model.mjs';
+import { toFormJson, isNoPatient, iotOptionFields, NOPATIENT_CODE, NOPATIENT_SUBJECT, appListOf, APPLIST_RULE_TEXT } from './model.mjs';
 import { preview } from './preview.mjs';
 import { buildPackage, renderHtm } from './package.mjs';
 import { walk, isControl } from './formtree.mjs';
@@ -84,16 +84,25 @@ ${rows.join('\n')}
 
 // 非病人表單（iot f_nopatient）：manifest 與交付說明要列出（站台支援與否、紀錄表頭、只有本人查得到、HIS 內不能存檔）
 const draftAutoLoad = draft => (draft.source && draft.source.iot ? draft.source.iot.f_autoLoadOnOpen === true : iotOptionFields((draft.meta || {}).options).f_autoLoadOnOpen === true);
+// 應用紀錄清單（平台 #290、#291）：開了就說明網址、紀錄鍵規則與刪除；沒開就說明每人一筆、要多筆怎麼做
+function appListLine(draft) {
+  const al = appListOf(draft);
+  if (!al) return 'struNote 的表單清單開啟時不帶 \`recNo\`（寫入 \`none\`），每人每張表單只有一筆。要多筆紀錄請開「應用紀錄清單」（\`options.app_list\`），或由 APP 以表單頁的 \`recNo\` 參數開啟（英數字與 \`_\`、\`.\`、\`-\`，最多 64 字；取值規則須先登錄，不得自行填未登錄的值）。';
+  return `以應用紀錄清單區分多筆（見下一段）。
+- **應用紀錄清單**（iot \`f_applist\`）：上架後以 \`<站台>/note/?app=<範本ID>\` 開啟，struNote 不顯示表單清單，改列出填寫者本人在這張表單的紀錄${al.title ? `（標題「${al.title}」）` : ''}，可新增、點開修改、刪除。` +
+    `新增時的紀錄鍵是${APPLIST_RULE_TEXT[al.key]}${al.key_label ? `，畫面上叫「${al.key_label}」` : ''}；清單顯示欄位：${al.fields.length ? al.fields.map(f => `「${f}」`).join('、') : '（未設定，只顯示紀錄鍵與日期）'}；排序 \`${al.sort}\`。` +
+    '紀錄鍵只能用英數字與 \`_\`、\`.\`、\`-\`（最多 64 字），**不可放病歷號、身分證號、姓名**。**刪除是硬刪除、無法復原**（每次存檔另寫的純文字紀錄不會一起刪）。只有本人的紀錄；沒有分頁與日期範圍，最多 500 筆；HIS 內沒有這個畫面。院外站台需開啟 \`V2:Note:AppRecords\`（\`online_features\` 的 \`runtime.app_records\`），院內需在存檔與查詢白名單內（\`runtime.save\`、\`runtime.query\`）。';
+}
 export function noPatientSection(draft) {
   if (!isNoPatient(draft)) return '';
   return `
 ## 非病人表單
 - **非病人表單：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟**（iot \`f_nopatient: true\`）；「上次紀錄」只看自己的。
 - **站台支援**：院內、院外站台都已支援（2026-11-22）。其他站台以 \`online_features\` 的 \`runtime.no_patient\` 為準（站台 \`GET api/v2/runtime/features\` 回 \`noPatientChtno\`）；不支援的站台會把它當一般表單、要求病歷號，這時不要在該站台使用（不輸入真實病歷號，也不自行輸入保留代碼）。
-- **紀錄表頭**（院方 2026-11-22 核定）：\`chtno\`＝${NOPATIENT_CODE}、\`deptNo\`＝APP、\`opdno\`＝${NOPATIENT_SUBJECT}（紀錄主體，現行固定）、\`recNo\`＝紀錄鍵。一筆紀錄由 \`user\`＋\`sheetid\`＋\`opdno\`＋\`recNo\` 定位；struNote 不帶 \`recNo\`（寫入 \`none\`），每人每張表單只有一筆。要多筆紀錄須由 APP 以表單頁的 \`recNo\` 參數開啟（英數字與 \`_\`、\`.\`、\`-\`，最多 64 字；取值規則須先登錄，不得自行填未登錄的值）。
+- **紀錄表頭**（院方 2026-11-22 核定）：\`chtno\`＝${NOPATIENT_CODE}、\`deptNo\`＝APP、\`opdno\`＝${NOPATIENT_SUBJECT}（紀錄主體，現行固定）、\`recNo\`＝紀錄鍵。一筆紀錄由 \`user\`＋\`sheetid\`＋\`opdno\`＋\`recNo\` 定位；${appListLine(draft)}
 - **只有填寫者本人查得到、下載得到**：查詢（\`api/v2/records/query/*\`）必須帶 \`sheetid\`、只回呼叫者自己建立的紀錄；資料下載只含下載者本人的紀錄，原作者與管理者也一樣，目前無法彙整他人的紀錄。
 - **HIS 內不能存檔**：HIS 內開啟時 HIS 仍帶真實病歷號，存檔會被平台拒絕；目前只在 struNote／表單頁使用，不要設作業別上架到 HIS 清單。
-- **開啟時自動取出**${draftAutoLoad(draft) ? '已開啟：struNote 開啟時載入自己上次存的那一筆。' : '**沒有開啟**：struNote 開啟時是空白表單，存檔會覆寫上次存的那一筆（form_validate 的 W_NOPATIENT_AUTOLOAD）。'}
+- **開啟時自動取出**${appListOf(draft) ? '：開了應用紀錄清單，紀錄一律以紀錄鍵開啟並載入既有內容，這個選項只影響沒帶鍵的開啟。' : draftAutoLoad(draft) ? '已開啟：struNote 開啟時載入自己上次存的那一筆。' : '**沒有開啟**：struNote 開啟時是空白表單，存檔會覆寫上次存的那一筆（form_validate 的 W_NOPATIENT_AUTOLOAD）。'}
 - **不要用倉儲以病歷號查詢這類紀錄**：所有人的紀錄都在同一個保留代碼下，不代表任何病人。\`chtno\` 為 \`Shortcut\` 或以 \`APP\` 開頭的都不是病人紀錄，\`500\` 是測試用病歷號；統計與分析請一併排除。
 - 表單不得有 HIS 參照、HISQUERY、LOOKUPDW／LOOKUPDEFAULTSETTING、讀取型字典角色（fromhis／puthis）、G_CHTNO()、嵌入頁 {chtno}／{opdno} 參數（form_validate 的 E_NOPATIENT_*）。
 - 舊版編輯器（尚未更新的站台）不認得這個選項：在那裡另存，選項可能遺失，請在支援的站台確認 Option 面板的「非病人表單（不需病歷號）」。

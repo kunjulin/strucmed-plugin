@@ -28,7 +28,7 @@ Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接
 |---|---|---|---|
 | （空）預設 | Llama 3.1 8B | 32K（院內設定） | 簡短英文任務、LLM 控制項（`action2` 固定用它，不能改） |
 | `nemotron35` | Nemotron 3.5 Super VL（多模態） | 約 262K | **只經院內 LlmGateway**。直接回答、不思考：整理、摘要、擷取欄位、長篇病歷與長文件大多用這個；一次看多張影像、讀影像上的文字（LLMvision／LLMATTACH，一次請求 8 MB） |
-| `tnemotron35`／`tnemotron35-low`／`-medium`／`-high` | 同上（先思考再回答） | 約 262K | **只經院內 LlmGateway**。推理：鑑別診斷、依準則判斷、多條件比對。後綴調的是回答的變化程度，不是思考長短：`-low` 每次最一致（擷取、固定格式），`-high` 與不加後綴相同。思考過程顯示在欄位旁的思考框，欄位只寫入最後的回答。LLMvision 沒有思考版 |
+| `tnemotron35`／`tnemotron35-low`／`-medium`／`-high` | 同上（先思考再回答） | 約 262K | **只經院內 LlmGateway**。推理：鑑別診斷、依準則判斷、多條件比對。後綴同時調回答的變化程度與思考長短：`-low` 每次最一致、思考最短（擷取、固定格式），`-medium` 居中，`-high` 與不加後綴相同（思考最長）。思考過程顯示在欄位旁的思考框，欄位只寫入最後的回答。LLMvision 沒有思考版 |
 | `gemma3_12b`（LLMvision 預設）／`gemma3`／`medgemma` | gemma3:12b／gemma3/ medgemma:4b | 16K（含影像） | 能讀影像；站台沒有 Gateway 時的影像模型。短句翻譯、簡單整理用 `gemma3_12b` 就夠 |
 | `tw`、`math` | gemma2 | 8K | 短句翻譯、簡單整理夠用，但閘道標 deprecated 時會被擋（以快取為準），新案優先 `gemma3_12b` |
 | `phi4` | Phi-4 14b | 16K | 視金鑰權限 |
@@ -36,7 +36,8 @@ Calx 字串規則（寫錯會整段失效）：文字一律加雙引號；串接
 要點：
 - 拼錯或停用的名稱**不報錯**，靜默改用預設模型；LLMvision 用非視覺模型也不報錯，而是**編造影像內容**（GitBook 實測把紅藍測試圖說成含「陽光黃」）。`formula_check` 會攔（`E_LLM_MODEL_UNKNOWN`、`E_LLM_MODEL_NO_VISION`）。
 - 思考模式（`tnemotron35`）回覆慢、token 多；只在鑑別診斷、依準則判斷、多條件比對用，整理、摘要、擷取用 `nemotron35`。要每次輸出一致（固定格式）用 `tnemotron35-low`。
-- `nemotron35` 系列**只經院內 LlmGateway**（`W_LLM_MODEL_GATEWAY_ONLY`）：站台沒啟用 Gateway 時 `LLMQUERY` 不送出；院外站台忽略巨集的模型代號，改用使用者選的院外模型（`ModelWhitelist.md` §6）。計畫與交付說明都要寫這個前提。
+- `gemma4_31b`／`tgemma4_31b(-low/-medium/-high)`（Gemma 4 31B，上下文約 65K）可用時（白名單快取有 `Gemma-4-31b`）是推理的替代選擇，後綴指定思考強度；長篇病歷仍用 `nemotron35`（`ModelWhitelist.md` §1、§3）。
+- `nemotron35`、`gemma4_31b` 系列**只經院內 LlmGateway**（`W_LLM_MODEL_GATEWAY_ONLY`）：站台沒啟用 Gateway 時 `LLMQUERY` 不送出；院外站台忽略巨集的模型代號，改用使用者選的院外模型（`ModelWhitelist.md` §6）。計畫與交付說明都要寫這個前提。
 - **落日模型不得使用**：qwen 系列院方建議不採用，2027-01-01 自 LlmGateway 下架（`ModelWhitelist.md` §5）；新寫或改到的巨集 `E_LLM_MODEL_SUNSET`。
 - 一次送入的資料量要在上下文內：`GETTEXT()` 會送整份報告全文，`LABDATA.InDays(180)`、`OPDATA.InDays(90).GetAllJson()` 可能很長；超過就截斷或改天數。
 

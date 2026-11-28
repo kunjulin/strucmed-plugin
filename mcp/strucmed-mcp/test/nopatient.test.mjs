@@ -427,7 +427,8 @@ test('規則文件：沒有「平台尚未部署前的暫行做法」；紀錄�
   assert.match(sec, /帶 `recNo` 開啟時一律載入既有紀錄/);
   assert.match(sec, /只認 `recNo` \*\*完全相同\*\*的紀錄/);
   assert.match(sec, /一筆紀錄由 `user`＋`sheetid`＋`opdno`＋`recNo` 定位/);
-  assert.match(sec, /struNote 畫面沒有輸入 `recNo` 的地方/);
+  assert.match(sec, /struNote 的表單清單不帶 `recNo`/);
+  assert.match(sec, /### 應用紀錄清單（`options.app_list`）/);
   // 4. 查詢與下載
   assert.match(sec, /必須帶 `sheetid`\*\*，否則 400/);
   assert.match(sec, /`status` 為 `DRAWimg`、`XMLtxt` 例外/);

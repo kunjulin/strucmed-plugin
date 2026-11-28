@@ -3,7 +3,7 @@
 // actionID / furActionID / 計算式與巨集中的 A<n>。
 // 嚴重度：本工具新增或修改的部分 → error；既有表單原封保留的部分 → warning（標示「原表單既有」）。
 // v0.2：計算式、巨集、HIS 參照的檢查（scriptlint）也依同一套分級；修改類別為 formula。
-import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind, isNoPatient, iotOptionFields, NOPATIENT_CODE, NOPATIENT_SUBJECT } from './model.mjs';
+import { RUNTIME_ROLE, DATATYPES_ALL, ATTACH_KINDS, cellKind, isNoPatient, iotOptionFields, NOPATIENT_CODE, NOPATIENT_SUBJECT, appListOf, APPLIST_RULE_TEXT } from './model.mjs';
 import { walk, isControl, isArea, referencesOf, areaNode } from './formtree.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
 import * as dc from './dictcomment.mjs';
@@ -13,6 +13,7 @@ import { checkSnippets, renderSnippets, scanCustomJs, scriptFunctions } from './
 import { enabled } from './flags.mjs';
 import * as embed from './embed.mjs';
 import * as PHI from './phi.mjs';
+import { firstUnstorable, SUBSTITUTES } from './cp950.mjs';
 
 // 整張 draft 的 embed 檢查（平台 StrucEmbed.validateForm）：以輸出時的 GetData 形狀走訪，回 [{ itemid, code, message }]
 export function embedFindings(draft) {
@@ -179,6 +180,12 @@ export function validateDraft(draft, dictIndex, policy = {}) {
 
   if (!m.name || !m.name.trim()) report(true, 'E_INVALID_INPUT', '表單名稱不可空白');
   if ((m.name || '').length > 36) report(true, 'E_INVALID_INPUT', '表單名稱超過 36 字（平台 web/editor.html:463）');
+  // 名稱、捷徑、Info 原樣寫進資料夾清單（平台 kunjulin/strucmed#299）：存不下的字元會把清單項目存壞，平台 #299 起保存時回 400
+  for (const [k, label] of [['name', '表單名稱'], ['shortcut', '捷徑'], ['description', 'Info']]) {
+    const bad = firstUnstorable(m[k] || '');
+    if (bad) report(true, 'E_META_NON_BIG5', `${label}含有倉儲（Big5／CP950）無法保存的字元「${bad.char}」（${bad.code}，第 ${bad.index + 1} 字）：` +
+      `平台保存時回 400；較舊的站台會把資料夾清單的這一筆存壞，表單存了卻不在清單裡。${SUBSTITUTES[bad.char] ? `請改成「${SUBSTITUTES[bad.char]}」` : '請改用文字，emoji 請刪除'}（form_update_meta）`);
+  }
   if ((m.groups || []).length && !m.shortcut) warn('W_NO_SHORTCUT', '有作業別但沒有捷徑名稱：表單不會出現在 HIS 清單（GB:biao-dan-shi-yong/biao-dan-shang-jia）；測試表單或不上架時不要帶作業別，請 form_update_meta(groups: [])');
   if (!draft.areas.length) report(true, 'E_INVALID_INPUT', '表單沒有任何區塊');
 
@@ -412,15 +419,32 @@ export function validateDraft(draft, dictIndex, policy = {}) {
     }
   }
 
+  // 應用紀錄清單（f_applist*）只對非病人表單有效：一般表單帶了平台一律忽略，編輯器保存時存成 f_applist:false
+  const appList = appListOf(draft);
+  if (!noPatient && appList) report(!draft.source, draft.source ? 'W_APPLIST_NOT_NOPATIENT' : 'E_APPLIST_NOT_NOPATIENT',
+    '應用紀錄清單（options.app_list／iot f_applist）只對非病人表單有效：一般表單帶了平台一律忽略，編輯器保存時存成 f_applist:false。' +
+    '要用清單請一併設成非病人表單（options.no_patient:true），否則以 options.app_list:{ enabled:false } 關閉');
   if (noPatient) {
     const iot = draft.source ? draft.source.iot : iotOptionFields(m.options);
     const on = [iot.f_chtno === true && '依病歷號查近期紀錄（f_chtno）', iot.f_opdno === true && '依就醫號查當次（f_opdno）', iot.f_hideprevicon !== true && '顯示「上次紀錄」圖示'].filter(Boolean);
     if (on.length) warn('W_NOPATIENT_OPTION', `非病人表單卻開啟了${on.join('、')}：病歷號是保留代碼，平台的「上次紀錄」只看自己的；沒有特別理由請用 form_update_meta 的 options 關閉（f_chtno:false、f_opdno:false、hide_prev_icon:true）`);
-    if (iot.f_autoLoadOnOpen !== true) warn('W_NOPATIENT_AUTOLOAD', '非病人表單沒有開啟「開啟時自動取出」（f_autoLoadOnOpen）：從 struNote 開啟不帶紀錄鍵（recNo），每人每張表單只有一筆；沒勾時開頁是空白表單，存檔會覆寫上次存的那一筆。除非每次都要從空白開始，請用 form_update_meta 的 options 開啟（auto_load_on_open:true）；以 recNo 開啟的 APP 不受影響（帶 recNo 一律載入既有紀錄）');
+    // 開了應用紀錄清單時，紀錄由清單以 recNo 開啟（一律載入既有紀錄），不需要這個選項
+    if (iot.f_autoLoadOnOpen !== true && !appList) warn('W_NOPATIENT_AUTOLOAD', '非病人表單沒有開啟「開啟時自動取出」（f_autoLoadOnOpen）：從 struNote 的表單清單開啟不帶紀錄鍵（recNo），每人每張表單只有一筆；沒勾時開頁是空白表單，存檔會覆寫上次存的那一筆。除非每次都要從空白開始，請用 form_update_meta 的 options 開啟（auto_load_on_open:true）；以 recNo 開啟的應用紀錄清單與 APP 不受影響（帶 recNo 一律載入既有紀錄）。每人要填多筆時改開應用紀錄清單（options.app_list）');
+    if (appList) {
+      // 清單的顯示欄位取自存檔的明細（dictName），要是這張表單綁定的字典
+      const bound = new Set(controls.flatMap(x => [x.node.dictionary, x.node.dicid]).filter(Boolean).map(String));
+      const unbound = appList.fields.filter(f => !bound.has(f));
+      if (unbound.length) warn('W_APPLIST_FIELD_UNBOUND', `應用紀錄清單的顯示欄位 ${unbound.map(f => `「${f}」`).join('、')} 不是這張表單綁定的字典：清單只能顯示綁了字典、有存檔的欄位，這些欄位在清單上會是空白；請改成表單裡欄位綁定的字典名稱（form_fields 可查）`);
+      if (!appList.fields.length) warn('W_APPLIST_FIELD_UNBOUND', '應用紀錄清單沒有設定顯示欄位（options.app_list.fields）：清單只顯示紀錄鍵與存檔日期；建議挑 1～3 個綁了字典的欄位（第一個當標題）');
+      warn('W_NOPATIENT_APPLIST', `應用紀錄清單已開啟${appList.title ? `（「${appList.title}」）` : ''}：上架後以「<站台>/note/?app=<範本ID>」開啟，列出填寫者本人在這張表單的紀錄，` +
+        `新增時的紀錄鍵（recNo）是${APPLIST_RULE_TEXT[appList.key]}${appList.key_label ? `，畫面上叫「${appList.key_label}」` : ''}。` +
+        '紀錄鍵只能用英數字與 _ . -（最多 64 字），不可放病歷號、身分證號、姓名；清單上的「刪除」是硬刪除、無法復原（每次存檔另寫的純文字紀錄不會一起刪）。' +
+        '只有本人的紀錄（主管或他人看不到）；沒有分頁與日期範圍，最多列 500 筆。HIS 內沒有這個清單畫面（交付時必須告知使用者）');
+    }
     if ((m.groups || []).length && m.shortcut) warn('W_NOPATIENT_HIS_LIST', `非病人表單設了捷徑與作業別（${m.groups.join('、')}），會出現在 HIS 清單：HIS 內開啟時 HIS 仍帶真實病歷號，存檔會被平台拒絕（站台關閉 API 存檔或退回直連倉儲時擋不到，紀錄會存在該病歷號下）。這類表單目前只在 struNote／表單頁使用，請 form_update_meta(groups: []) 拿掉作業別`);
     const writers = controls.map(x => x.node).filter(c => ['tohis', 'puthis'].includes(c.dicrole) && (c.dicid || c.dictionary));
     if (writers.length) warn('W_NOPATIENT_DICT_WRITE', `非病人表單有 ${writers.length} 個欄位寫入字典（${writers.slice(0, 8).map(c => '#' + c.itemid).join('、')}${writers.length > 8 ? '…' : ''}）：值會以保留代碼（預設 ${NOPATIENT_CODE}）存進倉儲，所有人的紀錄都在同一個代碼下，但只有建立者本人查得到、下載得到（資料下載對原作者與管理者也只含本人的紀錄），目前無法彙整他人的紀錄；不要用倉儲以病歷號查詢這類紀錄，不需要統計的欄位請不要綁字典`);
-    warn('W_NOPATIENT_FORM', `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；紀錄表頭 chtno＝${NOPATIENT_CODE}、deptNo＝APP、opdno＝${NOPATIENT_SUBJECT}（紀錄主體）、recNo＝紀錄鍵（struNote 不帶，每人每張表單一筆）。紀錄只有填寫者本人查得到、下載得到，查詢須帶 sheetid；HIS 內開啟時存檔會被平台拒絕，請從 struNote 使用。院內、院外站台都已支援（2026-11-22）；其他站台以 online_features 的 runtime.no_patient 為準，不支援的站台會把它當一般表單、要求病歷號，這時不要在該站台使用（不輸入真實病歷號，也不自行輸入保留代碼）。不要用倉儲以病歷號查詢這類紀錄（交付時必須告知使用者）`);
+    warn('W_NOPATIENT_FORM', `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；紀錄表頭 chtno＝${NOPATIENT_CODE}、deptNo＝APP、opdno＝${NOPATIENT_SUBJECT}（紀錄主體）、recNo＝紀錄鍵（${appList ? '應用紀錄清單以 recNo 區分多筆' : 'struNote 的表單清單不帶，每人每張表單一筆；要多筆請開應用紀錄清單'}）。紀錄只有填寫者本人查得到、下載得到，查詢須帶 sheetid；HIS 內開啟時存檔會被平台拒絕，請從 struNote 使用。院內、院外站台都已支援（2026-11-22）；其他站台以 online_features 的 runtime.no_patient 為準，不支援的站台會把它當一般表單、要求病歷號，這時不要在該站台使用（不輸入真實病歷號，也不自行輸入保留代碼）。不要用倉儲以病歷號查詢這類紀錄（交付時必須告知使用者）`);
   }
 
   const pending = draft.pendingDictionaries || [];

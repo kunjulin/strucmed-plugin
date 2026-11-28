@@ -264,6 +264,29 @@ export const NOPATIENT_CODE = 'APP-NP';
 export const NOPATIENT_SUBJECT = 'APP';
 // 各 tool 回應與上架 plan 共用的一行說明
 export const NOPATIENT_NOTE = `非病人表單（f_nopatient）：struNote 不需病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟；紀錄只有填寫者本人查得到、下載得到，查詢須帶 sheetid；目前只在 struNote／表單頁使用，HIS 內開啟時存檔會被平台拒絕；站台是否支援以 online_features 的 runtime.no_patient 為準（院內、院外站台 2026-11-22 起支援），且不要用倉儲以病歷號查詢這類紀錄`;
+// 應用紀錄清單（平台 kunjulin/strucmed#290、#291，docs/PLAN-app-record-list.md；院內、院外站台已部署）：struNote 以 note/?app=<範本ID> 開啟時，
+// 不顯示表單清單，改列出填寫者本人在這張非病人表單的多筆紀錄（一個紀錄鍵 recNo 一筆），可新增、點開修改、刪除。
+// 設定存在 iot 的 f_applist*，只在 f_nopatient 為 true 時有效（一般表單帶了平台一律忽略，編輯器存成 f_applist:false）。
+// 寫法與編輯器 scripts.js?v=20261123d 相同：勾選時六個鍵都寫出，沒勾＝沒有這些鍵
+export const APPLIST_KEY_RULES = ['code', 'week', 'month', 'date', 'time'];
+export const APPLIST_SORTS = ['recDate-desc', 'recDate-asc', 'recNo-desc', 'recNo-asc'];
+export const APPLIST_IOT_KEYS = ['f_applist', 'f_applistTitle', 'f_applistKey', 'f_applistKeyLabel', 'f_applistFields', 'f_applistSort'];
+export const appListIot = al => ({ f_applist: true, f_applistTitle: al.title || '', f_applistKey: al.key || 'code', f_applistKeyLabel: al.key_label || '',
+  f_applistFields: (al.fields || []).join(','), f_applistSort: al.sort || 'recDate-desc' });
+// draft 的清單設定：{ title, key, key_label, fields:[], sort }；沒開回 null。改版 draft 看來源 iot，新 draft 看 meta.options.app_list
+export function appListOf(draft) {
+  const iot = draft.source && draft.source.iot;
+  if (iot) {
+    if (iot.f_applist !== true && iot.f_applist !== 'true') return null;
+    return { title: String(iot.f_applistTitle || ''), key: APPLIST_KEY_RULES.includes(iot.f_applistKey) ? iot.f_applistKey : 'code',
+      key_label: String(iot.f_applistKeyLabel || ''), fields: String(iot.f_applistFields || '').split(',').map(x => x.trim()).filter(Boolean),
+      sort: APPLIST_SORTS.includes(iot.f_applistSort) ? iot.f_applistSort : 'recDate-desc' };
+  }
+  const al = ((draft.meta || {}).options || {}).app_list;
+  return al && typeof al === 'object' ? { title: '', key: 'code', key_label: '', fields: [], sort: 'recDate-desc', ...al } : null;
+}
+export const APPLIST_RULE_TEXT = { code: '使用者輸入代碼', week: '週次（例 2026-W47）', month: '年月（例 2026-11）', date: '日期（例 2026-11-22）', time: '時間（每次新增一筆，例 20261122-153045）' };
+
 // no_patient:true 時的預設：不以病歷號／就醫號查近期紀錄、隱藏「上次紀錄」圖示、開啟時自動取出（struNote 不帶 recNo，
 // 沒勾時開頁是空白，存檔會覆寫同一個紀錄鍵的上一筆）；使用者明確指定的值優先
 export function iotOptionFields(o = {}) {
@@ -274,7 +297,9 @@ export function iotOptionFields(o = {}) {
     f_hideprevicon: typeof o.hide_prev_icon === 'boolean' ? o.hide_prev_icon : np,
     // 只有 true 才寫出：一般表單的輸出與既有版本逐位元相同（平台預設 false）
     ...(np && { f_nopatient: true }),
-    ...((typeof o.auto_load_on_open === 'boolean' ? o.auto_load_on_open : np) && { f_autoLoadOnOpen: true })
+    ...((typeof o.auto_load_on_open === 'boolean' ? o.auto_load_on_open : np) && { f_autoLoadOnOpen: true }),
+    // 一般表單不寫（平台忽略）；form_validate 對這種情形回 E_APPLIST_NOT_NOPATIENT
+    ...(np && o.app_list && typeof o.app_list === 'object' && appListIot(o.app_list))
   };
 }
 // draft 是否為非病人表單：改版 draft 以來源 iot 為準（form_update_meta 的 options 直接改它），新 draft 看 meta.options
@@ -295,7 +320,18 @@ export function applyOptionsToIot(iot, o = {}) {
     if (typeof o.f_opdno !== 'boolean') set('f_opdno', false);
     if (typeof o.hide_prev_icon !== 'boolean') set('f_hideprevicon', true);
     if (typeof o.auto_load_on_open !== 'boolean') set('f_autoLoadOnOpen', true);
-  } else if (o.no_patient === false && iot.f_nopatient !== undefined) { delete iot.f_nopatient; changed.push('f_nopatient'); }
+  } else if (o.no_patient === false && iot.f_nopatient !== undefined) {
+    delete iot.f_nopatient; changed.push('f_nopatient');
+    // 一般表單的清單設定無效：比照編輯器存成 f_applist:false（其餘鍵不寫）
+    if (iot.f_applist === true || iot.f_applist === 'true') { iot.f_applist = false; changed.push('f_applist'); }
+    for (const k of APPLIST_IOT_KEYS.slice(1)) if (iot[k] !== undefined) { delete iot[k]; changed.push(k); }
+  }
+  if (o.app_list === false) {
+    if (iot.f_applist !== undefined && iot.f_applist !== false) { iot.f_applist = false; changed.push('f_applist'); }
+    for (const k of APPLIST_IOT_KEYS.slice(1)) if (iot[k] !== undefined) { delete iot[k]; changed.push(k); }
+  } else if (o.app_list && typeof o.app_list === 'object') {
+    for (const [k, v] of Object.entries(appListIot(o.app_list))) set(k, v);
+  }
   for (const [k, [key, conv]] of Object.entries(OPTION_IOT)) {
     if (o[k] === undefined || o[k] === null || o[k] === '') continue;
     set(key, conv(o[k]));
@@ -311,6 +347,7 @@ export function iotObject(meta, generator) {
     f_opdno: f.f_opdno, f_chtno: f.f_chtno,
     ...(f.f_nopatient && { f_nopatient: true }),
     ...(f.f_autoLoadOnOpen && { f_autoLoadOnOpen: true }),
+    ...(f.f_applist && Object.fromEntries(APPLIST_IOT_KEYS.map(k => [k, f[k]]))),
     templateID: '',
     f_histext: o.histext === 'dict' ? 'histextbydict' : 'histextbyblock',
     f_hideprevicon: f.f_hideprevicon, f_hideAssist: !!o.hide_assist, f_hidePreset: !!o.hide_preset,

@@ -18,7 +18,7 @@ import { walk, isControl } from './formtree.mjs';
 import { digestForm, diffDigest, describeDiff } from './formdiff.mjs';
 import * as dc from './dictcomment.mjs';
 import { scriptPlan } from './script-snippets.mjs';
-import { NOPATIENT_NOTE } from './model.mjs';
+import { NOPATIENT_NOTE, appListOf } from './model.mjs';
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 // 白名單片段（docs/13）：計畫原樣列出渲染後的 JS（閘門 G2 的審閱對象）
@@ -118,6 +118,7 @@ function planCommon(d, v, built, user, base) {
     areas: d.areas.length, controls: v.stats && v.stats.controls,
     dictionaries: built.pkg.dictionaries.map(x => ({ id: x.id, name: x.dicName })),
     ...(v.no_patient && { no_patient: NOPATIENT_NOTE }),
+    ...(v.no_patient && appListOf(d) && { app_list: { ...appListOf(d), url: `${base.replace(/\/+$/, '')}/note/?app=<範本ID>` } }),
     draft_sha256: draftHash(d), body_chars: built.size, warnings: v.warnings,
     ...scriptPlan(d)
   };
@@ -157,14 +158,16 @@ export const ONLINE_WRITE_TOOLS = [
       confirm.verify('online_template_create', h, confirm_token);
       const ok = await approve.awaitApproval('online_template_create', h);
       if (ok.pending) return ok;
-      const r = await online.callRaw('POST', `api/v2/folders/${folder_type}/templates`, { body }, '新增範本');
+      const r = await online.callRaw('POST', `api/v2/folders/${folder_type}/templates`, { body, write: true, timeoutMs: online.templateWriteTimeout() }, '新增範本');
       if (r.status !== 201 && r.status !== 200) mapWriteError(r, '新增範本');
       const j = r.json || {};
       d.published = { site: base, templateID: String(j.templateID || ''), rev: j.rev, sha256: String(j.sha256 || ''), folder: j.folder || { type: folder_type }, action: 'create', at: new Date().toISOString(), draft_sha256: draftHash(d) };
       store.saveDraft(d);
       const warnings = Array.isArray(j.warnings) ? j.warnings.map(String) : [];
       if (j.diverged) warnings.push('W_DIVERGED：伺服器回報分歧（head 不是任何已保存版本）');
+      const appUrl = v.no_patient && appListOf(d) && d.published.templateID ? `${base.replace(/\/+$/, '')}/note/?app=${d.published.templateID}` : '';
       return { template_id: d.published.templateID, rev: j.rev, sha256: d.published.sha256, folder: j.folder, draft_sha256: d.published.draft_sha256, warnings,
+        ...(appUrl && { app_list_url: appUrl }),
         next: `最後請以 online_template_get(${d.published.templateID}) 取回，確認 template.name 與控制項數與 draft 相同（伺服器 sha256 是 head 內容雜湊，與套件 integrity 不同，不能直接比對）` };
     }
   },
@@ -231,7 +234,7 @@ export const ONLINE_WRITE_TOOLS = [
       confirm.verify('online_template_update', h, confirm_token);
       const ok = await approve.awaitApproval('online_template_update', h);
       if (ok.pending) return ok;
-      const r = await online.callRaw('PUT', `api/v2/templates/${id}`, { body, headers: { 'If-Match': `"${etag}"` } }, '更新範本');
+      const r = await online.callRaw('PUT', `api/v2/templates/${id}`, { body, headers: { 'If-Match': `"${etag}"` }, write: true, timeoutMs: online.templateWriteTimeout() }, '更新範本');
       if (r.status !== 200) mapWriteError(r, '更新範本');
       const j = r.json || {};
       d.published = { site: base, templateID: id, rev: j.rev, sha256: String(j.sha256 || ''), folder: j.folder, action: 'update', at: new Date().toISOString(), draft_sha256: draftHash(d) };

@@ -78,6 +78,9 @@ export function validatePackage(p) {
     const iot = p.form[p.form.length - 1];
     if (iot.itemtype === 'iot' && iot.f_nopatient !== undefined && typeof iot.f_nopatient !== 'boolean') e.push('iot.f_nopatient 必須是布林值');
     if (iot.itemtype === 'iot' && iot.f_autoLoadOnOpen !== undefined && typeof iot.f_autoLoadOnOpen !== 'boolean') e.push('iot.f_autoLoadOnOpen 必須是布林值');
+    // 應用紀錄清單（平台 #290）：f_applist 是布林；其他 f_applist* 不合規格時平台換成預設值，這裡只檢查型別
+    if (iot.itemtype === 'iot' && iot.f_applist !== undefined && typeof iot.f_applist !== 'boolean') e.push('iot.f_applist 必須是布林值');
+    if (iot.itemtype === 'iot') for (const k of ['f_applistTitle', 'f_applistKey', 'f_applistKeyLabel', 'f_applistFields', 'f_applistSort']) if (iot[k] !== undefined && typeof iot[k] !== 'string') e.push(`iot.${k} 必須是字串`);
   }
   if (!Array.isArray(p.presets) || p.presets.some(x => !x || !isStr(x.name) || !isStr(x.user))) e.push('presets 格式錯誤');
   if (!Array.isArray(p.dictionaries) || p.dictionaries.some(x => !x || !isStr(x.id) || !isStr(x.dicName) || !x.dicName || !isStr(x.dicType))) e.push('dictionaries 格式錯誤');

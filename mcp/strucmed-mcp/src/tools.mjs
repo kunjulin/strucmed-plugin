@@ -7,7 +7,7 @@ import { E, fail, ToolError } from './errors.mjs';
 import * as store from './store.mjs';
 import * as dict from './dictionary.mjs';
 import * as dc from './dictcomment.mjs';
-import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle, isNoPatient, applyOptionsToIot, NOPATIENT_CODE, NOPATIENT_NOTE } from './model.mjs';
+import { buildControl, toFormJson, buildStructuredArea, buildEmbedArea, embedConfig, EMBED_FIELDS, checkTitle, cellKind, AREA_TYPES, FORMTABLE_PATTERNS, DATATYPES_V01, DATATYPES_V02, DATATYPES_ALL, ATTACH_KINDS, attachFields, LABEL_FORMATS, RUNTIME_ROLE, applyStyle, isNoPatient, applyOptionsToIot, NOPATIENT_CODE, NOPATIENT_NOTE, APPLIST_KEY_RULES, APPLIST_SORTS, APPLIST_IOT_KEYS, appListOf } from './model.mjs';
 import { validateDraft, scriptFindings, tableControlIds, hisTextKeyFindings, DEFERRABLE, EMBED_DEFERRABLE } from './validate.mjs';
 import { validateForm as embedValidateForm, summarize as embedSummarize, summaryText as embedSummaryText } from './embed.mjs';
 import { lintFormula, lintMacro, lintHisQuery, lintPrompt } from './scriptlint.mjs';
@@ -37,14 +37,24 @@ const GROUPS = ['門', '住', '急', '手術', '檢查', '助手', 'All'];
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const bool = description => ({ type: 'boolean', description });
 // 表單選項（form_create、form_update_meta 共用）
-const FORM_OPTION_KEYS = ['no_patient', 'f_chtno', 'f_opdno', 'f_day', 'histext', 'hide_assist', 'hide_preset', 'hide_prev_icon', 'auto_load_on_open'];
+const FORM_OPTION_KEYS = ['no_patient', 'f_chtno', 'f_opdno', 'f_day', 'histext', 'hide_assist', 'hide_preset', 'hide_prev_icon', 'auto_load_on_open', 'app_list'];
+const APPLIST_OPTION_KEYS = ['enabled', 'title', 'key', 'key_label', 'fields', 'sort'];
 const FORM_OPTIONS = { type: 'object', description: '表單選項', properties: {
   no_patient: bool(`非病人表單（iot f_nopatient；教案、會議紀錄等與病人無關的表單）：struNote 不要求病歷號，平台以保留代碼（預設 ${NOPATIENT_CODE}）開啟。紀錄只有填寫者本人查得到；目前只在 struNote／表單頁使用（HIS 內存檔會被平台拒絕）。true 時預設一併 f_chtno:false、f_opdno:false、hide_prev_icon:true、auto_load_on_open:true（明確指定時以指定值為準）；form_validate 會擋 HIS 參照、HISQUERY、LOOKUPDW、嵌入頁 {chtno}／{opdno} 等讀病人資料的寫法（E_NOPATIENT_*）`),
   f_chtno: bool('依病歷號查近期紀錄（預設 true；非病人表單預設 false）'), f_opdno: bool('依就醫號只查當次'),
   f_day: { type: 'number', description: '查詢天數（預設 30）' },
   histext: str('block | dict', { enum: ['block', 'dict'] }),
   hide_assist: bool('隱藏小助手按鈕'), hide_preset: bool('隱藏預設按鈕群組'), hide_prev_icon: bool('隱藏「上次紀錄」圖示（非病人表單預設 true）'),
-  auto_load_on_open: bool('開啟時自動取出最近一次紀錄（iot f_autoLoadOnOpen；編輯器「開啟表單時自動取出本次就醫最近一次紀錄」）。預設 false、不寫出；非病人表單預設 true（struNote 不帶 recNo，沒勾時開頁是空白，存檔會覆寫上一筆）。HIS 已自行帶入紀錄的一般表單不要開，內容會重複') } };
+  auto_load_on_open: bool('開啟時自動取出最近一次紀錄（iot f_autoLoadOnOpen；編輯器「開啟表單時自動取出本次就醫最近一次紀錄」）。預設 false、不寫出；非病人表單預設 true（struNote 不帶 recNo，沒勾時開頁是空白，存檔會覆寫上一筆）。HIS 已自行帶入紀錄的一般表單不要開，內容會重複'),
+  app_list: { type: 'object', additionalProperties: false, description: '應用紀錄清單（iot f_applist*；只對非病人表單有效）：struNote 以「<站台>/note/?app=<範本ID>」開啟時，不顯示表單清單，' +
+    '改列出填寫者本人在這張表單的多筆紀錄（一個紀錄鍵 recNo 一筆），可新增、點開修改、刪除（刪除無法復原）。適合一週一筆的學習歷程、一篇一筆的衛教或審查紀錄。' +
+    '帶這個物件即開啟；{ enabled:false } 關閉。', properties: {
+    enabled: bool('false＝關閉應用紀錄清單（預設 true）'),
+    title: str('清單標題（最多 40 字；空白時顯示「紀錄清單」）'),
+    key: str('「新增」時紀錄鍵 recNo 的產生規則：code＝使用者輸入（預設）、week＝週次 2026-W47、month＝年月 2026-11、date＝日期 2026-11-22、time＝時間（每次新增一筆）', { enum: ['code', 'week', 'month', 'date', 'time'] }),
+    key_label: str('紀錄鍵在畫面上的名稱（最多 20 字，例：週次、文件代碼；空白時顯示「紀錄鍵」）'),
+    fields: { type: 'array', items: { type: 'string' }, description: '清單顯示的欄位：這張表單綁定的字典名稱，最多 3 個，第一個當標題（取自存檔的明細，沒綁字典的欄位顯示不出來）' },
+    sort: str('排序', { enum: ['recDate-desc', 'recDate-asc', 'recNo-desc', 'recNo-asc'] }) } } } };
 // 只留有給值的鍵（部分 agent 平台會把沒用到的選填參數填成 '' 或 null），型別不對就拒絕
 function cleanOptions(o) {
   if (o === undefined || o === null || o === '') return {};
@@ -54,11 +64,39 @@ function cleanOptions(o) {
   for (const k of FORM_OPTION_KEYS) {
     const v = o[k];
     if (v === undefined || v === null || v === '') continue;
+    if (k === 'app_list') { out[k] = cleanAppList(v); continue; }
     if (k === 'f_day') { if (!Number.isFinite(Number(v))) fail(E.INVALID_INPUT, 'options.f_day 必須是數字'); out[k] = Number(v); }
     else if (k === 'histext') { if (!['block', 'dict'].includes(v)) fail(E.INVALID_INPUT, 'options.histext 必須是 block 或 dict'); out[k] = v; }
     else { if (typeof v !== 'boolean') fail(E.INVALID_INPUT, `options.${k} 必須是 true 或 false`); out[k] = v; }
   }
   return out;
+}
+// 應用紀錄清單的設定：false（關閉）或 { title, key, key_label, fields:[], sort }；長度與規則與平台編輯器相同，超過就拒絕（不默默截斷）
+function cleanAppList(v) {
+  if (typeof v !== 'object' || Array.isArray(v)) fail(E.INVALID_INPUT, 'options.app_list 必須是物件（{ enabled:false } 關閉）');
+  checkKeys(v, APPLIST_OPTION_KEYS, 'options.app_list');
+  if (v.enabled !== undefined && typeof v.enabled !== 'boolean') fail(E.INVALID_INPUT, 'options.app_list.enabled 必須是 true 或 false');
+  if (v.enabled === false) return false;
+  const text = (k, max) => {
+    const s = v[k] === undefined || v[k] === null ? '' : String(v[k]).trim();
+    if (s.length > max) fail(E.INVALID_INPUT, `options.app_list.${k} 最多 ${max} 字`);
+    if (/[\r\n]/.test(s)) fail(E.INVALID_INPUT, `options.app_list.${k} 不可含換行`);
+    return s;
+  };
+  const key = v.key === undefined || v.key === '' ? 'code' : String(v.key);
+  if (!APPLIST_KEY_RULES.includes(key)) fail(E.INVALID_INPUT, `options.app_list.key 必須是 ${APPLIST_KEY_RULES.join('、')}`);
+  const sort = v.sort === undefined || v.sort === '' ? 'recDate-desc' : String(v.sort);
+  if (!APPLIST_SORTS.includes(sort)) fail(E.INVALID_INPUT, `options.app_list.sort 必須是 ${APPLIST_SORTS.join('、')}`);
+  const raw = v.fields === undefined || v.fields === null ? [] : Array.isArray(v.fields) ? v.fields : String(v.fields).split(/[,，、]/);
+  const fields = [];
+  for (const f of raw) {
+    const n = String(f ?? '').trim();
+    if (!n || fields.includes(n)) continue;
+    if (n.length > 64 || /[,，、]/.test(n)) fail(E.INVALID_INPUT, `options.app_list.fields 的「${n.slice(0, 20)}」不是字典名稱（最多 64 字、不含逗號）`);
+    fields.push(n);
+  }
+  if (fields.length > 3) fail(E.INVALID_INPUT, `options.app_list.fields 最多 3 個（這次 ${fields.length} 個）`);
+  return { title: text('title', 40), key, key_label: text('key_label', 20), fields, sort };
 }
 const MAX_SOURCE = 10 * 1024 * 1024;
 const HIS_TEXT_KEYS = { type: 'array', items: { type: 'string' }, description: 'HIS 接收端要的文字鍵（選填；例 ["Report","Impression"]，每個 ≤ 40 字、英數與中文）；只存在本機 draft，不寫進表單，form_validate 與預覽頁的文字輸出會比對' };
@@ -195,6 +233,13 @@ const big5Memo = (memo, name, warnings) => memo && typeof memo === 'object' ? Ob
   const label = `字典「${name}」的補述 ${dc.MEMO_LABEL[k] || k} `;
   return [k, Array.isArray(v) ? v.map(x => big5Text(x, label, warnings)) : big5Text(v, label, warnings)];
 })) : memo;
+// 名稱、捷徑、Info 原樣寫進資料夾清單的 dictVal（表單內容是 base64，不受影響）：倉儲存不下的字元會被換掉並吃掉結尾的 }，
+// 清單項目變成壞掉的 JSON，表單存了卻不在清單裡（平台 kunjulin/strucmed#299；2026-11-22 院內實測，本工具產生的示範表單 Info 含「≥」）。
+// 平台 #299 起保存時回 400。這裡在寫進 draft 前把有對照的字換掉（W_NON_BIG5）；沒有對照的留著，由 form_validate 回 E_META_NON_BIG5
+export const META_BIG5_LABEL = { name: '表單名稱', shortcut: '捷徑', description: 'Info' };
+function big5Args(a, warnings) {
+  for (const k of Object.keys(META_BIG5_LABEL)) if (typeof a[k] === 'string') a[k] = big5Text(a[k], `${META_BIG5_LABEL[k]}`, warnings);
+}
 function big5Ref(ref, warnings) {
   const name = ref.name || ref.id;
   return { ...ref, ...(ref.comment !== undefined && { comment: big5Text(ref.comment, `字典「${name}」的說明 `, warnings) }), ...(ref.memo !== undefined && { memo: big5Memo(ref.memo, name, warnings) }) };
@@ -623,6 +668,9 @@ export const TOOLS = [
       his_text_keys: HIS_TEXT_KEYS,
       from_draft_id: str('重建時的舊 draft id（選填）：依字典名稱帶過待新建字典的 desc、memo、fhir 與既有字典綁定') } },
     handler(a) {
+      const warnings = [];
+      a = { ...a };
+      big5Args(a, warnings);
       const name = String(a.name || '').trim();
       if (!name) fail(E.INVALID_INPUT, '表單名稱不可空白');
       if (name.length > 36) fail(E.INVALID_INPUT, '表單名稱超過 36 字');
@@ -638,6 +686,7 @@ export const TOOLS = [
       store.saveDraft(d);
       return { draft_id: d.draft_id, ...shortcutNote(a.shortcut),
         ...(isNoPatient(d) && { no_patient: true, no_patient_note: NOPATIENT_NOTE }),
+        ...(warnings.length && { warnings }),
         ...(carried && { carried: { from: carried.from, pending: carried.pending.map(p => p.name), bound: carried.bound.map(b => b.name) } }) };
     }
   },
@@ -662,6 +711,9 @@ export const TOOLS = [
       keep_presets: bool('保留來源的表單預設（片語，F6）並在 form_export 時寫進套件（預設 false＝不帶入：片語是使用者存下的填寫值，可能含病人資料；上架本來就不寫入片語）') } },
     handler(a) {
       const ws = store.workspace();
+      const metaWarnings = [];
+      a = { ...a };
+      big5Args(a, metaWarnings);
       let text, fileName;
       if (useInline(a, 'source_path', 'source_text')) {
         text = String(a.source_text);
@@ -713,6 +765,9 @@ export const TOOLS = [
         pendingDictionaries: [], touched: [], nextItemId: 1
       };
       d.nextItemId = maxItemId(d) + 1;
+      // 沿用來源的 Info、捷徑（使用者沒有另外指定時）同樣先換掉有對照的字；更新線上範本時沿用的是線上值，本來就存得下
+      if (a.description === undefined) d.meta.description = big5Text(d.meta.description, META_BIG5_LABEL.description, metaWarnings);
+      if (a.shortcut === undefined) d.meta.shortcut = big5Text(d.meta.shortcut, META_BIG5_LABEL.shortcut, metaWarnings);
       store.saveDraft(d);
       const v = validateDraft(d, store.loadDictIndex(), store.loadPolicy());
       const types = {};
@@ -720,6 +775,7 @@ export const TOOLS = [
       return {
         draft_id: d.draft_id, source_kind: src.kind, derived_from: d.source.derivedFrom, ...shortcutNote(a.shortcut),
         ...(isNoPatient(d) && { no_patient: true }),
+        ...(metaWarnings.length && { warnings: metaWarnings }),
         area_types: types, controls: v.stats.controls, next_itemid: d.nextItemId,
         js_chars: js.length, presets: d.source.presets.length, presets_dropped: keepPresets ? 0 : srcPresets.length,
         notes: [...(forUpdate
@@ -745,6 +801,9 @@ export const TOOLS = [
       drop_presets: bool('移除 draft 裡的表單預設（片語），form_export 不再寫進套件；疑似含病人資料（E_PHI_SUSPECT）時用') } },
     handler(a) {
       const d = store.loadDraft(a.draft_id);
+      const warnings = [];
+      a = { ...a };
+      big5Args(a, warnings);
       let presetsDropped;
       if (a.drop_presets === true) {
         presetsDropped = (d.source && Array.isArray(d.source.presets)) ? d.source.presets.length : 0;
@@ -777,8 +836,8 @@ export const TOOLS = [
       }
       d.metaSet = [...new Set([...(d.metaSet || []), ...['name', 'shortcut', 'groups', 'description'].filter(k => a[k] !== undefined)])];
       store.saveDraft(d);
-      return { meta: d.meta, ...shortcutNote(a.shortcut), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }),
-        ...(optionsChanged && { options_changed: optionsChanged, ...(d.source && d.source.iot && { iot_options: Object.fromEntries(['f_nopatient', 'f_chtno', 'f_opdno', 'f_hideprevicon', 'f_hideAssist', 'f_hidePreset', 'f_autoLoadOnOpen', 'f_day', 'f_histext'].filter(k => d.source.iot[k] !== undefined).map(k => [k, d.source.iot[k]])) }) }),
+      return { meta: d.meta, ...shortcutNote(a.shortcut), ...(warnings.length && { warnings }), ...(presetsDropped !== undefined && { presets_dropped: presetsDropped }),
+        ...(optionsChanged && { options_changed: optionsChanged, ...(d.source && d.source.iot && { iot_options: Object.fromEntries(['f_nopatient', 'f_chtno', 'f_opdno', 'f_hideprevicon', 'f_hideAssist', 'f_hidePreset', 'f_autoLoadOnOpen', ...APPLIST_IOT_KEYS, 'f_day', 'f_histext'].filter(k => d.source.iot[k] !== undefined).map(k => [k, d.source.iot[k]])) }) }),
         ...(isNoPatient(d) && { no_patient: true, no_patient_note: NOPATIENT_NOTE }) };
     }
   },

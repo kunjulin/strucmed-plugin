@@ -176,7 +176,7 @@ export const ONLINE_TOOLS = [
   },
   {
     name: 'online_features',
-    description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中；runtime.no_patient＝站台是否支援非病人表單，' +
+    description: '（online，唯讀）站台功能狀態：api/health、api/v2/runtime/features（登入者的存檔／查詢開關與白名單命中；runtime.no_patient＝站台是否支援非病人表單，runtime.app_records＝院外站台讓非病人表單的紀錄經登入後的 records/* 存取（應用紀錄清單可用；這時 save／query 是 false 也不影響非病人表單），' +
       'supported:true 時 chtno 是保留代碼，false 時 reason 說明是站台尚未更新還是停用）、' +
       'api/llm-config（只回 enabled 與 base_url；不回傳任何 token）、api/v2/runtime/apps（嵌入頁 APP 目錄：經啟動橋接頁 app-launch.html 啟動的 APP 代號、名稱、實際主機、送出的欄位；' +
       '寫成本機快取 .strucmed/embed-apps.json，form_validate 據此揭露嵌入頁面資料流）。任一端點失敗只標 available:false 並回 warnings，不中斷。',
@@ -190,7 +190,9 @@ export const ONLINE_TOOLS = [
       if (h) out.health = { available: true, ok: !!h.ok, ts: h.ts || null };
       const f = await probe('api/v2/runtime/features', () => online.call('GET', 'api/v2/runtime/features', { query: { user: user.userId, deptNo: user.deptNo } }, '讀取 runtime 功能'));
       // 非病人表單（f_nopatient）：站台回 noPatientChtno（保留代碼）才算支援；沒有這個欄位＝站台尚未更新，空字串＝站台停用
-      if (f) out.runtime = { available: true, presets: !!f.presets, record_delete: !!f.recordDelete, save: !!f.save, query: !!f.query,
+      // app_records（平台 #294，V2:Note:AppRecords）：院外站台不開 save／query（那兩個也管病人紀錄），只讓需要登入的 records/* 處理本人的非病人表單紀錄；
+      // 這時 save、query 是 false，但非病人表單照樣能存、應用紀錄清單照樣能用。舊站台沒有這個欄位＝false
+      if (f) out.runtime = { available: true, presets: !!f.presets, record_delete: !!f.recordDelete, save: !!f.save, query: !!f.query, app_records: f.appRecords === true,
         no_patient: typeof f.noPatientChtno === 'string' && f.noPatientChtno
           ? { supported: true, chtno: f.noPatientChtno }
           : { supported: false, reason: f.noPatientChtno === '' ? '站台停用非病人表單（保留代碼設成空字串）：f_nopatient 的表單照一般表單處理' : '站台沒有回 noPatientChtno：尚未更新到支援非病人表單的版本，f_nopatient 的表單會被當成一般表單、要求病歷號' } };

@@ -107,6 +107,8 @@
 | `E_CONFIRM_MISMATCH`（更新） | 取得計畫後線上的名稱、捷徑、作業別或 Info 被改 | 重新取得計畫，`plan.meta` 重新給使用者看 |
 | `E_LIMIT` | 本文過大或頻率（每分鐘 20 次寫入） | 等候或精簡 |
 | `E_UPSTREAM` 且 `details.pending` | 範本：倉儲寫入中途失敗 | **不要重複保存**；用 `online_template_versions`、`online_folder_list` 看狀態，請管理者在管理頁處理待重送 |
+| `E_UPSTREAM` 且 `details.unknown` | 範本：請求送出後沒有回應（等了 5 分鐘仍逾時，或連線中斷）；平台 #298 起倉儲慢時一次保存要 2 分半到 4 分鐘 | **結果不明，不要重複保存**：先 `online_folder_list`（新建）或 `online_template_versions`（更新）確認有沒有寫入；有就照 §5 收尾，確定沒有才重新取得計畫 |
+| `E_INVALID_INPUT`（範本，HTTP 400，訊息提到 Big5／CP950） | 名稱、捷徑或 Info 有倉儲存不下的字元（平台 #299） | 本工具會先擋（`E_META_NON_BIG5`）；仍遇到時 `form_update_meta` 改掉該字元，重新取得計畫 |
 | 字典 `E_UPSTREAM`（`online_dictionary_batch` 回 `succeeded 0`／`pending_left` 非空，或錯誤的 `details.next`） | 站台或倉儲失敗，字典沒有建立；`confirm_token` 已用掉 | 照回傳的 `next`：重做第一次呼叫取 plan（只列尚未建立的字典），每本內容與定稿相同就**不必重核准**（sidecar 仍有效，hooks 放行），帶新的 `confirm_token` 再做第二次呼叫；不同才 `Revision` +1 重新呈現。同名字典已存在時伺服器回 reused，重做是安全的。倉儲仍失敗就告知使用者稍後再試，或改走 `form_export` |
 | `W_DIVERGED` | 上次經 API 保存後曾被其他方式修改 | 已保存；告知使用者 |
 
@@ -117,5 +119,5 @@
 - `online_template_get(template_id, save:true)`（只回摘要）：確認 `summary` 的名稱、捷徑、作業別與控制項數與定稿相同（伺服器的 `sha256` 是 head 雜湊，與套件 `integrity` 不同，不能直接比對）。
 - 更新時另跑 `online_template_versions` 回報新 rev 與 `current`。
 - 交付：templateID、資料夾（格式同 §3 的表）、rev、是否已上架（捷徑＋作業別）、W_AI_DATAFLOW、W_RENUMBER_MACRO（在編輯器開啟後不要按「重新編號」）、人工確認清單（編輯器開啟檢查人形圖示與字典角色；新字典角色一律 tohis）。
-- 非病人表單（plan 有 `no_patient`、`form_validate` 回 `W_NOPATIENT_FORM`）必列：struNote 不需病歷號、平台以保留代碼開啟；站台是否支援（院內、院外站台都已支援；其他站台以 `online_features` 的 `runtime.no_patient` 為準，不支援的站台不要使用、不輸入真實病歷號）；紀錄只有填寫者本人查得到、下載得到，目前無法彙整他人的紀錄；從 struNote 開每人每張表單一筆，HIS 內開啟時存檔會被平台拒絕；不要用倉儲以病歷號查詢這類紀錄（`FormDesignRules.md`〈非病人表單〉）。上架前後有登入時以 `online_features` 看 `runtime.no_patient`：`supported: false` 要在交付的第一行講明這個站台目前不能用。離線輸出時 manifest「## 非病人表單」已寫同樣內容。
+- 非病人表單（plan 有 `no_patient`、`form_validate` 回 `W_NOPATIENT_FORM`）必列：struNote 不需病歷號、平台以保留代碼開啟；站台是否支援（院內、院外站台都已支援；其他站台以 `online_features` 的 `runtime.no_patient` 為準，不支援的站台不要使用、不輸入真實病歷號）；紀錄只有填寫者本人查得到、下載得到，目前無法彙整他人的紀錄；沒開應用紀錄清單時從 struNote 開每人每張表單一筆，開了（plan 有 `app_list`）給新建結果的 `app_list_url`（`<站台>/note/?app=<範本ID>`）、紀錄鍵規則與「刪除無法復原」；HIS 內開啟時存檔會被平台拒絕；不要用倉儲以病歷號查詢這類紀錄（`FormDesignRules.md`〈非病人表單〉、〈應用紀錄清單〉）。上架前後有登入時以 `online_features` 看 `runtime.no_patient`：`supported: false` 要在交付的第一行講明這個站台目前不能用。離線輸出時 manifest「## 非病人表單」已寫同樣內容。
 - 字典：新建與補述的字典（id 前 8 碼）；有體系升級建議時列出字典名稱、id 前 8 碼與理由，註明「**請轉給體系字典管理者在字典頁升級**；升級不改 id，這次上架的表單不用改」。FHIR 對應中標「待人工確認」的代碼列出請使用者查核。

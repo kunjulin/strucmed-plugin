@@ -6,15 +6,17 @@
 
 | 層 | 例子 | 誰看 |
 |---|---|---|
-| 表單巨集寫的**別名** | `nemotron35`、`tnemotron35(-low/-medium/-high)`（只經 Gateway）、`gemma3`、`gemma3_12b`、`medgemma`、`tw`、`ph4`、空字串＝預設（落日模型見 §5，不要新用） | 使用者寫在 `LLMQUERY(id, prompt, "別名")`、`LLMvision(...)` |
-| HIS 端 runtime 送出的模型名 | `Nemotron-3.5-Super-VL`（只經 Gateway）、`gemma3`、`gemma3:12b`、`medgemma`、`gemma2:latest`、`phi4`、`llama3.1:8b-instruct-q8_0` | `TempHtml.js` LLMquery 路由 |
+| 表單巨集寫的**別名** | `nemotron35`、`tnemotron35(-low/-medium/-high)`、`gemma4_31b`、`tgemma4_31b(-low/-medium/-high)`（以上只經 Gateway）、`gemma3`、`gemma3_12b`、`medgemma`、`tw`、`ph4`、空字串＝預設（落日模型見 §5，不要新用） | 使用者寫在 `LLMQUERY(id, prompt, "別名")`、`LLMvision(...)` |
+| HIS 端 runtime 送出的模型名 | `Nemotron-3.5-Super-VL`、`Gemma-4-31b`（只經 Gateway）、`gemma3`、`gemma3:12b`、`medgemma`、`gemma2:latest`、`phi4`、`llama3.1:8b-instruct-q8_0` | `TempHtml.js` LLMquery 路由 |
 | LlmGateway 的模型 id | 同上，但 Ollama 名稱加標籤：`gemma3` → `gemma3:latest`、`medgemma` → `medgemma:latest`、`phi4` → `phi4:latest`（`TempHtml.js` `LLM_GATEWAY_MODEL_NAMES`） | `GET /v1/models` 的 `id` |
 
-對應程式：`mcp/strucmed-mcp/src/policy.mjs`（`gatewayModelFor(alias, fn)`）。LLMvision 只有 `gemma3`、`gemma3_12b`、`medgemma`（→ `medgemma:4b_vision`）、`nemotron35`（→ `Nemotron-3.5-Super-VL`，不思考，只經 Gateway）與預設 `gemma3:12b`。
+對應程式：`mcp/strucmed-mcp/src/policy.mjs`（`gatewayModelFor(alias, fn)`）。LLMvision 只有 `gemma3`、`gemma3_12b`、`medgemma`（→ `medgemma:4b_vision`）、`nemotron35`（→ `Nemotron-3.5-Super-VL`，不思考，只經 Gateway）、`gemma4_31b`（→ `Gemma-4-31b`，不思考，只經 Gateway）與預設 `gemma3:12b`。
 
-**只經 Gateway 的模型**（`nemotron35` 系列，平台 20261124）：醫科管控端點要金鑰、不回 CORS，金鑰只放 LlmGateway 伺服器，前端沒有直連端點。站台沒有啟用 Gateway 時 `LLMQUERY` 顯示「這個模型只能經院內 LLM Gateway 使用」、不送出（不會改用別的模型），`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`；舊站 `/go/` 沒有這些代號。`formula_check`／`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY` 提醒。`tnemotron35` 的後綴調的是**回答的變化程度，不是思考長短**（temperature：`-low` 0.1、`-medium` 0.3、`tnemotron35`／`-high` 0.5）：`-low` 每次最一致，適合擷取與固定格式；`-high` 變化較多，與不加後綴相同。`max_tokens` 16000；上下文約 262K（262,144 token）；一次請求上限 8 MiB。思考過程顯示在結果欄位旁的思考框，欄位只寫入最後的回答。
+**只經 Gateway 的模型**（`nemotron35` 系列，平台 20261124）：醫科管控端點要金鑰、不回 CORS，金鑰只放 LlmGateway 伺服器，前端沒有直連端點。站台沒有啟用 Gateway 時 `LLMQUERY` 顯示「這個模型只能經院內 LLM Gateway 使用」、不送出（不會改用別的模型），`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`。舊站 `/go/`（HIS「AI小助手」視窗開的 `/go/temp2.html`）以平台 `deploy/go-*` 同步：`nemotron35` 系列 2026-11-22 起、`gemma4_31b` 系列與新的思考強度 2026-11-28 起可用於 `LLMQUERY`／`LLMvision`，`/go` 沒有 `LLMATTACH`。`formula_check`／`form_validate` 回 `W_LLM_MODEL_GATEWAY_ONLY` 提醒。`tnemotron35` 的後綴同時調**回答的變化程度與思考長短**（平台 20261127 起；之前只調 temperature）：temperature `-low` 0.1、`-medium` 0.3、`tnemotron35`／`-high` 0.5；思考長度 `tnemotron35`／`-high` 最長（只開思考），`-medium` 較短（加 `medium_effort`），`-low` 最短（再加思考長度上限 512 token）。`-low` 每次最一致、思考最短，適合擷取與固定格式；`-high` 與不加後綴相同。`max_tokens` 16000；上下文約 262K（262,144 token）；一次請求上限 8 MiB。思考過程顯示在結果欄位旁的思考框，欄位只寫入最後的回答。
 
-`LLMATTACH`（附件容器，flag `attachBox`）的內建代號是 LLMvision 的代號再加 `tnemotron35`（思考）；用 `nemotron35`／`tnemotron35` 時平台送出前以 8 MiB 檢查（影像與 PDF 頁面影像都算），超過就擋下；**不在代號表的名稱不會被改成預設**，經 LlmGateway 時原樣當模型 id 送出（`W_LLM_MODEL_PASSTHROUGH`）。所以還沒有代號的新模型，直接寫 `llmgateway_models` 回傳的 id，大小寫要完全相同；有白名單快取時會檢查存在、狀態與視覺能力。直連（沒有 Gateway）時未知名稱改用預設；院外站台用使用者在設定畫面選的模型。
+**Gemma 4 31B**（`gemma4_31b` 系列，平台 20261127）：與 Nemotron 掛在同一個管控端點，同樣只經 Gateway（`W_LLM_MODEL_GATEWAY_ONLY`），沒有 Gateway 時的行為相同。`gemma4_31b` 不思考；`tgemma4_31b` 思考（強度用模型預設）；`tgemma4_31b-low`／`-medium`／`-high` 思考並指定強度（`reasoning_effort`），temperature 同樣是 0.1／0.3／0.5。上下文 65,536 token（比 Nemotron 的 262K 小很多，長篇病歷與長文件仍用 `nemotron35`）；`max_tokens` 16000；一次請求上限 8 MiB。`gemma4_31b`／`tgemma4_31b` 是 2026-09 移除過的舊代號，平台沿用同一組名稱：**站台還沒更新到 20261127 時，這些代號會被靜默改用預設模型**。院內 LVAIW 的 `/strucmed` 與 `/go` 已於 2026-11-28 更新並實測（LlmGateway 逐筆紀錄確認送到 `Gemma-4-31b`）；其他站台要有白名單快取且清單內有 `Gemma-4-31b` 才建議使用，並請使用者在編輯器預覽實跑一次確認。
+
+`LLMATTACH`（附件容器，flag `attachBox`）的內建代號是 LLMvision 的代號再加 `tnemotron35`、`tgemma4_31b`（思考）；用 `nemotron35`／`tnemotron35`、`gemma4_31b`／`tgemma4_31b` 時平台送出前以 8 MiB 檢查（影像與 PDF 頁面影像都算），超過就擋下；**不在代號表的名稱不會被改成預設**，經 LlmGateway 時原樣當模型 id 送出（`W_LLM_MODEL_PASSTHROUGH`）。所以還沒有代號的新模型，直接寫 `llmgateway_models` 回傳的 id，大小寫要完全相同；有白名單快取時會檢查存在、狀態與視覺能力。直連（沒有 Gateway）時未知名稱改用預設；院外站台用使用者在設定畫面選的模型。
 
 ## 2. 白名單快取
 
@@ -46,16 +48,17 @@
 | 醫療影像（LLMvision） | `medgemma` | `medgemma:4b_vision` |
 | 短句翻譯、簡單整理 | `gemma3_12b`（`tw` 也夠用，但閘道把 gemma2 標 deprecated 時會回 `E_LLM_MODEL_DEPRECATED`，以快取為準） | `gemma3:12b` |
 | 低延遲簡短任務、LLM 控制項 | 空字串（預設） | `llama3.1:8b-instruct-q8_0` |
+| 要調整思考強度的推理；`nemotron35` 系列不合用時的替代 | `tgemma4_31b-low`／`-medium`／`-high`（不思考用 `gemma4_31b`）。**白名單快取有 `Gemma-4-31b` 才用**；上下文只有 65K | `Gemma-4-31b` |
 | **不得新用** | 落日模型（§5，qwen 系列） | — |
-| 避免 | `math`（gemma2）、`ph4`（視金鑰）、已移除的 `gemma3_27b`、`medgemma:27b`、`gemma4_31b` | — |
+| 避免 | `math`（gemma2）、`ph4`（視金鑰）、已移除的 `gemma3_27b`、`medgemma:27b` | — |
 
-**用 `nemotron35` 系列的前提**（每次建議都要講）：只經院內 LLM Gateway（`W_LLM_MODEL_GATEWAY_ONLY`）。站台沒有啟用 Gateway 時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`；舊站 `/go/` 沒有這些代號；院外站台忽略巨集指定的院內模型代號，改用使用者在設定畫面選的院外模型（§6）。
+**用 `nemotron35`、`gemma4_31b` 系列的前提**（每次建議都要講）：只經院內 LLM Gateway（`W_LLM_MODEL_GATEWAY_ONLY`）。站台沒有啟用 Gateway 時 `LLMQUERY` 不送出、`LLMvision`／`LLMATTACH` 改用預設 `gemma3:12b`；舊站 `/go/`（AI小助手）2026-11-28 起也有這兩個系列的 `LLMQUERY`／`LLMvision` 代號，沒有 `LLMATTACH`；院外站台忽略巨集指定的院內模型代號，改用使用者在設定畫面選的院外模型（§6）。
 
-GitBook 預告 2026-11 下旬新增 Gemma 4 31B，上線後才公告寫法：**公告前不要寫任何 Gemma 4 的代號**（`gemma4_31b` 是已移除的舊代號，會回 `E_LLM_MODEL_UNKNOWN`）。
+Gemma 4 31B 的代號（`gemma4_31b` 系列）自平台 20261127 起可用，預設建議仍是 `nemotron35` 系列；院內 2026-11-28 已實測文字回答（`/strucmed`、AI小助手）與 LlmGateway Playground 讀影像；`reasoning_effort` 的效果、表單內 `LLMvision`／`LLMATTACH` 尚未實測，不要對使用者保證效果。
 
 ## 4. 試跑（選用）
 
-`llmgateway_chat_test`（flag `llmChatTest`，預設關）：只接受白名單內且非 deprecated／maintenance 的模型（落日模型仍可試跑，回 `W_LLM_MODEL_SUNSET`，只用來和既有表單的回覆比對）；prompt 先做個資偵測（身分證字號、「病歷號／姓名：」樣式 → 拒絕；7–10 位數字 → 警告）；`max_tokens ≤ 1024`；不送影像；標頭 `X-Client-Feature: strucmed-skill`。**會計入金鑰配額**，只在使用者要求比較模型回覆時用；真正的表單 LLM 回覆仍以編輯器預覽為準。
+`llmgateway_chat_test`（flag `llmChatTest`，預設關）：只接受白名單內且非 deprecated／maintenance 的模型（落日模型仍可試跑，回 `W_LLM_MODEL_SUNSET`，只用來和既有表單的回覆比對）；prompt 先做個資偵測（身分證字號、「病歷號／姓名：」樣式 → 拒絕；7–10 位數字 → 警告）；`max_tokens ≤ 1024`；不送影像；Nemotron、Gemma 4 的思考開關與強度依別名比照 HIS 端送出（`t` 開頭＝思考、後綴＝強度；也可用 `thinking`、`reasoning_effort` 參數指定），思考內容算在 `max_tokens` 內（`W_LLM_THINKING_BUDGET`）；標頭 `X-Client-Feature: strucmed-skill`。**會計入金鑰配額**，只在使用者要求比較模型回覆時用；真正的表單 LLM 回覆仍以編輯器預覽為準。
 
 ## 5. 落日模型（qwen 系列，院方決定 2026-11-19）
 

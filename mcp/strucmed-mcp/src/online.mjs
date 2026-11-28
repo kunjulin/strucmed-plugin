@@ -15,6 +15,9 @@ import { E, fail } from './errors.mjs';
 import * as site from './site.mjs';
 
 const TIMEOUT_MS = 30_000;
+// 範本寫入（POST folders/{type}/templates、PUT templates/{id}）：平台 #298 起，倉儲慢時讀清單會重試、清單上傳逾時會重讀查核，
+// 一次保存最久約 2 分半到 4 分鐘（另加資料夾鎖最多 30 秒），所以這兩個呼叫等 5 分鐘；STRUCMED_TEMPLATE_WRITE_TIMEOUT_MS 只供測試
+export const templateWriteTimeout = () => { const n = Number(process.env.STRUCMED_TEMPLATE_WRITE_TIMEOUT_MS); return Number.isFinite(n) && n > 0 ? n : 300_000; };
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 const CLIENT_ID = 'strucmed-mcp';
@@ -42,7 +45,7 @@ export function baseUrl() {
 
 const clip = (s, n = 300) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; };
 
-async function send(base, method, path, { body, token, query, headers: extra } = {}) {
+async function send(base, method, path, { body, token, query, headers: extra, timeoutMs } = {}) {
   const url = new URL(`${base}/${path}`);
   for (const [k, v] of Object.entries(query || {})) if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
   const headers = { Accept: 'application/json', ...(extra || {}) };
@@ -51,11 +54,11 @@ async function send(base, method, path, { body, token, query, headers: extra } =
   let res;
   try {
     res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
+      redirect: 'manual', signal: AbortSignal.timeout(timeoutMs || TIMEOUT_MS) });
   } catch (e) {
     // 不帶 e.message：避免任何實作把請求內容放進例外訊息
     const why = e && e.name === 'TimeoutError' ? '逾時' : (e && e.cause && e.cause.code) || (e && e.name) || '連線失敗';
-    fail(E.UPSTREAM, `無法連線到 ${url.host}（${why}）`, { path });
+    fail(E.UPSTREAM, `無法連線到 ${url.host}（${why}）`, { path, network: why });
   }
   const text = await res.text();
   let json = null;
@@ -217,10 +220,20 @@ async function refreshTokens(base) {
 export async function callRaw(method, path, opts, what) {
   const base = baseUrl();
   currentUser();
-  let r = await send(base, method, path, { ...opts, token: session.access });
+  // write:true（範本寫入）：請求已送出卻沒有回應（逾時、連線中斷）時，站台可能已經寫入——回結果不明，不讓呼叫端重送
+  const go = async () => {
+    try { return await send(base, method, path, { ...opts, token: session.access }); }
+    catch (e) {
+      if (!opts || !opts.write || !e.details || !e.details.network) throw e;
+      fail(E.UPSTREAM, `${what}的結果不明（${e.details.network}）：站台可能已經寫入（倉儲慢時一次保存要好幾分鐘）。**請勿重複保存**：` +
+        '先以 online_folder_list 與 online_template_versions 確認範本是否已建立或已更新；確認沒有寫入再重新取得計畫',
+        { path, unknown: true, pending: true, reason: e.details.network });
+    }
+  };
+  let r = await go();
   if (r.status === 401 && session && session.refresh) {
     await refreshTokens(base);
-    r = await send(base, method, path, { ...opts, token: session.access });
+    r = await go();
   }
   if (r.status === 401) { session = null; upstreamError(r, what); }
   return r;

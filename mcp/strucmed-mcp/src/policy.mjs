@@ -17,11 +17,14 @@ const LLMQUERY_SENT = {
   qwen3627b: 'Qwen3.6:27B', tqwen3627b: 'Qwen3.6:27B', 'tqwen3627b-low': 'Qwen3.6:27B', 'tqwen3627b-medium': 'Qwen3.6:27B', 'tqwen3627b-high': 'Qwen3.6:27B',
   // 只經 Gateway（TempHtml.js LLM_GATEWAY_ONLY_MODELS，20261124）
   nemotron35: 'Nemotron-3.5-Super-VL', tnemotron35: 'Nemotron-3.5-Super-VL', 'tnemotron35-low': 'Nemotron-3.5-Super-VL',
-  'tnemotron35-medium': 'Nemotron-3.5-Super-VL', 'tnemotron35-high': 'Nemotron-3.5-Super-VL'
+  'tnemotron35-medium': 'Nemotron-3.5-Super-VL', 'tnemotron35-high': 'Nemotron-3.5-Super-VL',
+  // Gemma 4 31B（平台 20261127，只經 Gateway）
+  gemma4_31b: 'Gemma-4-31b', tgemma4_31b: 'Gemma-4-31b', 'tgemma4_31b-low': 'Gemma-4-31b',
+  'tgemma4_31b-medium': 'Gemma-4-31b', 'tgemma4_31b-high': 'Gemma-4-31b'
 };
-const LLMVISION_SENT = { '': 'gemma3:12b', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma:4b_vision', nemotron35: 'Nemotron-3.5-Super-VL' };
-// LLMATTACH：LLMvision 的代號再加 tnemotron35（attachbox.js GATEWAY_VISION_MODELS）
-const LLMATTACH_SENT = { ...LLMVISION_SENT, tnemotron35: 'Nemotron-3.5-Super-VL' };
+const LLMVISION_SENT = { '': 'gemma3:12b', gemma3: 'gemma3', gemma3_12b: 'gemma3:12b', medgemma: 'medgemma:4b_vision', nemotron35: 'Nemotron-3.5-Super-VL', gemma4_31b: 'Gemma-4-31b' };
+// LLMATTACH：LLMvision 的代號再加 tnemotron35、tgemma4_31b（attachbox.js GATEWAY_VISION_MODELS）
+const LLMATTACH_SENT = { ...LLMVISION_SENT, tnemotron35: 'Nemotron-3.5-Super-VL', tgemma4_31b: 'Gemma-4-31b' };
 const GATEWAY_NAMES = { gemma3: 'gemma3:latest', medgemma: 'medgemma:latest', phi4: 'phi4:latest' };
 
 // 別名（已小寫）→ Gateway 的模型 id；未知別名回 null

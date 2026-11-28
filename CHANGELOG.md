@@ -14,9 +14,80 @@ claude plugin update strucmed@strucmed-marketplace
 
 ---
 
+## 3.19.0（MCP 2.22.0）— 2026-11-28：Gemma 4 31B 的模型代號；Nemotron、Gemma 4 的思考強度
+
+原為草稿 PR #155 的 3.17.0；3.18.0 先合併，改以 3.19.0 合併，並一起發佈 3.18.0 的內容（3.18.0 沒有單獨發佈）。
+
+**發佈前提已滿足（2026-11-28）**：院內 LVAIW 部署平台 `722a464`（`TempHtml.js?v=20261127`）與 LlmGateway 的 `Gemma-4-31b`；舊站 `/go/`（HIS「AI小助手」視窗開的 `/go/temp2.html`）以平台 `deploy/go-gemma4` 同步（`?v=20261128a`）。同一張測試表單的 `LLMQUERY(…, "gemma4_31b")` 在 `/strucmed` 與 AI小助手各執行一次，LlmGateway 逐筆紀錄（token `strucmed`、`goweb`）都是 `Gemma-4-31b`、200；LlmGateway Playground 以 `Gemma-4-31b` 讀影像可用。GitBook「生成式 AI 巨集函數」同日更新（change request #1290）。
+
+依據：醫科 2026-11-26 提供 Gemma-4-31b（與 Nemotron 同一個管控端點，max_token 65536）與兩個模型的思考參數；平台同日加上對應的巨集代號（平台 CHANGELOG 2026-11-27）。
+
+**MCP：模型代號**
+- 新增 `gemma4_31b`（不思考）、`tgemma4_31b`、`tgemma4_31b-low`／`-medium`／`-high`（思考）→ 閘道模型 `Gemma-4-31b`，只經 Gateway（`W_LLM_MODEL_GATEWAY_ONLY`，訊息改為列出實際的閘道模型）。`LLMvision` 可用 `gemma4_31b`，`LLMATTACH` 另有 `tgemma4_31b`；請求上限 8 MiB。
+- `gemma4_31b`、`tgemma4_31b` 自「已移除」清單拿掉（原本回 `E_LLM_MODEL_UNKNOWN`）。有白名單快取而清單內沒有 `Gemma-4-31b` 時照舊回 `E_LLM_MODEL_NOT_ON_GATEWAY`。
+- `llmgateway_models` 的別名對照加上 `gemma4_31b`、`tgemma4_31b`。
+
+**MCP：`llmgateway_chat_test` 的思考參數**
+- Nemotron-3.5-Super-VL、Gemma-4-31b 依別名比照 HIS 端送出：`t` 開頭＝`enable_thinking: true`，其餘明確送 `false`（原本 Nemotron 不送，模型預設會思考，`nemotron35` 的試跑其實是思考後的回答）。
+- 思考強度：Nemotron 的 `-medium` 加 `chat_template_kwargs.medium_effort`，`-low` 再加 `thinking_token_budget: 512`，`-high` 只開思考；Gemma 4 的後綴送 `reasoning_effort`，不送 `thinking_token_budget`（上游不支援）。新參數 `reasoning_effort`（`low`／`medium`／`high`）可覆寫別名的後綴，`thinking` 可覆寫是否思考。對應常數與函式在 `calx-catalog.mjs`（`thinkingParams`、`NEMOTRON_LOW_THINKING_BUDGET`）。
+- 思考時加 `W_LLM_THINKING_BUDGET`：思考內容算在 `max_tokens`（試跑上限 1024）內，回答可能被截斷。
+
+**文件**：`references/ModelWhitelist.md`（Gemma 4 31B 的代號、前提與建議；`tnemotron35` 的後綴改為同時調 temperature 與思考長短；拿掉「公告前不要寫 Gemma 4 代號」）、`PromptPatterns.md`、`FormulaMacroRules.md`、`MacroRecipes.md`、`tune-prompt`、`build-form-app`（舊站 `/go/` 2026-11-28 起也有 `nemotron35`、`gemma4_31b` 系列的 `LLMQUERY`／`LLMvision` 代號，沒有 `LLMATTACH`）、`form-reviewer`。
+
+**測試**：`test/v02.test.mjs`（Gemma 4 代號的巨集檢查）、`test/llmgw.test.mjs`（各別名送出的思考參數）。Linux 容器 `node --test` 340 項：336 通過、1 略過、3 失敗；失敗的 3 項是預覽伺服器的埠與站台連線，修改前相同，與這次無關。
+
+**尚未實測**：`reasoning_effort` 的效果、表單內 `LLMvision`／`LLMATTACH` 用 `gemma4_31b`；Nemotron 的 `medium_effort`、`thinking_token_budget` 經 Gateway 的實際思考長度。
+
+## 3.18.0（MCP 2.21.0）— 2026-11-28：與平台 #290～#303 同步（名稱、捷徑、Info 的 Big5 檢查、範本寫入逾時、應用紀錄清單、`runtime.app_records`）
+
+沒有單獨發佈，併入 3.19.0 發佈。版號跳過 3.17.0（草稿 PR #155 原用 3.17.0，後來以 3.19.0 合併）。
+
+依據：平台 `kunjulin/strucmed` 自 3.16.0 依據的 `01f8fa4` 之後合併到 `1911ad9`（#290～#304）。院內 LVAIW 2026-11-23 部署 `d504cad`、2026-11-25 部署 `a69d4d0`；院外 `cgmh.ddns.net` 2026-11-23 部署 `d504cad`（`APP_RECORDS` 開啟）。以平台 `docs/CHANGELOG.md`、`docs/API-V2.md`「非病人表單 → 應用紀錄清單」、`docs/gitbook/api-v2/strunote.md`、`docs/PLAN-app-record-list.md`、`web/js/scripts.js?v=20261123d`、`web/js/TempHtml.js?v=20261125` 為準。2026-11-23 以未登入的 GET 確認院外 `runtime/features` 回 `appRecords: true`、`TempHtml.js?v=20261124j`。
+
+**名稱、捷徑、Info 的 Big5 檢查（平台 #299）**
+- 原因：這三個欄位原樣寫進資料夾清單的 `dictVal`，倉儲（Big5／CP950）存不下的字元會吃掉結尾的 `}`，清單這一筆變成壞掉的 JSON——表單存了卻不在清單裡，再存回 404。2026-11-22 院內有使用者匯入本工具產生的示範表單（Info 含「≥」）後保存 7 次，個人清單留下 7 筆損毀項目（平台直接改寫清單清掉）。平台 #299 起保存時回 400，並記錄「外掛匯出時只對字典做 Big5 檢查，Info 不在其中」。
+- `form_create`、`form_import`、`form_update_meta`：名稱、捷徑、Info 寫進 draft 前，有對照的字換掉（`≥`→「大於等於」、`²`→`^2`…，同字典補述的替代字表），回 `warnings` 的 `W_NON_BIG5`；`form_import` 沿用來源的 Info、捷徑也一樣。
+- `form_validate`：沒有對照的字（emoji、圈號）回 error **`E_META_NON_BIG5`**，指出欄位、字元、碼位與位置，擋住輸出與上架。
+- `FormDesignRules.md`〈必守規則〉、`PublishWorkflow.md` 錯誤表（站台回 400 時怎麼做）。
+
+**範本寫入逾時（平台 #298）**
+- 平台 #298 起，倉儲慢時保存會重試讀清單、清單上傳逾時會重讀查核，一次保存最久約 2 分半到 4 分鐘。原本所有線上呼叫都是 30 秒逾時，範本寫入只回「無法連線（逾時）」，看不出可能已經寫入，有重複建立範本的風險。
+- `online_template_create`／`online_template_update` 的寫入改等 5 分鐘；送出後沒有回應（逾時、連線中斷）回 `E_UPSTREAM`，`details` 帶 `unknown: true`、`pending: true`，訊息寫「結果不明……請勿重複保存」，先以 `online_folder_list`／`online_template_versions` 確認。只送一次，不自動重送。其他呼叫維持 30 秒。
+- `PublishWorkflow.md` 錯誤表加 `details.unknown` 一列。
+
+**應用紀錄清單（平台 #290、#291）**
+- 平台：struNote 以 `<站台>/note/?app=<範本ID>` 開啟時，不顯示表單清單，改列出填寫者本人在這張非病人表單的多筆紀錄（一個 `recNo` 一筆），可新增、修改、刪除；設定在範本 iot 的 `f_applist`、`f_applistTitle`、`f_applistKey`、`f_applistKeyLabel`、`f_applistFields`、`f_applistSort`，只對非病人表單有效。
+- `form_create`／`form_update_meta` 的 `options` 新增 **`app_list: { title, key, key_label, fields, sort }`**（`{ enabled:false }` 關閉）。勾選時六個鍵都寫出、沒勾沒有這些鍵，與編輯器 `scripts.js?v=20261123d` 相同；長度、規則、最多 3 個顯示欄位不合就拒絕（不默默截斷）。改版 draft 原樣保留來源的 `f_applist*`；`no_patient:false` 時比照編輯器存成 `f_applist:false`。一般表單的輸出不變（測試固定）。
+- `form_validate`：`E_APPLIST_NOT_NOPATIENT`（一般表單設了清單；改版時原表單既有的列 `W_APPLIST_NOT_NOPATIENT`）、`W_APPLIST_FIELD_UNBOUND`（顯示欄位不是這張表單綁定的字典，或沒設）、`W_NOPATIENT_APPLIST`（網址、紀錄鍵規則、不可放病歷號／身分證號／姓名、刪除無法復原）。開了清單時不再列 `W_NOPATIENT_AUTOLOAD`（以紀錄鍵開啟一律載入）；沒開時它與 `W_NOPATIENT_FORM` 改為指向應用紀錄清單。
+- manifest「## 非病人表單」多一段「應用紀錄清單」；`online_template_create` 的 plan 帶 `app_list`，新建結果帶 `app_list_url`（`<站台>/note/?app=<範本ID>`）。
+- 範本套件 v2：`$defs/iotOptions` 加 `f_applist*`；套件驗證檢查 `f_applist` 是布林、其他是字串。
+- 文件：`FormDesignRules.md` 新增〈應用紀錄清單〉，〈紀錄主體與紀錄鍵〉改寫（「struNote 畫面沒有輸入 `recNo` 的地方」已不正確），補「帶 `recNo` 開啟時不帶入近期紀錄」（`TempHtml.js?v=20261124i`）；`AppBuildWorkflow.md` §2b（多筆紀錄先建議應用紀錄清單，自製 APP 可用 `records/query/list`、`records/delete`）；`create-form`（需求階段新增「應用紀錄清單」一列、交付 3b）、`edit-form`、`publish-form`、`build-form-app`、`Gates.md`、`form-planner`、`form-builder`、`form-reviewer`、三份 README。
+
+**`online_features` 的 `runtime.app_records`（平台 #294）**
+- 院外站台不開 `V2:RuntimeSave`／`RuntimeQuery`（它們也管病人紀錄），改以 `V2:Note:AppRecords` 讓本人的非病人表單紀錄經登入後的 `records/*` 存取。這時 `runtime.save`、`query` 是 false，但非病人表單照樣能存、應用紀錄清單照樣能用。`runtime.app_records` 回站台的 `appRecords`（舊站台沒有＝false）；`AppBuildWorkflow.md`、`build-form-app` 改寫判讀說明。
+
+**其他**
+- 表單 APP 範本（`templates/form-app/vite.config.ts`）：首頁不進 service worker 的快取、不攔頁面導覽（平台 struNote 的同樣修正 #295、#296）；原本改版後第一次開啟會是舊版。nginx 本來就對 `index.html`、`sw.js` 回 `no-store`。
+- `EmbedPageContract.md` §3、`FormDesignRules.md`〈嵌入頁面〉：`"fill"` 的高度算法依平台 #303（`TempHtml.js?v=20261125`）更新。
+
+**評估後沒有改的**
+- #293（院外 `api/v2/runtime/*` 改要 token）：plugin 只呼叫仍可匿名的 `runtime/features`，以及院外本來就停用的 `runtime/apps`；表單 APP 的 token 由站台的表單頁帶入（`window.v2Token`），不受影響。
+- #302（VOICETOTEXT 上游忙碌時自動重試、失敗時不覆寫欄位）：規則文件沒有描述舊行為，不需改。
+- plugin 仍然沒有、也不提供查詢、存檔或刪除紀錄的 tool（平台對 `strucmed-mcp` 的 token 一律 403）。
+
+**測試**
+- 新增 `test/meta-big5.test.mjs`（4 項）、`test/applist.test.mjs`（9 項）、`test/form-app-sw.test.mjs`（1 項）；`online.test.mjs` 新增寫入逾時與 `runtime.app_records` 各 1 項（假伺服器的範本寫入逾時設成 1 秒）；`nopatient.test.mjs` 的文件斷言隨〈紀錄主體與紀錄鍵〉改寫。
+- `node --test`（macOS）356 項：352 過、1 略過、3 失敗。失敗的是預覽伺服器的埠 2 項與站台偵測 1 項，修改前在 `main` 上就失敗（草稿 PR #155 也記錄同樣 3 項），與這次無關。
+
+**尚未確認**
+- 沒有以真實站台實測：上架帶 `f_applist` 的範本、以 `note/?app=` 開啟、5 分鐘逾時、站台回 Big5 400。平台行為引用平台 repo 的文件、程式與其 CHANGELOG 的實測紀錄。
+- 表單 APP 範本的快取修正沒有實際建置驗證（範本的 npm 相依不在 repo 測試範圍）。
+
+---
+
 ## 3.16.1（MCP 2.19.1）— 2026-11-25：HIS 參照補上 IPDDATA、OPDATA、EXAMDATA（`formula_check` kind=hisquery 誤報修正）
 
-尚未發佈。
+發佈（2026-11-26）：strucmed-plugin `2f2faa7`（已推送 main；發佈樹由本 repo `6a499fc` 產生）。發佈時：`release-plugin.mjs` ok、248 檔、掃描無發現（第一次掃描擋下本段「文件」一行的開發文件完整路徑，改寫為 `docs/01`、`docs/03` 後重跑）；`claude plugin validate . --strict` 通過；發佈樹 `node --test`（Windows）340 項：334 過、4 失敗、2 略過，失敗的 4 項是預覽頁的埠與 symlink 測試（Windows 環境問題，main 上相同）。tag：strucmed-plugin `v3.16.1`（→ `2f2faa7`）、本 repo `v3.16.1-src`（`6a499fc`）；GitHub Release「strucmed 3.16.1（MCP 2.19.1）：HIS 參照補上 IPDDATA、OPDATA、EXAMDATA」。尚未：從市集更新後的對話實測、以真實表單在 HIS 端實跑 OPDATA／IPDDATA／EXAMDATA 參照。
 
 依據：使用者以 `formula_check`（kind=hisquery）檢查 `OPDATA.InDays(30).GetAllJson()`，回 `E_HISQUERY_SYNTAX`「必須以 LABDATA / OPDDATA / ERDDATA / Procedure 開頭」。GitBook「計算式 HIS 參照」一節已有 **OPDATA 手術紀錄**、**IPDDATA 住院會診**、**EXAMDATA 檢查報告**，外掛的白名單過時，正確的寫法被當成錯誤。這一版以 GitBook 各頁（2026-11-25 逐頁核對 LABDATA、OPDDATA、ERDDATA、IPDDATA、OPDATA、EXAMDATA、Procedure）為準。
 

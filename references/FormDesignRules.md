@@ -30,6 +30,7 @@
   - 名稱在**同一層級**有多筆同名會被拒絕（`E_DICT_AMBIGUOUS`），請改用 id；不同層級同名時自動綁體系字典（`W_DICT_PREFER_SYSTEM`）。
   - 字典命名依使用者規範；未定案前用 `<表單縮寫>_<欄位語意>` 大寫英數底線，並先搜尋避免重複。
   - 說明、補述、層級與升級見下一節。
+- **表單名稱、捷徑、Info 只用 Big5 字**：這三個欄位原樣寫進資料夾清單（不像表單內容是 base64），倉儲（Big5／CP950）存不下的字元會把清單這一筆存壞——表單存了卻不在清單裡、再存回 404（2026-11-22 院內實測：本工具產生的示範表單 Info 含「≥」）。平台 `kunjulin/strucmed#299`（院內、院外 2026-11-23 部署）起保存時回 400。`form_create`／`form_import`／`form_update_meta` 先把有對照的字換掉（`≥`→「大於等於」、`²`→`^2`，回 `W_NON_BIG5`）；沒有對照的（emoji、圈號）由 `form_validate` 回 `E_META_NON_BIG5`，擋住輸出與上架。起草時就避開，替代字表同 `DictionaryMemo.md`。
 - **必填**：只標「沒有它表單就失去意義」的欄位；說明必填只在 HIS 端提醒，編輯器存檔不檢查。
 - **禁止**：預設值或選項放任何病人資料；自由撰寫表單 JS（只有 flag `formScript` 開啟時以白名單片段產生，見 `ScriptAddonRules.md`；嵌入院內頁面用宣告式 embed 區塊，不寫 JS，見〈嵌入頁面〉）；嵌入圖片；§3b 列出的禁用函數；任何刪除或覆寫線上範本與字典。線上寫入只限 §6 的病人紀錄存檔。
 - 使用者要求超出範圍（例如「直接幫我把範本上傳到編輯器」）時，說明目前線上 tool 不含範本寫入，範本仍由使用者匯入 `.htm`；經 API 建立／更新範本的規劃（Phase 2）。
@@ -58,7 +59,7 @@
 | `title` | iframe 上方的標題（選用） |
 | `url` | **https**（`E_EMBED_SCHEME`）、主機在院內範圍 `*.cgmh.org.tw`、`*.cgmf.org.tw`、`*.cgmh.me`、10/8、172.16/12、192.168/16、localhost（`E_EMBED_HOST`；只看網址的主機字串、不做 DNS）；完整網址、不含帳密（`E_EMBED_URL`）；網址本身不可含 `{…}` 或身分證號樣式（`E_EMBED_PII`） |
 | `params` | 附加到 query 的 `{ 名稱: 值 }`：值只能是 `{chtno}`（病歷號）、`{deptNo}`（科別）、`{user}`（使用者）、`{opdno}`（門診序號）或常數；名稱只能英數字、`_`、`-`、`.`，不可像身分證號或姓名（`idno`、`pid`、`name`、`ptname`、`patientName`、`username`…）→ `E_EMBED_PII`。沒有身分證號、姓名的占位符 |
-| `height` | `"fill"` 或像素 100～4000，預設 600（`E_EMBED_HEIGHT`）；一張表單最多一個 `"fill"`（`E_EMBED_FILL`）。**iframe 不會隨嵌入頁內容長高**：整頁型 APP（多欄、內容超過一個畫面）用 `"fill"`，小工具才給像素（`EmbedPageContract.md` §3）；需求沒講就問，不要自己挑一個像素值 |
+| `height` | `"fill"` 或像素 100～4000，預設 600（`E_EMBED_HEIGHT`）；一張表單最多一個 `"fill"`（`E_EMBED_FILL`）。**iframe 不會隨嵌入頁內容長高**：`"fill"` 以表單的捲動區量測，只有嵌入頁時剛好填滿、外層不出現捲軸，表單還有其他內容時嵌入區塊（含標題）剛好一個畫面高（平台 `TempHtml.js?v=20261125`）；整頁型 APP（多欄、內容超過一個畫面）用 `"fill"`，小工具才給像素（`EmbedPageContract.md` §3）；需求沒講就問，不要自己挑一個像素值 |
 | `inputs` | 表單 → 嵌入頁 `{ key: itemid }`，載入時以 `strucmed.context.values` 送出；欄位必須存在且參與計算（`E_EMBED_INPUT`） |
 | `outputs` | 嵌入頁 → 表單 `{ key: itemid }`：欄位必須存在（`E_EMBED_OUTPUT_MISSING`）、不是 embed（`E_EMBED_OUTPUT_EMBED`）、不在彈出片語或群組控制項內（`E_EMBED_OUTPUT_GROUP`）；多個 embed 不可寫同一欄（`E_EMBED_OUTPUT_DUP`） |
 | key 格式 | `inputs`／`outputs` 的 key 只能是英數字、`_`、`-`，值是欄位 ID（`E_EMBED_MAP`；呼叫端可寫 `12`、`"12"` 或 `"A12"`，存成數字） |
@@ -124,7 +125,7 @@
 | 「上次紀錄」 | 只看自己的；圖示預設隱藏 | 依病歷號／就醫號查 |
 | HIS 參照、HISQUERY、LOOKUPDW 等 | **不能用**（沒有病人可查；平台執行時不送出） | 可用 |
 | 字典寫入（tohis） | 可以，值存在同一個保留代碼下，但**只有建立者本人查得到、下載得到，目前無法彙整他人的紀錄**；**不要用倉儲以病歷號查詢這類紀錄**。不需要統計的欄位不綁字典 | 依病歷號進倉儲 |
-| 紀錄筆數 | 從 struNote 開：每人每張表單一筆（重開會載入並覆寫同一筆）；多筆要由 APP 帶 `recNo` | 依病歷號／就醫號 |
+| 紀錄筆數 | 從 struNote 的表單清單開：每人每張表單一筆（重開會載入並覆寫同一筆）。**每人要填多筆**（一週一筆、一篇一筆）時開〈應用紀錄清單〉 | 依病歷號／就醫號 |
 | LLM 巨集、附件容器、樣式片段 | 照常 | 照常 |
 
 ### 紀錄主體與紀錄鍵（`opdno`、`recNo`）
@@ -143,8 +144,30 @@
 - `recNo` 由開啟表單頁的 APP 帶入：`GET api/v2/forms/{id}/page?recNo=<鍵>`，英數字與 `_`、`.`、`-`，最多 64 字。取值規則要先登錄（GitBook「OPEN 結構化工具 → HIS 交換整合規格 → 文件規格 → 非病人表單紀錄」），程式與表單不得自行填入未登錄的值。
 - 取出與覆寫只認 `recNo` **完全相同**的紀錄；`none`（沒帶鍵）不會與帶鍵的紀錄互相覆寫。
 - **帶 `recNo` 開啟時一律載入既有紀錄**（不論有沒有勾「開啟時自動取出」）；沒帶時依表單選項 `f_autoLoadOnOpen`。
-- **struNote 畫面沒有輸入 `recNo` 的地方**：從 struNote 開，每人每張表單只有一筆（`none`）。所以非病人表單預設 `auto_load_on_open: true`：沒勾時 struNote 開頁是空白表單，存檔會覆寫上次存的那一筆（`W_NOPATIENT_AUTOLOAD`）。
+- **struNote 的表單清單不帶 `recNo`**：從表單清單開，每人每張表單只有一筆（`none`）。所以非病人表單預設 `auto_load_on_open: true`：沒勾時開頁是空白表單，存檔會覆寫上次存的那一筆（`W_NOPATIENT_AUTOLOAD`）。要多筆紀錄時開〈應用紀錄清單〉，由 struNote 產生並帶入 `recNo`。
+- **帶 `recNo` 開啟時不帶入近期紀錄**（平台 `TempHtml.js?v=20261124i` 起）：表單選項「依病歷號／就醫號帶入近期紀錄」不分紀錄鍵，會把最新一筆的值填進正在開啟的紀錄，所以帶 `recNo` 時不執行；沒帶 `recNo` 時照舊。
 - `G_OPDNO()`、`GETOPDNO()` 讀到的是紀錄主體代碼（現行 `APP`），不是就醫號。
+
+### 應用紀錄清單（`options.app_list`）
+
+一張非病人表單要讓每人填**多筆**紀錄（PGY 一週一筆的學習歷程、一篇一筆的衛教資料、一案一筆的病歷審查練習）時用。依據：平台 `kunjulin/strucmed#290`、`#291`（`docs/PLAN-app-record-list.md`；院內 LVAIW 2026-11-22、院外 2026-11-22 部署，院外 `APP_RECORDS` 開啟）。
+
+- **怎麼開**：struNote 以 `<站台>/note/?app=<範本ID>` 開啟（院內 `https://lvaiw.cgmf.org.tw/strucmed/note/?app=…`、院外 `https://cgmh.ddns.net/note/?app=…`）。登入後不顯示表單清單，改列出**填寫者本人**在這張表單的紀錄，一個紀錄鍵一筆；點一筆以 `recNo` 開表單頁，可新增、修改、刪除。不帶 `app` 時 struNote 照舊。表單不必放進 struNote 清單（`online_me_notes_set`），直接給這個網址。
+- **怎麼設**：`form_create`／`form_update_meta` 的 `options.app_list`（→ iot `f_applist*`，與編輯器 Option 面板「應用紀錄清單」相同）。只對非病人表單有效：一般表單帶了平台一律忽略（`E_APPLIST_NOT_NOPATIENT`）。`{ enabled:false }` 關閉；改回一般表單（`no_patient:false`）時一併關閉。
+
+| 鍵 | iot | 說明 |
+|---|---|---|
+| `title` | `f_applistTitle` | 清單標題，最多 40 字；空白時顯示「紀錄清單」 |
+| `key` | `f_applistKey` | 「新增」時紀錄鍵的產生規則：`code`＝使用者輸入（預設）、`week`＝`2026-W47`、`month`＝`2026-11`、`date`＝`2026-11-22`、`time`＝`20261122-153045`（每次新增一筆）。`week`／`month`／`date` 先帶入、可改（補填上週）；輸入已有的鍵等於開啟那一筆 |
+| `key_label` | `f_applistKeyLabel` | 紀錄鍵在畫面上的名稱（週次、文件代碼…），最多 20 字 |
+| `fields` | `f_applistFields` | 清單顯示欄位：**這張表單綁定的字典名稱**，最多 3 個，第一個當標題。取自存檔的明細，沒綁字典的欄位顯示不出來（`W_APPLIST_FIELD_UNBOUND`） |
+| `sort` | `f_applistSort` | `recDate-desc`（預設）、`recDate-asc`、`recNo-desc`、`recNo-asc` |
+
+- **怎麼選紀錄鍵規則**：一週一筆 → `week`；一月一筆 → `month`；一天一筆 → `date`；每次都是新的一筆、不需要回頭找 → `time`；以代碼區分（衛教單代號、案例編號）→ `code`。紀錄鍵只能用英數字與 `_`、`.`、`-`（1～64 字），**不可放病歷號、身分證號、姓名**——`code` 規則要在 `key_label` 與交付說明寫清楚該填什麼。
+- **刪除**：清單每筆有「刪除」，struNote 在那一筆上再確認一次才送出（`POST api/v2/records/delete`）。**倉儲是硬刪除，無法復原**；每次存檔另寫的純文字紀錄（`XMLtxt`）不會一起刪。只能刪本人建立的。
+- **限制**：只有本人的紀錄（他人或主管看不到，要等平台的紀錄主體階段 2）；主體 `opdno` 固定 `APP`；沒有分頁與日期範圍，最多列 500 筆；清單以明細為準，明細寫入失敗的紀錄不會列出（同鍵開啟仍載得到）；HIS 內沒有這個畫面。
+- **站台**：院內受存檔與查詢白名單管控（`online_features` 的 `runtime.save`、`runtime.query`）；院外不開那兩項，改由 `runtime.app_records`（`V2:Note:AppRecords`）讓本人的非病人表單紀錄經登入後的 `records/*` 存取——院外 `save`、`query` 是 false 不影響非病人表單。`strucmed-mcp` 的 token 不能呼叫這些端點，plugin 也沒有查詢、刪除紀錄的 tool。
+- 開了清單時 `W_NOPATIENT_AUTOLOAD` 不再提醒（紀錄一律以紀錄鍵開啟並載入）；`W_NOPATIENT_APPLIST` 列出網址、紀錄鍵規則與刪除，交付時必須告知。
 
 ### 查詢、下載與分析
 
@@ -169,7 +192,10 @@
 | `W_NOPATIENT_EMBED_CONTEXT` | 有 embed 區塊：`strucmed.context` 的 `chtno`、`opdno` 是空字串，另帶 `noPatient: true`（不送保留代碼）；嵌入頁要能處理沒有病人的情境 |
 | `W_NOPATIENT_LOADDOC` | `LOADDOC`、`LOADXML`（平台只取回這張表單、同一個 `recNo`、自己建立的紀錄） |
 | `W_NOPATIENT_OPTION` | 明確開了 `f_chtno`／`f_opdno` 或顯示「上次紀錄」圖示 |
-| `W_NOPATIENT_AUTOLOAD` | 沒有開「開啟時自動取出」（`f_autoLoadOnOpen`）：struNote 開頁是空白，存檔會覆寫上一筆 |
+| `W_NOPATIENT_AUTOLOAD` | 沒有開「開啟時自動取出」（`f_autoLoadOnOpen`）：struNote 開頁是空白，存檔會覆寫上一筆（開了應用紀錄清單時不提醒） |
+| `W_NOPATIENT_APPLIST` | 開了應用紀錄清單：網址、紀錄鍵規則、刪除無法復原，交付時必須告知 |
+| `W_APPLIST_FIELD_UNBOUND` | 清單顯示欄位不是這張表單綁定的字典，或沒有設定顯示欄位 |
+| `E_APPLIST_NOT_NOPATIENT` | 一般表單設了應用紀錄清單（改版時原表單既有的列 `W_APPLIST_NOT_NOPATIENT`） |
 | `W_NOPATIENT_HIS_LIST` | 設了捷徑與作業別（會出現在 HIS 清單）：HIS 內存檔會被平台拒絕 |
 | `W_NOPATIENT_DICT_WRITE` | 有欄位寫入字典（值以保留代碼進倉儲；只有建立者本人查得到、下載得到） |
 | `W_NOPATIENT_FORM` | 每張非病人表單都有：交付時必須告知下面各點 |
@@ -180,7 +206,7 @@
 - 非病人表單：struNote 不需病歷號，平台以保留代碼開啟。
 - 站台是否支援（上面〈站台是否支援〉的結果）；不支援的站台不要使用、不輸入真實病歷號。
 - 紀錄只有填寫者本人查得到、下載得到，目前無法彙整他人的紀錄；**不要用倉儲以病歷號查詢這類紀錄**。
-- 從 struNote 開，每人每張表單一筆；目前只在 struNote／表單頁使用，HIS 內開啟時存檔會被拒絕。
+- 沒開應用紀錄清單：從 struNote 開，每人每張表單一筆。開了：給 `<站台>/note/?app=<範本ID>`、紀錄鍵規則（不可放病歷號、身分證號、姓名）、刪除無法復原。兩者都只在 struNote／表單頁使用，HIS 內開啟時存檔會被拒絕。
 - 尚未更新的站台的編輯器不認得 `f_nopatient`：在那裡另存，選項可能遺失，請在支援的站台確認 Option 面板的「非病人表單（不需病歷號）」。
 
 ## 字典說明、補述與層級

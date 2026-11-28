@@ -4,7 +4,7 @@
 // 決定要當 error 還是 warning（原表單既有）；level=warn 一律是 warning。
 import { check } from './calx.mjs';
 import { classify, STEP, FORMULA_REPLACED, LLM_MODELS, LLM_ALIASES, LLM_REMOVED, VISION_MODELS, ASR_PROVIDERS, ASR_REMOVED, ATTACH_MODELS, GATEWAY_ONLY_MODELS, GATEWAY_MODEL_MAX_BYTES, LLM_SUNSET, sunsetModel, sunsetPassed, ATTACH_KINDS, ATTACH_KIND_LABELS } from './calx-catalog.mjs';
-import { checkAlias } from './policy.mjs';
+import { checkAlias, gatewayModelFor } from './policy.mjs';
 import { checkUrl, launchBridge, BRIDGE_PAGE } from './embed.mjs';
 import { enabled } from './flags.mjs';
 
@@ -306,13 +306,14 @@ function sunsetFinding(fn, lit, name, ctx) {
   return { ...err('E_LLM_MODEL_SUNSET', `${fn} 的模型「${lit}」屬 ${LLM_SUNSET.family}：將於 ${LLM_SUNSET.date} 自 LlmGateway 下架，院方建議不採用，新寫或改到的巨集不得使用；${fix}`), sunset: true, replacement: to };
 }
 
-// 只經 LlmGateway 的模型代號（nemotron35 系列，平台 20261124）：站台沒啟用 Gateway 時 LLMQUERY 顯示提示、不送出；
-// LLMvision／LLMATTACH 改用預設 gemma3:12b。LLMATTACH 另以模型的請求上限（Nemotron 8 MiB）在送出前擋下
+// 只經 LlmGateway 的模型代號（nemotron35 系列，平台 20261124；gemma4_31b 系列，平台 20261127）：站台沒啟用 Gateway 時 LLMQUERY 顯示提示、不送出；
+// LLMvision／LLMATTACH 改用預設 gemma3:12b。LLMATTACH 另以模型的請求上限（兩個模型同一個上游，8 MiB）在送出前擋下
 function gatewayOnlyWarn(fn, lit) {
   const fallback = fn === 'LLMQUERY' ? '顯示「這個模型只能經院內 LLM Gateway 使用」、不送出' : '改用預設 gemma3:12b';
-  const max = GATEWAY_MODEL_MAX_BYTES['Nemotron-3.5-Super-VL'];
-  const size = fn === 'LLMATTACH' ? `；這個模型一次請求上限 ${max / 1048576} MiB（影像與 PDF 頁面影像都算），超過時平台在送出前擋下，請控制容器的 attachmax／attachpages` : '';
-  return warn('W_LLM_MODEL_GATEWAY_ONLY', `${fn} 的模型「${lit}」只經院內 LlmGateway（Nemotron-3.5-Super-VL）：站台沒有啟用 Gateway 時${fallback}；院外站台用使用者在設定畫面選的模型${size}`);
+  const gm = gatewayModelFor(lit, fn === 'LLMvision' || fn === 'LLMATTACH' ? fn : 'LLMQUERY') || 'Nemotron-3.5-Super-VL';
+  const max = GATEWAY_MODEL_MAX_BYTES[gm];
+  const size = fn === 'LLMATTACH' && max ? `；這個模型一次請求上限 ${max / 1048576} MiB（影像與 PDF 頁面影像都算），超過時平台在送出前擋下，請控制容器的 attachmax／attachpages` : '';
+  return warn('W_LLM_MODEL_GATEWAY_ONLY', `${fn} 的模型「${lit}」只經院內 LlmGateway（${gm}）：站台沒有啟用 Gateway 時${fallback}；院外站台用使用者在設定畫面選的模型${size}`);
 }
 
 // LLMATTACH 的模型：代號表與 LLMvision 相同；不在表內的名稱經 LlmGateway 時原樣當模型 id 送出（平台 attachbox.js buildRequest），所以不是錯誤

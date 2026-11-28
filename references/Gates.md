@@ -101,6 +101,7 @@ A2 身體測量（formtable）
 | 保存後即上架 | 否 |
 | 更新既有範本 | —（或 templateID） |
 | 非病人表單 | 否（是：struNote 不需病歷號，平台以保留代碼開啟，紀錄只有填寫者本人查得到；`form_create` 帶 `options.no_patient: true`，不得有 HIS 參照、倉儲查詢、嵌入頁 `{chtno}`／`{opdno}`，不設作業別） |
+| 應用紀錄清單 | —（非病人表單才有；是：標題、紀錄鍵規則 code／week／month／date／time 與名稱、顯示欄位 1～3 個字典名稱、排序；`form_create` 帶 `options.app_list`） |
 
 ### 待決（有才寫）
 要使用者取捨的地方：planner 依建議值先寫進結構，這裡列出建議值與替代方案，skill 在草案摘要後一起列。
@@ -159,6 +160,7 @@ Revision: 1
 ### 上架
 （`references/PublishWorkflow.md` §3 的表；離線時換成 form_export 的 plan：檔案、覆寫、匯入模式）
 - 非病人表單（plan 有 `no_patient` 時必列，原樣一行）：非病人表單：struNote 不需病歷號，平台以保留代碼開啟
+- 應用紀錄清單（plan 有 `app_list` 時必列）：應用紀錄清單：上架後以 `<站台>/note/?app=<範本ID>` 開啟；紀錄鍵 <規則>；刪除無法復原
 
 ### 表單 JS（有片段時才有）
 - 片段：style#look（樣式：主題 clean、2 條規則）、guard#bmi-high（條件提示：…）；sha256 <plan.script.sha256>
